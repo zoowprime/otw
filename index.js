@@ -224,6 +224,160 @@ function setRetryDelay(playerId) {
 // Connexion du bot
 client.login(token);
 
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    partials: [Partials.Channel],
+});
+
+require('dotenv').config();
+const { TOKEN, TICKET_CHANNEL_ID, SUPPORT_ROLE_ID } = process.env;
+
+client.once('ready', async () => {
+    console.log(`Bot connecté en tant que ${client.user.tag}`);
+    const ticketChannel = client.channels.cache.get(TICKET_CHANNEL_ID);
+
+    if (!ticketChannel) {
+        console.error("Salon des tickets introuvable. Vérifiez l'ID.");
+        return;
+    }
+
+    // Envoyer le message avec les boutons dans le salon de tickets
+    const embed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('Système de tickets')
+        .setDescription('Clique sur le bouton ci-dessous pour créer un ticket. Le support te répondra dès que possible.')
+        .setFooter({ text: 'Système de tickets', iconURL: client.user.displayAvatarURL() });
+
+    const row = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('create_ticket')
+                .setLabel('Créer un ticket')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+    await ticketChannel.send({ embeds: [embed], components: [row] });
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    const { customId, guild, user } = interaction;
+
+    if (customId === 'create_ticket') {
+        // Vérifier si l'utilisateur a déjà un ticket ouvert
+        const existingChannel = guild.channels.cache.find(
+            (channel) =>
+                channel.topic === `Ticket de ${user.id}` && channel.type === ChannelType.GuildText
+        );
+
+        if (existingChannel) {
+            return interaction.reply({
+                content: `Tu as déjà un ticket ouvert : ${existingChannel}.`,
+                ephemeral: true,
+            });
+        }
+
+        // Créer le ticket
+        const ticketChannel = await guild.channels.create({
+            name: `ticket-${user.username}`,
+            type: ChannelType.GuildText,
+            topic: `Ticket de ${user.id}`,
+            parent: interaction.channel.parent, // Facultatif : place le ticket dans la même catégorie que le salon de tickets
+            permissionOverwrites: [
+                {
+                    id: guild.roles.everyone.id,
+                    deny: [PermissionFlagsBits.ViewChannel],
+                },
+                {
+                    id: user.id,
+                    allow: [
+                        PermissionFlagsBits.ViewChannel,
+                        PermissionFlagsBits.SendMessages,
+                        PermissionFlagsBits.ReadMessageHistory,
+                    ],
+                },
+                {
+                    id: SUPPORT_ROLE_ID,
+                    allow: [
+                        PermissionFlagsBits.ViewChannel,
+                        PermissionFlagsBits.SendMessages,
+                        PermissionFlagsBits.ReadMessageHistory,
+                    ],
+                },
+            ],
+        });
+
+        // Envoyer un message dans le nouveau ticket
+        const embed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('Ticket créé')
+            .setDescription(
+                `Bonjour ${user.username}, un membre du support va bientôt te répondre.\nUtilise le bouton ci-dessous pour fermer ce ticket si besoin.`
+            )
+            .setFooter({ text: 'Système de tickets' });
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('Fermer le ticket')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        await ticketChannel.send({ embeds: [embed], components: [row] });
+        interaction.reply({ content: `Ticket créé : ${ticketChannel}`, ephemeral: true });
+    }
+
+    if (customId === 'close_ticket') {
+        // Bouton pour fermer un ticket
+        const channel = interaction.channel;
+
+        if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
+            return interaction.reply({
+                content: 'Ce bouton ne peut être utilisé que dans un ticket.',
+                ephemeral: true,
+            });
+        }
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('delete_ticket')
+                    .setLabel('Supprimer le ticket')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        await interaction.reply({
+            content: 'Le ticket sera fermé dans 5 secondes. Cliquez sur le bouton ci-dessous pour le supprimer.',
+            components: [row],
+        });
+
+        setTimeout(() => {
+            channel.permissionOverwrites.edit(interaction.user.id, {
+                ViewChannel: false,
+            });
+        }, 5000);
+    }
+
+    if (customId === 'delete_ticket') {
+        // Bouton pour supprimer un ticket
+        const channel = interaction.channel;
+
+        if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
+            return interaction.reply({
+                content: 'Ce bouton ne peut être utilisé que dans un ticket.',
+                ephemeral: true,
+            });
+        }
+
+        await channel.delete();
+    }
+});
+
+client.login(TOKEN);
+
 const http = require("http");
 
 http.createServer((req, res) => {
