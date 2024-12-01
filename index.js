@@ -224,30 +224,53 @@ function setRetryDelay(playerId) {
 // Connexion du bot
 client.login(token);
 
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
+require('dotenv').config(); // Charger les variables d'environnement
+
+// Importer les modules nécessaires
+const {
+    Client,
+    GatewayIntentBits,
+    Partials,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType,
+    PermissionFlagsBits,
+} = require('discord.js');
+
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages,
+    ],
     partials: [Partials.Channel],
 });
 
-require('dotenv').config();
-const { TOKEN, TICKET_CHANNEL_ID, SUPPORT_ROLE_ID } = process.env;
+// Variables d'environnement
+const token = process.env.BOT_TOKEN;
+const ticketChannelId = process.env.TICKET_CHANNEL_ID;
+const supportRoleId = process.env.SUPPORT_ROLE_ID;
 
+// Quand le bot est prêt
 client.once('ready', async () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
-    const ticketChannel = client.channels.cache.get(TICKET_CHANNEL_ID);
+
+    const ticketChannel = client.channels.cache.get(ticketChannelId);
 
     if (!ticketChannel) {
-        console.error("Salon des tickets introuvable. Vérifiez l'ID.");
+        console.error("Le salon de tickets est introuvable. Vérifiez l'ID dans votre fichier .env.");
         return;
     }
 
-    // Envoyer le message avec les boutons dans le salon de tickets
+    // Envoyer un message pour le système de tickets dans le salon
     const embed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Système de tickets')
-        .setDescription('Clique sur le bouton ci-dessous pour créer un ticket. Le support te répondra dès que possible.')
-        .setFooter({ text: 'Système de tickets', iconURL: client.user.displayAvatarURL() });
+        .setDescription('Cliquez sur le bouton ci-dessous pour ouvrir un ticket.')
+        .setFooter({ text: 'Système de support', iconURL: client.user.displayAvatarURL() });
 
     const row = new ActionRowBuilder()
         .addComponents(
@@ -257,9 +280,14 @@ client.once('ready', async () => {
                 .setStyle(ButtonStyle.Primary)
         );
 
-    await ticketChannel.send({ embeds: [embed], components: [row] });
+    try {
+        await ticketChannel.send({ embeds: [embed], components: [row] });
+    } catch (error) {
+        console.error("Erreur lors de l'envoi du message du système de tickets :", error);
+    }
 });
 
+// Gérer les interactions des boutons
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
@@ -284,7 +312,7 @@ client.on('interactionCreate', async (interaction) => {
             name: `ticket-${user.username}`,
             type: ChannelType.GuildText,
             topic: `Ticket de ${user.id}`,
-            parent: interaction.channel.parent, // Facultatif : place le ticket dans la même catégorie que le salon de tickets
+            parent: interaction.channel.parent,
             permissionOverwrites: [
                 {
                     id: guild.roles.everyone.id,
@@ -299,7 +327,7 @@ client.on('interactionCreate', async (interaction) => {
                     ],
                 },
                 {
-                    id: SUPPORT_ROLE_ID,
+                    id: supportRoleId,
                     allow: [
                         PermissionFlagsBits.ViewChannel,
                         PermissionFlagsBits.SendMessages,
@@ -314,9 +342,9 @@ client.on('interactionCreate', async (interaction) => {
             .setColor('#0099ff')
             .setTitle('Ticket créé')
             .setDescription(
-                `Bonjour ${user.username}, un membre du support va bientôt te répondre.\nUtilise le bouton ci-dessous pour fermer ce ticket si besoin.`
+                `Bonjour ${user.username}, un membre du support va bientôt te répondre.\nUtilise le bouton ci-dessous pour fermer ce ticket si nécessaire.`
             )
-            .setFooter({ text: 'Système de tickets' });
+            .setFooter({ text: 'Système de support' });
 
         const row = new ActionRowBuilder()
             .addComponents(
@@ -331,7 +359,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (customId === 'close_ticket') {
-        // Bouton pour fermer un ticket
+        // Gérer la fermeture du ticket
         const channel = interaction.channel;
 
         if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
@@ -362,7 +390,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (customId === 'delete_ticket') {
-        // Bouton pour supprimer un ticket
+        // Supprimer le ticket
         const channel = interaction.channel;
 
         if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
@@ -376,7 +404,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-client.login(TOKEN);
+// Connexion du bot
+client.login(token);
 
 const http = require("http");
 
