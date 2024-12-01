@@ -206,109 +206,22 @@ function setRetryDelay(playerId) {
     } else if (playerData.attempts === 1) {
         playerData.nextAttempt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 heures
     } else {
-        playerData.nextAttempt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 heures
-    }
-}
-
-client.login(token);
-
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-require('dotenv').config(); // Charger les variables d'environnement depuis un fichier .env
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
-    ],
-});
-
-const token = process.env.BOT_TOKEN; // Token du bot
-const supportChannelId = process.env.SUPPORT_CHANNEL_ID; // ID du canal où les tickets seront envoyés
-
-// Événement de démarrage du bot
-client.once('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag}`);
-});
-
-// Gérer les messages entrants
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return; // Ignorer les messages des autres bots
-
-    if (message.content.toLowerCase() === '!ticket') {
-        // Vérifier si l'utilisateur a déjà un ticket ouvert
-        const existingTicket = await checkIfTicketExists(message.author.id);
-        if (existingTicket) {
-            return message.reply("Tu as déjà un ticket ouvert.");
+        // Expulser le joueur après 3 échecs
+        const guild = client.guilds.cache.get(guildId); // Utiliser l'ID du serveur principal
+        if (!guild) {
+            console.error("Impossible de trouver le serveur pour expulser le joueur.");
+            return;
         }
-
-        // Créer un bouton pour ouvrir un ticket
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('create_ticket')
-                    .setLabel('Ouvrir un ticket')
-                    .setStyle(ButtonStyle.Primary)
-            );
-
-        await message.reply({
-            content: "Clique sur le bouton ci-dessous pour ouvrir un ticket",
-            components: [row],
-        });
+        const member = guild.members.cache.get(playerId);
+        if (member) {
+            member.kick("Échec du QCM trois fois")
+                .then(() => console.log(`Le membre ${member.user.tag} a été expulsé.`))
+                .catch((error) => console.error(`Erreur lors de l'expulsion : ${error}`));
+        }
     }
-});
-
-// Gérer l'interaction sur le bouton
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-
-    if (interaction.customId === 'create_ticket') {
-        // Créer un ticket
-        const ticketCategoryId = process.env.TICKET_CATEGORY_ID; // ID de la catégorie des tickets
-        const channel = await interaction.guild.channels.create({
-            name: `ticket-${interaction.user.username}`,
-            type: 'GUILD_TEXT',
-            parent: ticketCategoryId, // Catégorie des tickets
-            permissionOverwrites: [
-                {
-                    id: interaction.guild.id,
-                    deny: ['VIEW_CHANNEL'],
-                },
-                {
-                    id: interaction.user.id,
-                    allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
-                },
-                {
-                    id: 'support-role-id', // ID du rôle support
-                    allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
-                },
-            ],
-        });
-
-        await channel.send({
-            content: `Ticket ouvert par ${interaction.user.tag}. Un membre du support vous répondra dès que possible.`,
-        });
-
-        // Informer l'utilisateur
-        await interaction.reply({
-            content: `Ton ticket a été créé avec succès. Va dans ${channel}.`,
-            ephemeral: true,
-        });
-    }
-});
-
-// Fonction pour vérifier si un ticket existe déjà pour l'utilisateur
-async function checkIfTicketExists(userId) {
-    const channels = await client.guilds.cache
-        .get(process.env.GUILD_ID)
-        .channels.fetch();
-    
-    return channels.some(channel => 
-        channel.name === `ticket-${userId}` && channel.isText();
-    );
 }
 
+// Connexion du bot
 client.login(token);
 
 const http = require("http");
