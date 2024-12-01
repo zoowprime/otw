@@ -1,17 +1,16 @@
 {
   "name": "bot",
   "version": "1.0.0",
-  "description": "Un bot Discord pour QCM et tickets",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js", // Commande pour démarrer le bot
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": ["discord", "bot", "qcm", "tickets"],
-  "author": "Ton nom ou pseudo ici",
+  "keywords": [],
+  "author": "",
   "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.7.1", // Assure-toi que Discord.js est installé
-    "dotenv": "^16.0.3" // Optionnel si tu veux gérer les variables d'environnement localement
+    "discord.js": "^14.11.0",
+    "dotenv": "^16.3.1"
   }
 }
