@@ -206,38 +206,14 @@ function setRetryDelay(playerId) {
     } else if (playerData.attempts === 1) {
         playerData.nextAttempt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 heures
     } else {
-        // Expulser le joueur après 3 échecs
-        const guild = client.guilds.cache.get(guildId); // Utiliser l'ID du serveur principal
-        if (!guild) {
-            console.error("Impossible de trouver le serveur pour expulser le joueur.");
-            return;
-        }
-        const member = guild.members.cache.get(playerId);
-        if (member) {
-            member.kick("Échec du QCM trois fois")
-                .then(() => console.log(`Le membre ${member.user.tag} a été expulsé.`))
-                .catch((error) => console.error(`Erreur lors de l'expulsion : ${error}`));
-        }
+        playerData.nextAttempt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 heures
     }
 }
 
-// Connexion du bot
 client.login(token);
 
-require('dotenv').config(); // Charger les variables d'environnement
-
-// Importer les modules nécessaires
-const {
-    Client,
-    GatewayIntentBits,
-    Partials,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ChannelType,
-    PermissionFlagsBits,
-} = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+require('dotenv').config(); // Charger les variables d'environnement depuis un fichier .env
 
 const client = new Client({
     intents: [
@@ -246,165 +222,93 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
     ],
-    partials: [Partials.Channel],
 });
 
-// Variables d'environnement
-const token = process.env.BOT_TOKEN;
-const ticketChannelId = process.env.TICKET_CHANNEL_ID;
-const supportRoleId = process.env.SUPPORT_ROLE_ID;
+const token = process.env.BOT_TOKEN; // Token du bot
+const supportChannelId = process.env.SUPPORT_CHANNEL_ID; // ID du canal où les tickets seront envoyés
 
-// Quand le bot est prêt
-client.once('ready', async () => {
+// Événement de démarrage du bot
+client.once('ready', () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
+});
 
-    const ticketChannel = client.channels.cache.get(ticketChannelId);
+// Gérer les messages entrants
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return; // Ignorer les messages des autres bots
 
-    if (!ticketChannel) {
-        console.error("Le salon de tickets est introuvable. Vérifiez l'ID dans votre fichier .env.");
-        return;
-    }
+    if (message.content.toLowerCase() === '!ticket') {
+        // Vérifier si l'utilisateur a déjà un ticket ouvert
+        const existingTicket = await checkIfTicketExists(message.author.id);
+        if (existingTicket) {
+            return message.reply("Tu as déjà un ticket ouvert.");
+        }
 
-    // Envoyer un message pour le système de tickets dans le salon
-    const embed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setTitle('Système de tickets')
-        .setDescription('Cliquez sur le bouton ci-dessous pour ouvrir un ticket.')
-        .setFooter({ text: 'Système de support', iconURL: client.user.displayAvatarURL() });
+        // Créer un bouton pour ouvrir un ticket
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('create_ticket')
+                    .setLabel('Ouvrir un ticket')
+                    .setStyle(ButtonStyle.Primary)
+            );
 
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('create_ticket')
-                .setLabel('Créer un ticket')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-    try {
-        await ticketChannel.send({ embeds: [embed], components: [row] });
-    } catch (error) {
-        console.error("Erreur lors de l'envoi du message du système de tickets :", error);
+        await message.reply({
+            content: "Clique sur le bouton ci-dessous pour ouvrir un ticket",
+            components: [row],
+        });
     }
 });
 
-// Gérer les interactions des boutons
+// Gérer l'interaction sur le bouton
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
-    const { customId, guild, user } = interaction;
-
-    if (customId === 'create_ticket') {
-        // Vérifier si l'utilisateur a déjà un ticket ouvert
-        const existingChannel = guild.channels.cache.find(
-            (channel) =>
-                channel.topic === `Ticket de ${user.id}` && channel.type === ChannelType.GuildText
-        );
-
-        if (existingChannel) {
-            return interaction.reply({
-                content: `Tu as déjà un ticket ouvert : ${existingChannel}.`,
-                ephemeral: true,
-            });
-        }
-
-        // Créer le ticket
-        const ticketChannel = await guild.channels.create({
-            name: `ticket-${user.username}`,
-            type: ChannelType.GuildText,
-            topic: `Ticket de ${user.id}`,
-            parent: interaction.channel.parent,
+    if (interaction.customId === 'create_ticket') {
+        // Créer un ticket
+        const ticketCategoryId = process.env.TICKET_CATEGORY_ID; // ID de la catégorie des tickets
+        const channel = await interaction.guild.channels.create({
+            name: `ticket-${interaction.user.username}`,
+            type: 'GUILD_TEXT',
+            parent: ticketCategoryId, // Catégorie des tickets
             permissionOverwrites: [
                 {
-                    id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.ViewChannel],
+                    id: interaction.guild.id,
+                    deny: ['VIEW_CHANNEL'],
                 },
                 {
-                    id: user.id,
-                    allow: [
-                        PermissionFlagsBits.ViewChannel,
-                        PermissionFlagsBits.SendMessages,
-                        PermissionFlagsBits.ReadMessageHistory,
-                    ],
+                    id: interaction.user.id,
+                    allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
                 },
                 {
-                    id: supportRoleId,
-                    allow: [
-                        PermissionFlagsBits.ViewChannel,
-                        PermissionFlagsBits.SendMessages,
-                        PermissionFlagsBits.ReadMessageHistory,
-                    ],
+                    id: 'support-role-id', // ID du rôle support
+                    allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
                 },
             ],
         });
 
-        // Envoyer un message dans le nouveau ticket
-        const embed = new EmbedBuilder()
-            .setColor('#0099ff')
-            .setTitle('Ticket créé')
-            .setDescription(
-                `Bonjour ${user.username}, un membre du support va bientôt te répondre.\nUtilise le bouton ci-dessous pour fermer ce ticket si nécessaire.`
-            )
-            .setFooter({ text: 'Système de support' });
-
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('Fermer le ticket')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-        await ticketChannel.send({ embeds: [embed], components: [row] });
-        interaction.reply({ content: `Ticket créé : ${ticketChannel}`, ephemeral: true });
-    }
-
-    if (customId === 'close_ticket') {
-        // Gérer la fermeture du ticket
-        const channel = interaction.channel;
-
-        if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
-            return interaction.reply({
-                content: 'Ce bouton ne peut être utilisé que dans un ticket.',
-                ephemeral: true,
-            });
-        }
-
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('delete_ticket')
-                    .setLabel('Supprimer le ticket')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-        await interaction.reply({
-            content: 'Le ticket sera fermé dans 5 secondes. Cliquez sur le bouton ci-dessous pour le supprimer.',
-            components: [row],
+        await channel.send({
+            content: `Ticket ouvert par ${interaction.user.tag}. Un membre du support vous répondra dès que possible.`,
         });
 
-        setTimeout(() => {
-            channel.permissionOverwrites.edit(interaction.user.id, {
-                ViewChannel: false,
-            });
-        }, 5000);
-    }
-
-    if (customId === 'delete_ticket') {
-        // Supprimer le ticket
-        const channel = interaction.channel;
-
-        if (channel.type !== ChannelType.GuildText || !channel.topic.startsWith('Ticket de')) {
-            return interaction.reply({
-                content: 'Ce bouton ne peut être utilisé que dans un ticket.',
-                ephemeral: true,
-            });
-        }
-
-        await channel.delete();
+        // Informer l'utilisateur
+        await interaction.reply({
+            content: `Ton ticket a été créé avec succès. Va dans ${channel}.`,
+            ephemeral: true,
+        });
     }
 });
 
-// Connexion du bot
+// Fonction pour vérifier si un ticket existe déjà pour l'utilisateur
+async function checkIfTicketExists(userId) {
+    const channels = await client.guilds.cache
+        .get(process.env.GUILD_ID)
+        .channels.fetch();
+    
+    return channels.some(channel => 
+        channel.name === `ticket-${userId}` && channel.isText();
+    );
+}
+
 client.login(token);
 
 const http = require("http");
