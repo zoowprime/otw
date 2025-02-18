@@ -142,32 +142,35 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // Commande !anonyme
-    if (message.content.startsWith('!anonyme')) {
-        const anonymousMessage = message.content.slice(9).trim(); // Supprime "!anonyme" et récupère le message
-        if (!anonymousMessage) {
-            return message.reply("⚠️ Tu dois écrire un message après `!anonyme`.");
-        }
+    // Récupère l'ID du salon "rumeurs" depuis les variables d'environnement
+const rumorChannelId = process.env.RUMOR_CHANNEL_ID; // Assure-toi que l'ID du salon "rumeurs" est dans le fichier .env
 
-        const guild = client.guilds.cache.get(guildId);
-        if (!guild) {
-            return message.reply("❌ Impossible de trouver le serveur.");
-        }
-
-        const anonymousChannel = guild.channels.cache.get(anonymousChannelId); // Utilisation de l'ID du salon anonyme
-        if (!anonymousChannel) {
-            return message.reply("❌ Le salon anonyme n'existe pas sur ce serveur.");
-        }
-
-        try {
-            await anonymousChannel.send(`📢 **Message anonyme :**\n${anonymousMessage}`);
-            await message.author.send("✅ Ton message anonyme a été envoyé avec succès !");
-        } catch (error) {
-            console.error("❌ Erreur lors de l'envoi du message anonyme :", error);
-            message.reply("⚠️ Une erreur est survenue lors de l'envoi de ton message anonyme.");
-        }
+// Commande !anonyme
+if (message.content.startsWith('!anonyme')) {
+    const anonymousMessage = message.content.slice(9).trim(); // Supprime "!anonyme" et récupère le message
+    if (!anonymousMessage) {
+        return message.reply("⚠️ Tu dois écrire un message après `!anonyme`.");
     }
-});
+
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+        return message.reply("❌ Impossible de trouver le serveur.");
+    }
+
+    // Utilise l'ID du salon "rumeurs"
+    const anonymousChannel = guild.channels.cache.get(rumorChannelId); 
+    if (!anonymousChannel) {
+        return message.reply("❌ Le salon `#rumeurs` n'existe pas sur ce serveur.");
+    }
+
+    try {
+        await anonymousChannel.send(`📢 **Message anonyme :**\n${anonymousMessage}`);
+        await message.author.send("✅ Ton message anonyme a été envoyé avec succès !");
+    } catch (error) {
+        console.error("❌ Erreur lors de l'envoi du message anonyme :", error);
+        message.reply("⚠️ Une erreur est survenue lors de l'envoi de ton message anonyme.");
+    }
+}
 
 // Fonction pour démarrer le QCM
 async function startQCM(user) {
