@@ -1,3 +1,6 @@
+const { Client, GatewayIntentBits } = require('discord.js');
+require('dotenv').config(); // Charger les variables d'environnement
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -12,6 +15,7 @@ const client = new Client({
 const token = process.env.BOT_TOKEN; // Token du bot
 const roleId = process.env.ROLE_ID; // ID du rôle à attribuer
 const guildId = process.env.GUILD_ID; // ID du serveur principal
+const anonymousChannelId = process.env.ANONYMOUS_CHANNEL_ID; // ID du salon anonyme
 
 // Les questions et les réponses du QCM
 const questions = [
@@ -97,7 +101,7 @@ const playerAttempts = {};
 
 // Événement de démarrage du bot
 client.once('ready', () => {
-    console.log(Bot connecté en tant que ${client.user.tag});
+    console.log(`Bot connecté en tant que ${client.user.tag}`);
 });
 
 // Gérer les messages entrants
@@ -118,7 +122,7 @@ client.on('messageCreate', async (message) => {
         // Vérifier si le joueur doit attendre avant de rejouer
         if (playerData.nextAttempt && now < playerData.nextAttempt) {
             const waitTime = Math.ceil((playerData.nextAttempt - now) / 1000 / 60); // en minutes
-            return message.reply(Tu dois attendre encore ${waitTime} minutes avant de rejouer.);
+            return message.reply(`Tu dois attendre encore ${waitTime} minutes avant de rejouer.`);
         }
 
         // Vérifier si le joueur a encore des tentatives
@@ -137,6 +141,32 @@ client.on('messageCreate', async (message) => {
             return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu les as activés.");
         }
     }
+
+    // Commande !anonyme
+    if (message.content.startsWith('!anonyme')) {
+        const anonymousMessage = message.content.slice(9).trim(); // Supprime "!anonyme" et récupère le message
+        if (!anonymousMessage) {
+            return message.reply("⚠️ Tu dois écrire un message après `!anonyme`.");
+        }
+
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            return message.reply("❌ Impossible de trouver le serveur.");
+        }
+
+        const anonymousChannel = guild.channels.cache.get(anonymousChannelId); // Utilisation de l'ID du salon anonyme
+        if (!anonymousChannel) {
+            return message.reply("❌ Le salon anonyme n'existe pas sur ce serveur.");
+        }
+
+        try {
+            await anonymousChannel.send(`📢 **Message anonyme :**\n${anonymousMessage}`);
+            await message.author.send("✅ Ton message anonyme a été envoyé avec succès !");
+        } catch (error) {
+            console.error("❌ Erreur lors de l'envoi du message anonyme :", error);
+            message.reply("⚠️ Une erreur est survenue lors de l'envoi de ton message anonyme.");
+        }
+    }
 });
 
 // Fonction pour démarrer le QCM
@@ -145,7 +175,7 @@ async function startQCM(user) {
 
     for (const [index, q] of questions.entries()) {
         try {
-            const questionText = **Question ${index + 1}**\n${q.question}\n${q.choices.join("\n")}\nRéponds par le numéro de ta réponse.;
+            const questionText = `**Question ${index + 1}**\n${q.question}\n${q.choices.join("\n")}\nRéponds par le numéro de ta réponse.`;
             await user.send(questionText);
 
             const filter = (response) => response.author.id === user.id && !isNaN(response.content);
@@ -171,8 +201,8 @@ async function startQCM(user) {
 
     // Résultat final
     if (score >= 12) {
-        await user.send(Bravo ! Tu as réussi le QCM avec un score de ${score}/15.);
-        
+        await user.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/15.`);
+
         // Ajouter le rôle si le joueur réussit
         const guild = client.guilds.cache.get(guildId); // Utiliser l'ID du serveur principal
         if (!guild) {
@@ -189,7 +219,7 @@ async function startQCM(user) {
             }
         }
     } else {
-        await user.send(Dommage, tu as échoué avec un score de ${score}/15.);
+        await user.send(`Dommage, tu as échoué avec un score de ${score}/15.`);
         setRetryDelay(user.id); // Définir le délai pour retenter
     }
 }
@@ -212,38 +242,11 @@ function setRetryDelay(playerId) {
         const member = guild.members.cache.get(playerId);
         if (member) {
             member.kick("Échec du QCM trois fois")
-                .then(() => console.log(Le membre ${member.user.tag} a été expulsé.))
-                .catch((error) => console.error(Erreur lors de l'expulsion : ${error}));
+                .then(() => console.log(`Le membre ${member.user.tag} a été expulsé.`))
+                .catch((error) => console.error(`Erreur lors de l'expulsion : ${error}`));
         }
     }
 }
-
- // Commande !anonyme
-    if (message.content.startsWith('!anonyme')) {
-        const anonymousMessage = message.content.slice(9).trim(); // Supprime "!anonyme" et récupère le message
-        if (!anonymousMessage) {
-            return message.reply("⚠️ Tu dois écrire un message après `!anonyme`.");
-        }
-
-        const guild = client.guilds.cache.get(guildId);
-        if (!guild) {
-            return message.reply("❌ Impossible de trouver le serveur.");
-        }
-
-        const anonymousChannel = guild.channels.cache.find(channel => channel.name === "anonyme");
-        if (!anonymousChannel) {
-            return message.reply("❌ Le salon `#anonyme` n'existe pas sur ce serveur.");
-        }
-
-        try {
-            await anonymousChannel.send(`📢 **Message anonyme :**\n${anonymousMessage}`);
-            await message.author.send("✅ Ton message anonyme a été envoyé avec succès !");
-        } catch (error) {
-            console.error("❌ Erreur lors de l'envoi du message anonyme :", error);
-            message.reply("⚠️ Une erreur est survenue lors de l'envoi de ton message anonyme.");
-        }
-    }
-});
 
 // Connexion du bot
 client.login(token);
@@ -254,4 +257,3 @@ http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("Bot is running, but no web service is required.");
 }).listen(process.env.PORT || 3000);
-
