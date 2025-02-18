@@ -1,6 +1,3 @@
-require('dotenv').config(); // Charger les variables d'environnement depuis un fichier .env
-const { Client, GatewayIntentBits } = require('discord.js');
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -100,7 +97,7 @@ const playerAttempts = {};
 
 // Événement de démarrage du bot
 client.once('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag}`);
+    console.log(Bot connecté en tant que ${client.user.tag});
 });
 
 // Gérer les messages entrants
@@ -121,7 +118,7 @@ client.on('messageCreate', async (message) => {
         // Vérifier si le joueur doit attendre avant de rejouer
         if (playerData.nextAttempt && now < playerData.nextAttempt) {
             const waitTime = Math.ceil((playerData.nextAttempt - now) / 1000 / 60); // en minutes
-            return message.reply(`Tu dois attendre encore ${waitTime} minutes avant de rejouer.`);
+            return message.reply(Tu dois attendre encore ${waitTime} minutes avant de rejouer.);
         }
 
         // Vérifier si le joueur a encore des tentatives
@@ -148,7 +145,7 @@ async function startQCM(user) {
 
     for (const [index, q] of questions.entries()) {
         try {
-            const questionText = `**Question ${index + 1}**\n${q.question}\n${q.choices.join("\n")}\nRéponds par le numéro de ta réponse.`;
+            const questionText = **Question ${index + 1}**\n${q.question}\n${q.choices.join("\n")}\nRéponds par le numéro de ta réponse.;
             await user.send(questionText);
 
             const filter = (response) => response.author.id === user.id && !isNaN(response.content);
@@ -174,7 +171,7 @@ async function startQCM(user) {
 
     // Résultat final
     if (score >= 12) {
-        await user.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/15.`);
+        await user.send(Bravo ! Tu as réussi le QCM avec un score de ${score}/15.);
         
         // Ajouter le rôle si le joueur réussit
         const guild = client.guilds.cache.get(guildId); // Utiliser l'ID du serveur principal
@@ -192,7 +189,7 @@ async function startQCM(user) {
             }
         }
     } else {
-        await user.send(`Dommage, tu as échoué avec un score de ${score}/15.`);
+        await user.send(Dommage, tu as échoué avec un score de ${score}/15.);
         setRetryDelay(user.id); // Définir le délai pour retenter
     }
 }
@@ -215,76 +212,46 @@ function setRetryDelay(playerId) {
         const member = guild.members.cache.get(playerId);
         if (member) {
             member.kick("Échec du QCM trois fois")
-                .then(() => console.log(`Le membre ${member.user.tag} a été expulsé.`))
-                .catch((error) => console.error(`Erreur lors de l'expulsion : ${error}`));
+                .then(() => console.log(Le membre ${member.user.tag} a été expulsé.))
+                .catch((error) => console.error(Erreur lors de l'expulsion : ${error}));
         }
     }
 }
 
-const { SlashCommandBuilder } = require('discord.js');
-
-// Ajouter la commande anonyme
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === 'anonyme') {
-        const message = interaction.options.getString('message');
-        const anonymousChannelId = process.env.ANONYMOUS_CHANNEL_ID;
-        const channel = client.channels.cache.get(anonymousChannelId);
-
-        if (!channel) {
-            return interaction.reply({ content: "Salon anonyme non trouvé.", ephemeral: true });
+ // Commande !anonyme
+    if (message.content.startsWith('!anonyme')) {
+        const anonymousMessage = message.content.slice(9).trim(); // Supprime "!anonyme" et récupère le message
+        if (!anonymousMessage) {
+            return message.reply("⚠️ Tu dois écrire un message après `!anonyme`.");
         }
 
-        await channel.send(`📩 **Message anonyme** : ${message}`);
-        await interaction.reply({ content: "Votre message a été envoyé anonymement ✅", ephemeral: true });
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            return message.reply("❌ Impossible de trouver le serveur.");
+        }
+
+        const anonymousChannel = guild.channels.cache.find(channel => channel.name === "anonyme");
+        if (!anonymousChannel) {
+            return message.reply("❌ Le salon `#anonyme` n'existe pas sur ce serveur.");
+        }
+
+        try {
+            await anonymousChannel.send(`📢 **Message anonyme :**\n${anonymousMessage}`);
+            await message.author.send("✅ Ton message anonyme a été envoyé avec succès !");
+        } catch (error) {
+            console.error("❌ Erreur lors de l'envoi du message anonyme :", error);
+            message.reply("⚠️ Une erreur est survenue lors de l'envoi de ton message anonyme.");
+        }
     }
 });
-
-// Enregistrer la commande anonyme (à exécuter une seule fois)
-async function registerCommands() {
-    const guildId = process.env.GUILD_ID;
-    const guild = client.guilds.cache.get(guildId);
-    
-    if (!guild) {
-        console.error("Impossible de trouver le serveur pour enregistrer la commande.");
-        return;
-    }
-
-    await guild.commands.create(new SlashCommandBuilder()
-        .setName('anonyme')
-        .setDescription("Envoyer un message anonyme dans un salon spécifique.")
-        .addStringOption(option =>
-            option.setName('message')
-                .setDescription("Le message à envoyer anonymement")
-                .setRequired(true))
-    );
-
-    console.log("✅ Commande /anonyme enregistrée !");
-}
-
-client.once('ready', () => {
-    registerCommands();
-});
-
 
 // Connexion du bot
-client.login(process.env.TOKEN);
+client.login(token);
 
-client.once('ready', async () => {
-    console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
+const http = require("http");
 
-    const guildId = process.env.GUILD_ID;
-    console.log(`🔎 ID du serveur récupéré : ${guildId}`);
-
-    const guild = client.guilds.cache.get(guildId);
-
-    if (!guild) {
-        console.error("❌ Impossible de trouver le serveur pour enregistrer la commande.");
-        return;
-    }
-
-    console.log(`📌 Enregistrement des commandes sur : ${guild.name}`);
-});
-
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Bot is running, but no web service is required.");
+}).listen(process.env.PORT || 3000);
 
