@@ -221,21 +221,52 @@ function setRetryDelay(playerId) {
     }
 }
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isCommand()) return;
+const { SlashCommandBuilder } = require('discord.js');
+
+// Ajouter la commande anonyme
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'anonyme') {
         const message = interaction.options.getString('message');
-        const channel = client.channels.cache.get(process.env.ANONYMOUS_CHANNEL_ID);
+        const anonymousChannelId = process.env.ANONYMOUS_CHANNEL_ID;
+        const channel = client.channels.cache.get(anonymousChannelId);
 
         if (!channel) {
-            return interaction.reply({ content: "Salon anonyme introuvable.", ephemeral: true });
+            return interaction.reply({ content: "Salon anonyme non trouvé.", ephemeral: true });
         }
 
-        await channel.send(`Message anonyme : ${message}`);
-        await interaction.reply({ content: "Votre message a été envoyé anonymement.", ephemeral: true });
+        await channel.send(`📩 **Message anonyme** : ${message}`);
+        await interaction.reply({ content: "Votre message a été envoyé anonymement ✅", ephemeral: true });
     }
 });
+
+// Enregistrer la commande anonyme (à exécuter une seule fois)
+async function registerCommands() {
+    const guildId = process.env.GUILD_ID;
+    const guild = client.guilds.cache.get(guildId);
+    
+    if (!guild) {
+        console.error("Impossible de trouver le serveur pour enregistrer la commande.");
+        return;
+    }
+
+    await guild.commands.create(new SlashCommandBuilder()
+        .setName('anonyme')
+        .setDescription("Envoyer un message anonyme dans un salon spécifique.")
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription("Le message à envoyer anonymement")
+                .setRequired(true))
+    );
+
+    console.log("✅ Commande /anonyme enregistrée !");
+}
+
+client.once('ready', () => {
+    registerCommands();
+});
+
 
 // Connexion du bot
 client.login(token);
