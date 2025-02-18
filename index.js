@@ -269,12 +269,22 @@ client.once('ready', () => {
 
 
 // Connexion du bot
-client.login(token);
+client.login(process.env.TOKEN);
 
-const http = require("http");
+client.once('ready', async () => {
+    console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
 
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("Bot is running, but no web service is required.");
-}).listen(process.env.PORT || 3000);
+    const guildId = process.env.GUILD_ID;
+    console.log(`🔎 ID du serveur récupéré : ${guildId}`);
+
+    const guild = client.guilds.cache.get(guildId);
+
+    if (!guild) {
+        console.error("❌ Impossible de trouver le serveur pour enregistrer la commande.");
+        return;
+    }
+
+    console.log(`📌 Enregistrement des commandes sur : ${guild.name}`);
+});
+
 
