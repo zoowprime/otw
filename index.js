@@ -221,6 +221,22 @@ function setRetryDelay(playerId) {
     }
 }
 
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    if (interaction.commandName === 'anonyme') {
+        const message = interaction.options.getString('message');
+        const channel = client.channels.cache.get(process.env.ANONYMOUS_CHANNEL_ID);
+
+        if (!channel) {
+            return interaction.reply({ content: "Salon anonyme introuvable.", ephemeral: true });
+        }
+
+        await channel.send(`Message anonyme : ${message}`);
+        await interaction.reply({ content: "Votre message a été envoyé anonymement.", ephemeral: true });
+    }
+});
+
 // Connexion du bot
 client.login(token);
 
