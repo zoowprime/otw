@@ -1,16 +1,13 @@
 {
-  "name": "bot",
+  "name": "discord-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Bot Discord gérant un QCM et un système de messages anonymes.",
+  "main": "src/bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node src/bot.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.11.0",
-    "dotenv": "^16.3.1"
+    "discord.js": "^14.0.3",
+    "dotenv": "^16.0.3"
   }
 }
