@@ -78,9 +78,15 @@ const questions = [
 ];
 
 async function handleQCM(client, message) {
-    // Supprimer le message de commande public pour préserver l'anonymat
-    if (message.guild) {
-        await message.delete().catch(err => console.error("Erreur lors de la suppression du message de commande:", err));
+    console.log(`Commande QCM reçue de ${message.author.tag} dans ${message.channel.id}`);
+
+    // Supprimer le message de commande public s'il est supprimable
+    if (message.guild && message.deletable) {
+        try {
+            await message.delete();
+        } catch (err) {
+            console.error("Erreur lors de la suppression du message de commande:", err);
+        }
     }
 
     // Ouvrir un DM avec l'utilisateur
@@ -91,14 +97,17 @@ async function handleQCM(client, message) {
         return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu les as activés.");
     }
 
+    // Informer en DM et lancer le quiz
+    await dmChannel.send("Bienvenue dans le QCM ! Prépare-toi à répondre à 15 questions.");
+
     let score = 0;
     const total = questions.length;
     const filter = m => m.author.id === message.author.id;
 
-    // Envoi du quiz en DM (une seule fois)
     for (let i = 0; i < total; i++) {
         const q = questions[i];
-        const questionText = `**Question ${i + 1}/${total} :** ${q.question}\n${q.choices.join("\n")}\nRéponds avec le numéro de la réponse.`;
+        const questionText = `**Question ${i + 1}/${total} :** ${q.question}\n${q.choices.join("\n")}\nRéponds avec le numéro de ta réponse.`;
+
         await dmChannel.send(questionText);
 
         try {
@@ -120,11 +129,11 @@ async function handleQCM(client, message) {
         }
     }
 
-    // Vérification du score et attribution du rôle en cas de réussite
+    // Fin du QCM : vérification du score et attribution du rôle si le score est suffisant
     if (score >= 12) {
         await dmChannel.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/${total}.`);
-        try {
-            if (message.guild) {
+        if (message.guild) {
+            try {
                 const member = await message.guild.members.fetch(message.author.id);
                 const roleId = process.env.ROLE_ID;
                 if (roleId) {
@@ -133,12 +142,10 @@ async function handleQCM(client, message) {
                 } else {
                     await dmChannel.send("❌ Le rôle n'a pas été attribué car l'ID du rôle n'est pas configuré.");
                 }
-            } else {
-                await dmChannel.send("❌ Impossible d'attribuer le rôle car le serveur n'a pas été trouvé.");
+            } catch (error) {
+                console.error("Erreur lors de l'attribution du rôle :", error);
+                await dmChannel.send("❌ Une erreur s'est produite lors de l'attribution du rôle.");
             }
-        } catch (error) {
-            console.error("Erreur lors de l'attribution du rôle :", error);
-            await dmChannel.send("❌ Une erreur s'est produite lors de l'attribution du rôle.");
         }
     } else {
         await dmChannel.send(`Désolé, tu as échoué le QCM avec un score de ${score}/${total}.`);
