@@ -6,17 +6,16 @@ const path = require('path');
 
 // Import du module ticket pour envoyer automatiquement le panel
 const ticketSystem = require('./ticket.js');
-
-// Import du module pour les commandes économiques (mode texte)
+// Import du module pour les commandes économiques (texte)
 const { handleEconomyCommand } = require('./economy');
 
-// Création du client Discord avec les intents requis
+// Création du client Discord avec les intents nécessaires
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds,            
-    GatewayIntentBits.GuildMessages,     
-    GatewayIntentBits.MessageContent,    
-    GatewayIntentBits.GuildMembers,      
+    GatewayIntentBits.Guilds,            // pour accéder aux serveurs
+    GatewayIntentBits.GuildMessages,     // pour recevoir les messages dans les serveurs
+    GatewayIntentBits.MessageContent,    // pour lire le contenu des messages
+    GatewayIntentBits.GuildMembers,      // pour gérer les rôles et membres
   ]
 });
 
@@ -24,6 +23,7 @@ const client = new Client({
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
   if ('data' in command && 'execute' in command) {
@@ -31,20 +31,19 @@ for (const file of commandFiles) {
   }
 }
 
-// Set pour éviter le traitement en double des commandes texte
+// Set pour éviter de traiter plusieurs fois le même message texte
 const processedMessageIds = new Set();
 
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
-  // Envoi automatique du panel de ticket dans le salon dédié
-  // Ici, on utilise l'ID de salon donné : 1308118937904480318
-  const panelChannelId = "1308118937904480318";
+  // Envoi automatique du panel de ticket dans le canal dédié
+  const panelChannelId = "1308118937904480318"; // ID du salon dédié au panel de ticket
   try {
     const panelChannel = await client.channels.fetch(panelChannelId);
     if (panelChannel && ticketSystem && typeof ticketSystem(client).sendTicketPanel === 'function') {
       ticketSystem(client).sendTicketPanel(panelChannel);
-      console.log("Panel de ticket envoyé dans le salon dédié.");
+      console.log("Panel de ticket envoyé dans le canal dédié.");
     } else {
       console.error("Le canal pour le panel de ticket est introuvable ou le module ticket est mal configuré.");
     }
@@ -54,7 +53,7 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  // Gestion des commandes slash (ex: /anonymous)
+  // Gestion des commandes slash
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -65,9 +64,9 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ content: 'Une erreur est survenue lors de l\'exécution de la commande.', ephemeral: true });
     }
   }
-  // Gérer ici d'autres interactions (ex: select menus, modals pour les stocks, etc.)
+  // Gestion des autres interactions (select menus, modals, etc.)
   else {
-    // Vous pouvez ajouter votre gestionnaire d'interactions personnalisé ici
+    // Exemple : gestion des interactions pour le stock (voir fichier interaction/stockInteraction.js)
     const { handleStockInteractions } = require('./interaction/stockInteraction');
     if (handleStockInteractions) {
       await handleStockInteractions(interaction);
@@ -75,16 +74,17 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Gestion des commandes texte (économiques)
+// Gestion des commandes texte pour l'économie (préfixées par "!")
 client.on('messageCreate', async (message) => {
-  // Ignorer les messages des bots ou hors serveur (DM)
+  // Ignorer les messages des bots et hors serveur (DM)
   if (message.author.bot || !message.guild) return;
+
+  // Vérifier si ce message a déjà été traité
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
   console.log(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
 
-  // Ici, on considère que toutes les commandes texte commencent par "!"
-  // La commande slash "anonymous" n'est plus gérée ici
+  // On considère que toutes les commandes texte commencent par "!"
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
   }
