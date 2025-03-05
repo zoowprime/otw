@@ -1,3 +1,4 @@
+// qcm.js
 const questions = [
     {
         question: "Qui a découvert l'île Bellshore ?",
@@ -76,4 +77,41 @@ const questions = [
     },
 ];
 
-module.exports = questions;
+async function handleQCM(client, message) {
+    // On s'assure que la commande est utilisée dans un serveur
+    if (!message.guild) {
+        return message.reply("Cette commande ne peut être utilisée que dans un serveur.");
+    }
+
+    let score = 0;
+    const total = questions.length;
+    const filter = m => m.author.id === message.author.id;
+
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        const questionText = `**Question ${i + 1}/${total} :** ${q.question}\n${q.choices.join("\n")}\nRéponds avec le numéro de la réponse.`;
+        await message.channel.send(questionText);
+
+        try {
+            const collected = await message.channel.awaitMessages({
+                filter,
+                max: 1,
+                time: 30000,
+                errors: ['time']
+            });
+            const response = collected.first().content.trim();
+            if (parseInt(response) === q.correct) {
+                score++;
+                await message.channel.send("✅ Correct !");
+            } else {
+                await message.channel.send(`❌ Incorrect. La bonne réponse était: ${q.correct}`);
+            }
+        } catch (error) {
+            await message.channel.send("⏰ Temps écoulé pour cette question !");
+        }
+    }
+
+    await message.channel.send(`Bravo ! Tu as terminé le QCM avec un score de ${score}/${total}.`);
+}
+
+module.exports = { handleQCM, questions };
