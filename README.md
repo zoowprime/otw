@@ -1,6 +1,6 @@
-# Bot Discord - QCM et Messages Anonymes
+# Bot Discord - OTW
 
-Ce bot Discord permet d'envoyer des QCM en privé aux utilisateurs et d'envoyer des messages anonymes dans un salon spécifique.
+Ce bot Discord permet d'ouvrir d'envoyer des messages anonymes dans un salon spécifique et bien d'autres choses.
 
 ## 📌 Installation
 
