@@ -80,12 +80,14 @@ const questions = [
 async function handleQCM(client, message) {
   console.log(`Commande QCM reçue de ${message.author.tag} dans ${message.channel.id}`);
 
-  // Supprimer le message de commande public (s'il est supprimable)
+  // Supprimer le message de commande public s'il est supprimable
   if (message.deletable) {
     try {
       await message.delete();
     } catch (err) {
-      console.error("Erreur lors de la suppression du message de commande:", err);
+      if (err.code !== 10008) { // 10008 = Unknown Message
+        console.error("Erreur lors de la suppression du message de commande:", err);
+      }
     }
   }
 
@@ -94,10 +96,10 @@ async function handleQCM(client, message) {
   try {
     dmChannel = await message.author.createDM();
   } catch (err) {
-    return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu les as activés.");
+    return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu as activé les DM.");
   }
 
-  // Envoyer une seule fois le message de bienvenue et le nombre de questions
+  // Envoyer le message de bienvenue une seule fois en DM
   await dmChannel.send("Bienvenue dans le QCM ! Prépare-toi à répondre à 15 questions.");
 
   let score = 0;
@@ -143,7 +145,7 @@ async function handleQCM(client, message) {
           await dmChannel.send("❌ Le rôle n'a pas été attribué car l'ID du rôle n'est pas configuré.");
         }
       } catch (error) {
-        console.error("Erreur lors de l'attribution du rôle :", error);
+        console.error("Erreur lors de l'attribution du rôle:", error);
         await dmChannel.send("❌ Une erreur s'est produite lors de l'attribution du rôle.");
       }
     }
