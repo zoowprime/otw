@@ -85,7 +85,7 @@ async function handleQCM(client, message) {
     try {
       await message.delete();
     } catch (err) {
-      if (err.code !== 10008) { // 10008 = Unknown Message
+      if (err.code !== 10008) { // Ignorer l'erreur "Unknown Message"
         console.error("Erreur lors de la suppression du message de commande:", err);
       }
     }
@@ -99,7 +99,7 @@ async function handleQCM(client, message) {
     return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu as activé les DM.");
   }
 
-  // Envoyer le message de bienvenue une seule fois en DM
+  // Envoyer une seule fois le message de bienvenue en DM
   await dmChannel.send("Bienvenue dans le QCM ! Prépare-toi à répondre à 15 questions.");
 
   let score = 0;
@@ -131,7 +131,7 @@ async function handleQCM(client, message) {
     }
   }
 
-  // Vérifier le score et attribuer le rôle si le score est suffisant (>= 12)
+  // Évaluation finale et attribution du rôle si le score est suffisant (>= 12)
   if (score >= 12) {
     await dmChannel.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/${total}.`);
     if (message.guild) {
