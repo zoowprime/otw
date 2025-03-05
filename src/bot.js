@@ -8,7 +8,6 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        // Ajoutez GuildMembers si vous en avez besoin pour l'attribution de rôle
         GatewayIntentBits.GuildMembers,
     ]
 });
@@ -17,13 +16,21 @@ client.once('ready', () => {
     console.log(`✅ Connecté en tant que ${client.user.tag}`);
 });
 
+// Un seul listener pour éviter les doublons
 client.on('messageCreate', async (message) => {
-    if (message.author.bot) return; // Ignorer les messages des bots
+    // Ignorer les messages provenant des bots
+    if (message.author.bot) return;
 
+    // Commande QCM
     if (message.content.startsWith('!qcm')) {
-         qcm.handleQCM(client, message);
-    } else if (message.content.startsWith('!anonymous')) {
-         anonymous.handleAnonymous(message);
+         await qcm.handleQCM(client, message);
+         return;
+    }
+    
+    // Commande anonyme
+    if (message.content.startsWith('!anonymous')) {
+         await anonymous.handleAnonymous(message);
+         return;
     }
 });
 
