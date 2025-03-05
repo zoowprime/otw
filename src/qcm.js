@@ -78,12 +78,12 @@ const questions = [
 ];
 
 async function handleQCM(client, message) {
-    // Optionnel : supprimer le message de commande dans le salon public pour préserver l'anonymat
+    // Supprimer le message de commande public pour préserver l'anonymat
     if (message.guild) {
-        message.delete().catch(err => console.error("Erreur lors de la suppression du message de commande :", err));
+        await message.delete().catch(err => console.error("Erreur lors de la suppression du message de commande:", err));
     }
 
-    // Essayer d'ouvrir un DM avec l'auteur
+    // Ouvrir un DM avec l'utilisateur
     let dmChannel;
     try {
         dmChannel = await message.author.createDM();
@@ -95,11 +95,10 @@ async function handleQCM(client, message) {
     const total = questions.length;
     const filter = m => m.author.id === message.author.id;
 
-    // Boucle sur chaque question en DM
-    for (let i = 0; i < questions.length; i++) {
+    // Envoi du quiz en DM (une seule fois)
+    for (let i = 0; i < total; i++) {
         const q = questions[i];
         const questionText = `**Question ${i + 1}/${total} :** ${q.question}\n${q.choices.join("\n")}\nRéponds avec le numéro de la réponse.`;
-
         await dmChannel.send(questionText);
 
         try {
@@ -121,7 +120,29 @@ async function handleQCM(client, message) {
         }
     }
 
-    await dmChannel.send(`Bravo ! Tu as terminé le QCM avec un score de ${score}/${total}.`);
+    // Vérification du score et attribution du rôle en cas de réussite
+    if (score >= 12) {
+        await dmChannel.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/${total}.`);
+        try {
+            if (message.guild) {
+                const member = await message.guild.members.fetch(message.author.id);
+                const roleId = process.env.ROLE_ID;
+                if (roleId) {
+                    await member.roles.add(roleId);
+                    await dmChannel.send("✅ Le rôle a été attribué !");
+                } else {
+                    await dmChannel.send("❌ Le rôle n'a pas été attribué car l'ID du rôle n'est pas configuré.");
+                }
+            } else {
+                await dmChannel.send("❌ Impossible d'attribuer le rôle car le serveur n'a pas été trouvé.");
+            }
+        } catch (error) {
+            console.error("Erreur lors de l'attribution du rôle :", error);
+            await dmChannel.send("❌ Une erreur s'est produite lors de l'attribution du rôle.");
+        }
+    } else {
+        await dmChannel.send(`Désolé, tu as échoué le QCM avec un score de ${score}/${total}.`);
+    }
 }
 
 module.exports = { handleQCM, questions };
