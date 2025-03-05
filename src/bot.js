@@ -20,7 +20,7 @@ client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
   // Initialisation du système de ticket et envoi du panel dans un canal spécifique
-  const panelChannelId = 1308118937904480318; // Remplacez par l'ID réel du canal destiné au panel de ticket
+  const panelChannelId = "1308118937904480318"; // Remplacez par l'ID réel du canal destiné au panel de ticket
   let panelChannel;
   try {
     panelChannel = await client.channels.fetch(panelChannelId);
