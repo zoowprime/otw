@@ -80,12 +80,12 @@ const questions = [
 async function handleQCM(client, message) {
   console.log(`Commande QCM reçue de ${message.author.tag} dans ${message.channel.id}`);
 
-  // Supprimer le message de commande public s'il est supprimable
+  // Supprimer le message de commande public (s'il est supprimable)
   if (message.deletable) {
     try {
       await message.delete();
     } catch (err) {
-      if (err.code !== 10008) { // Ignorer l'erreur "Unknown Message"
+      if (err.code !== 10008) {
         console.error("Erreur lors de la suppression du message de commande:", err);
       }
     }
@@ -99,7 +99,7 @@ async function handleQCM(client, message) {
     return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu as activé les DM.");
   }
 
-  // Envoyer une seule fois le message de bienvenue en DM
+  // Envoyer le message de bienvenue une seule fois en DM
   await dmChannel.send("Bienvenue dans le QCM ! Prépare-toi à répondre à 15 questions.");
 
   let score = 0;
@@ -131,12 +131,15 @@ async function handleQCM(client, message) {
     }
   }
 
-  // Évaluation finale et attribution du rôle si le score est suffisant (>= 12)
+  // Évaluation finale
   if (score >= 12) {
     await dmChannel.send(`Bravo ! Tu as réussi le QCM avec un score de ${score}/${total}.`);
-    if (message.guild) {
+
+    // Tenter de récupérer la guilde à partir de message.guild ou via l'ID configuré
+    let guild = message.guild || client.guilds.cache.get(process.env.GUILD_ID);
+    if (guild) {
       try {
-        const member = await message.guild.members.fetch(message.author.id);
+        const member = await guild.members.fetch(message.author.id);
         const roleId = process.env.ROLE_ID;
         if (roleId) {
           await member.roles.add(roleId);
@@ -148,6 +151,8 @@ async function handleQCM(client, message) {
         console.error("Erreur lors de l'attribution du rôle:", error);
         await dmChannel.send("❌ Une erreur s'est produite lors de l'attribution du rôle.");
       }
+    } else {
+      await dmChannel.send("Impossible de trouver le serveur. Vérifie l'ID.");
     }
   } else {
     await dmChannel.send(`Désolé, tu as échoué le QCM avec un score de ${score}/${total}.`);
