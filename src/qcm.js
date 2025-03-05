@@ -78,22 +78,32 @@ const questions = [
 ];
 
 async function handleQCM(client, message) {
-    // On s'assure que la commande est utilisée dans un serveur
-    if (!message.guild) {
-        return message.reply("Cette commande ne peut être utilisée que dans un serveur.");
+    // Optionnel : supprimer le message de commande dans le salon public pour préserver l'anonymat
+    if (message.guild) {
+        message.delete().catch(err => console.error("Erreur lors de la suppression du message de commande :", err));
+    }
+
+    // Essayer d'ouvrir un DM avec l'auteur
+    let dmChannel;
+    try {
+        dmChannel = await message.author.createDM();
+    } catch (err) {
+        return message.reply("Je n’ai pas pu t’envoyer de message privé. Vérifie que tu les as activés.");
     }
 
     let score = 0;
     const total = questions.length;
     const filter = m => m.author.id === message.author.id;
 
+    // Boucle sur chaque question en DM
     for (let i = 0; i < questions.length; i++) {
         const q = questions[i];
         const questionText = `**Question ${i + 1}/${total} :** ${q.question}\n${q.choices.join("\n")}\nRéponds avec le numéro de la réponse.`;
-        await message.channel.send(questionText);
+
+        await dmChannel.send(questionText);
 
         try {
-            const collected = await message.channel.awaitMessages({
+            const collected = await dmChannel.awaitMessages({
                 filter,
                 max: 1,
                 time: 30000,
@@ -102,16 +112,16 @@ async function handleQCM(client, message) {
             const response = collected.first().content.trim();
             if (parseInt(response) === q.correct) {
                 score++;
-                await message.channel.send("✅ Correct !");
+                await dmChannel.send("✅ Correct !");
             } else {
-                await message.channel.send(`❌ Incorrect. La bonne réponse était: ${q.correct}`);
+                await dmChannel.send(`❌ Incorrect. La bonne réponse était: ${q.correct}`);
             }
         } catch (error) {
-            await message.channel.send("⏰ Temps écoulé pour cette question !");
+            await dmChannel.send("⏰ Temps écoulé pour cette question !");
         }
     }
 
-    await message.channel.send(`Bravo ! Tu as terminé le QCM avec un score de ${score}/${total}.`);
+    await dmChannel.send(`Bravo ! Tu as terminé le QCM avec un score de ${score}/${total}.`);
 }
 
 module.exports = { handleQCM, questions };
