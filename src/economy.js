@@ -21,6 +21,20 @@ function hasRole(member, roleId) {
   return member.roles.cache.has(roleId);
 }
 
+// Liste des items disponibles avec leur prix unitaire (en dollars)
+const availableItems = {
+  "cattleman_revolver": 18.50,
+  "navy_revolver": 18.00,
+  "double_action_revolver": 19.00,
+  "schofield_revolver": 20.50,
+  "lemat_revolver": 25.25,
+  "volcanic_pistol": 18.50,
+  "litchfield_rifle": 26.25,
+  "evans_rifle": 32.25,
+  "lancaster_rifle": 32.25,
+  // Vous pouvez ajouter d'autres items ici...
+};
+
 // Helper : Crée un embed rouge avec une description
 const embedReply = (description) => new EmbedBuilder().setColor(0xff0000).setDescription(description);
 
@@ -29,17 +43,15 @@ async function handleEconomyCommand(message) {
   const command = args.shift().toLowerCase();
 
   switch (command) {
-    // ==================== NOUVELLE COMMANDE ====================
-    case "compte": {
-      // Récupère ou crée le compte de l'utilisateur
-      const account = getOrCreateAccount(message.author.id);
 
-      // Définition des montants
+    // ====================================
+    // Nouvelle commande : !compte
+    // ====================================
+    case "compte": {
+      const account = getOrCreateAccount(message.author.id);
       const liquide = account.courant;
       const banque = account.epargne + account.investissement;
       const total = liquide + banque;
-
-      // Construction de l'embed
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
         .setTitle("Informations de votre compte")
@@ -48,11 +60,12 @@ async function handleEconomyCommand(message) {
           `**Argent en banque :** $${banque.toFixed(2)}\n` +
           `**Total :** $${total.toFixed(2)}`
         );
-
       return message.reply({ embeds: [embed] });
     }
-    // ==================== FIN NOUVELLE COMMANDE ====================
 
+    // ====================================
+    // Commandes réservées aux banquiers
+    // ====================================
     case "ajouterargent": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID)) {
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
@@ -82,37 +95,6 @@ async function handleEconomyCommand(message) {
       }
     }
 
-    case "solde": {
-      if (args.length < 1) return message.reply({ embeds: [embedReply("Usage: !solde [type]")] });
-      const type = args[0].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined) return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      return message.reply({ embeds: [embedReply(`Votre solde pour le compte ${type} est $${account[type].toFixed(2)}.`)] });
-    }
-
-    case "déposer": {
-      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !déposer [montant] [type]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const type = args[1].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined) return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      account[type] += amount;
-      return message.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} sur votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
-    }
-
-    case "retirer": {
-      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !retirer [montant] [type]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const type = args[1].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined) return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      if (account[type] < amount) return message.reply({ embeds: [embedReply("Fonds insuffisants.")] });
-      account[type] -= amount;
-      return message.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} de votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
-    }
-
     case "transférer": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID)) {
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
@@ -134,64 +116,90 @@ async function handleEconomyCommand(message) {
       return message.reply({ embeds: [embedReply(`Transfert de $${amount.toFixed(2)} de votre compte ${type} vers ${target.user.tag} effectué.`)] });
     }
 
-    case "investir": {
-      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !investir [montant] [entreprise]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const entreprise = args.slice(1).join(" ");
-      return message.reply({ embeds: [embedReply(`Vous avez investi $${amount.toFixed(2)} dans ${entreprise}.`)] });
+    case "emprunter": {
+      if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID)) {
+        return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
+      }
+      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !emprunter [montant] [durée]")] });
+      const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(montant)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const duree = args[1];
+      return message.reply({ embeds: [embedReply(`Emprunt de $${montant.toFixed(2)} pour une durée de ${duree} accepté.`)] });
     }
 
-    case "acheterpart": {
-      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !acheterpart [montant] [entreprise]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const entreprise = args.slice(1).join(" ");
-      return message.reply({ embeds: [embedReply(`Vous avez acheté des parts pour $${amount.toFixed(2)} dans ${entreprise}.`)] });
+    case "contrat": {
+      if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID)) {
+        return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
+      }
+      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !contrat [type] [détails]")] });
+      const type = args[0];
+      const details = args.slice(1).join(" ");
+      return message.reply({ embeds: [embedReply(`Contrat de type ${type} créé avec les détails: ${details}.`)] });
     }
 
-    case "achetermaison": {
-      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !achetermaison [prix] [adresse]")] });
-      const prix = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(prix)) return message.reply({ embeds: [embedReply("Prix invalide.")] });
-      const adresse = args.slice(1).join(" ");
-      return message.reply({ embeds: [embedReply(`Maison achetée à ${adresse} pour $${prix.toFixed(2)}.`)] });
+    case "remboursement": {
+      if (args.length < 2) return message.reply({ embeds: [embedReply("Usage: !remboursement [montant] [emprunt]")] });
+      const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(montant)) return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const emprunt = args[1];
+      return message.reply({ embeds: [embedReply(`Vous avez remboursé $${montant.toFixed(2)} pour l'emprunt ${emprunt}.`)] });
     }
 
-    case "acheterproduit": {
-      if (args.length < 3) return message.reply({ embeds: [embedReply("Usage: !acheterproduit [produit] [quantité] [prix]")] });
-      const produit = args[0];
-      const quantite = parseFloat(args[1]);
-      const prix = parseFloat(args[2].replace('$', '').replace(',', '.'));
-      if (isNaN(quantite) || isNaN(prix)) return message.reply({ embeds: [embedReply("Quantité ou prix invalide.")] });
-      return message.reply({ embeds: [embedReply(`Vous avez acheté ${quantite} ${produit} pour $${prix.toFixed(2)}.`)] });
+    // ====================================
+    // Commandes de gestion des stocks
+    // ====================================
+    case "ajouterstock": {
+      // Si aucun argument ou insuffisants, affiche la liste des items disponibles
+      if (args.length < 2) {
+        let list = "Items disponibles à commander:\n";
+        for (const [key, price] of Object.entries(availableItems)) {
+          list += `**${key}**: $${price.toFixed(2)}\n`;
+        }
+        return message.reply({ embeds: [embedReply(list)] });
+      }
+      const itemType = args[0].toLowerCase();
+      const quantity = parseFloat(args[1]);
+      if (isNaN(quantity) || quantity <= 0) return message.reply({ embeds: [embedReply("Quantité invalide.")] });
+      if (!availableItems[itemType]) {
+        // Item non valide, afficher la liste
+        let list = "Item non valide. Items disponibles:\n";
+        for (const [key, price] of Object.entries(availableItems)) {
+          list += `**${key}**: $${price.toFixed(2)}\n`;
+        }
+        return message.reply({ embeds: [embedReply(list)] });
+      }
+      const pricePerUnit = availableItems[itemType];
+      const totalPrice = pricePerUnit * quantity;
+      // Vérifier les fonds du joueur (argent liquide dans "courant")
+      const account = getOrCreateAccount(message.author.id);
+      if (account.courant < totalPrice) {
+        return message.reply({ embeds: [embedReply(`Fonds insuffisants. Vous avez $${account.courant.toFixed(2)}, besoin de $${totalPrice.toFixed(2)}.`)] });
+      }
+      // Déduire l'argent du joueur
+      account.courant -= totalPrice;
+      // Ajouter l'argent à l'usine de production
+      const factoryAccount = getOrCreateAccount(process.env.USINE_PRODUCTION_ID);
+      factoryAccount.courant += totalPrice;
+      // Mettre à jour le stock global
+      if (!global.stockData) global.stockData = {};
+      if (!global.stockData[itemType]) global.stockData[itemType] = { quantite: 0, prixtotal: 0 };
+      global.stockData[itemType].quantite += quantity;
+      global.stockData[itemType].prixtotal += totalPrice;
+      return message.reply({ embeds: [embedReply(`Ajouté ${quantity} de ${itemType} pour un total de $${totalPrice.toFixed(2)}. L'argent a été retiré de votre compte et crédité à l'usine de production.`)] });
     }
 
     case "vendrestock": {
       if (args.length < 3) return message.reply({ embeds: [embedReply("Usage: !vendrestock [type] [quantité] [prixtotal]")] });
-      const type = args[0];
-      const quantite = parseFloat(args[1]);
+      const itemType = args[0].toLowerCase();
+      const quantity = parseFloat(args[1]);
       const prixtotal = parseFloat(args[2].replace('$', '').replace(',', '.'));
-      if (isNaN(quantite) || isNaN(prixtotal)) return message.reply({ embeds: [embedReply("Quantité ou prix total invalide.")] });
-      if (!global.stockData || !global.stockData[type] || global.stockData[type].quantite < quantite) {
-        return message.reply({ embeds: [embedReply(`Stock insuffisant pour ${type}.`)] });
+      if (isNaN(quantity) || isNaN(prixtotal)) return message.reply({ embeds: [embedReply("Quantité ou prix total invalide.")] });
+      if (!global.stockData || !global.stockData[itemType] || global.stockData[itemType].quantite < quantity) {
+        return message.reply({ embeds: [embedReply(`Stock insuffisant pour ${itemType}.`)] });
       }
-      global.stockData[type].quantite -= quantite;
-      global.stockData[type].prixtotal -= prixtotal;
-      return message.reply({ embeds: [embedReply(`Vous avez vendu ${quantite} de ${type} pour un total de $${prixtotal.toFixed(2)}.`)] });
-    }
-
-    case "ajouterstock": {
-      if (args.length < 3) return message.reply({ embeds: [embedReply("Usage: !ajouterstock [type] [quantité] [prixtotal]")] });
-      const type = args[0];
-      const quantite = parseFloat(args[1]);
-      const prixtotal = parseFloat(args[2].replace('$', '').replace(',', '.'));
-      if (isNaN(quantite) || isNaN(prixtotal)) return message.reply({ embeds: [embedReply("Quantité ou prix total invalide.")] });
-      if (!global.stockData) global.stockData = {};
-      if (!global.stockData[type]) global.stockData[type] = { quantite: 0, prixtotal: 0 };
-      global.stockData[type].quantite += quantite;
-      global.stockData[type].prixtotal += prixtotal;
-      return message.reply({ embeds: [embedReply(`Ajouté ${quantite} de ${type} pour un total de $${prixtotal.toFixed(2)}.`)] });
+      global.stockData[itemType].quantite -= quantity;
+      global.stockData[itemType].prixtotal -= prixtotal;
+      return message.reply({ embeds: [embedReply(`Vous avez vendu ${quantity} de ${itemType} pour un total de $${prixtotal.toFixed(2)}.`)] });
     }
 
     case "affichestock": {
@@ -204,6 +212,9 @@ async function handleEconomyCommand(message) {
       return message.reply({ embeds: [embedReply(stockMessage)] });
     }
 
+    // ====================================
+    // Commandes concernant les taxes
+    // ====================================
     case "déclarertaxe": {
       if (args.length < 1) return message.reply({ embeds: [embedReply("Usage: !déclarertaxe [montant]")] });
       const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
@@ -224,6 +235,9 @@ async function handleEconomyCommand(message) {
       return message.reply({ embeds: [embedReply("Rapport financier généré (simulation).")] });
     }
 
+    // ====================================
+    // Autres commandes économiques
+    // ====================================
     case "statistiqueséconomiques": {
       return message.reply({ embeds: [embedReply("Statistiques économiques globales (simulation).")] });
     }
