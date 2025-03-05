@@ -13,7 +13,7 @@ const client = new Client({
   ]
 });
 
-// Set pour éviter le traitement multiple d'un même message
+// Set pour mémoriser les IDs des messages déjà traités
 const processedMessageIds = new Set();
 
 client.once('ready', () => {
@@ -21,13 +21,14 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-  // Ignorer les messages provenant des bots ou envoyés en DM
+  // Ignorer les messages provenant des bots ou envoyés en DM (hors serveur)
   if (message.author.bot || !message.guild) return;
 
-  // Si ce message a déjà été traité, on l'ignore
+  // Si ce message a déjà été traité, on ne le traite pas à nouveau
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
 
+  // Traiter les commandes
   if (message.content.startsWith('!qcm')) {
     await qcm.handleQCM(client, message);
   } else if (message.content.startsWith('!anonymous')) {
