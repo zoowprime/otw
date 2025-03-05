@@ -12,8 +12,9 @@ async function handleAnonymous(message) {
     try {
       await message.delete();
     } catch (err) {
-      // Si le message est déjà supprimé, on ignore l'erreur
-      console.error("Erreur lors de la suppression du message de commande:", err);
+      if (err.code !== 10008) {
+        console.error("Erreur lors de la suppression du message de commande:", err);
+      }
     }
   }
 
@@ -24,7 +25,7 @@ async function handleAnonymous(message) {
     }
     // Envoyer le message anonyme une seule fois
     await channel.send(`💬 **Message anonyme :** ${anonymousMessage}`);
-    // Envoyer la confirmation en DM (une seule fois)
+    // Envoyer la confirmation en DM
     await message.author.send("✅ Votre message a été envoyé anonymement !");
   } catch (error) {
     console.error("Erreur lors de l'envoi du message anonyme :", error);
