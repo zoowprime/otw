@@ -29,6 +29,30 @@ async function handleEconomyCommand(message) {
   const command = args.shift().toLowerCase();
 
   switch (command) {
+    // ==================== NOUVELLE COMMANDE ====================
+    case "compte": {
+      // Récupère ou crée le compte de l'utilisateur
+      const account = getOrCreateAccount(message.author.id);
+
+      // Définition des montants
+      const liquide = account.courant;
+      const banque = account.epargne + account.investissement;
+      const total = liquide + banque;
+
+      // Construction de l'embed
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle("Informations de votre compte")
+        .setDescription(
+          `**Argent en liquide :** $${liquide.toFixed(2)}\n` +
+          `**Argent en banque :** $${banque.toFixed(2)}\n` +
+          `**Total :** $${total.toFixed(2)}`
+        );
+
+      return message.reply({ embeds: [embed] });
+    }
+    // ==================== FIN NOUVELLE COMMANDE ====================
+
     case "ajouterargent": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID)) {
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
@@ -143,7 +167,6 @@ async function handleEconomyCommand(message) {
       return message.reply({ embeds: [embedReply(`Vous avez acheté ${quantite} ${produit} pour $${prix.toFixed(2)}.`)] });
     }
 
-    // Commande "vendreproduit" renommée en "vendrestock" pour les joueurs
     case "vendrestock": {
       if (args.length < 3) return message.reply({ embeds: [embedReply("Usage: !vendrestock [type] [quantité] [prixtotal]")] });
       const type = args[0];
@@ -154,12 +177,11 @@ async function handleEconomyCommand(message) {
         return message.reply({ embeds: [embedReply(`Stock insuffisant pour ${type}.`)] });
       }
       global.stockData[type].quantite -= quantite;
-      global.stockData[type].prixtotal -= prixtotal; // Simplement soustraire (à adapter selon votre logique)
+      global.stockData[type].prixtotal -= prixtotal;
       return message.reply({ embeds: [embedReply(`Vous avez vendu ${quantite} de ${type} pour un total de $${prixtotal.toFixed(2)}.`)] });
     }
 
     case "ajouterstock": {
-      // Maintenant accessible à tous les joueurs
       if (args.length < 3) return message.reply({ embeds: [embedReply("Usage: !ajouterstock [type] [quantité] [prixtotal]")] });
       const type = args[0];
       const quantite = parseFloat(args[1]);
@@ -228,6 +250,7 @@ async function handleEconomyCommand(message) {
 !contrat [type] [détails]
 
 **Commandes Citoyen:**
+!compte
 !solde [type]
 !déposer [montant] [type]
 !retirer [montant] [type]
@@ -235,10 +258,9 @@ async function handleEconomyCommand(message) {
 !acheterpart [montant] [entreprise]
 !achetermaison [prix] [adresse]
 !acheterproduit [produit] [quantité] [prix]
-!vendreproduit [produit] [quantité] [prix]
+!vendrestock [type] [quantité] [prixtotal]
 !remboursement [montant] [emprunt]
 !ajouterstock [type] [quantité] [prixtotal]
-!vendrestock [type] [quantité] [prixtotal]
 !affichestock
 !déclarertaxe [montant]
 !calculertaxe [montant] [taux]
