@@ -1,15 +1,15 @@
-// bot.js
-require('dotenv').config({ path: './id.env' }); // Assure-toi que le fichier d'environnement est correctement chargé
+require('dotenv').config({ path: './id.env' });
 const { Client, GatewayIntentBits } = require('discord.js');
-const qcm = require('./qcm'); // Importation du module QCM
-const anonymous = require('./anonymous'); // Importation du module anonyme
+const qcm = require('./qcm');
+const anonymous = require('./anonymous');
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        // Ajoutez GuildMembers si vous en avez besoin pour l'attribution de rôle
+        GatewayIntentBits.GuildMembers,
     ]
 });
 
@@ -17,17 +17,13 @@ client.once('ready', () => {
     console.log(`✅ Connecté en tant que ${client.user.tag}`);
 });
 
-// Commande QCM
 client.on('messageCreate', async (message) => {
-    if (message.content.startsWith('!qcm')) {
-        qcm.handleQCM(client, message);
-    }
-});
+    if (message.author.bot) return; // Ignorer les messages des bots
 
-// Commande Anonyme
-client.on('messageCreate', async (message) => {
-    if (message.content.startsWith('!anonymous')) {
-        anonymous.handleAnonymous(message);
+    if (message.content.startsWith('!qcm')) {
+         qcm.handleQCM(client, message);
+    } else if (message.content.startsWith('!anonymous')) {
+         anonymous.handleAnonymous(message);
     }
 });
 
