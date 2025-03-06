@@ -8,35 +8,48 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
-// Importez votre liste d'items ou votre structure globale
-// pour retrouver le prix unitaire. Par exemple :
+// Liste complète des items disponibles (exemple basé sur votre liste)
 const availableItems = {
   "cattleman_revolver": 18.50,
   "navy_revolver": 18.00,
-  // ... le reste
+  "double_action_revolver": 19.00,
+  "schofield_revolver": 20.50,
+  "lemat_revolver": 25.25,
+  "volcanic_pistol": 18.50,
+  "litchfield_rifle": 26.25,
+  "evans_rifle": 32.25,
+  "lancaster_rifle": 32.25,
+  "carabine_a_repetition": 32.25,
+  "fusil_a_petit_gibier": 15.25,
+  "fusil_springfield": 19.75,
+  "fusil_a_verrou": 26.25,
+  // Ajoutez ici les autres items (chevaux, alcools, etc.)
 };
 
-// Supposez que vous ayez un module economyUtils
-// qui gère les comptes, par ex getOrCreateAccount
-const { getOrCreateAccount } = require('../economyUtils');
+// Exemple minimal pour la gestion des comptes
+// Remplacez ou importez votre fonction réelle depuis economy.js ou un module dédié
+function getOrCreateAccount(userId) {
+  // Pour cet exemple, nous utilisons un objet en mémoire avec 1000$ par défaut
+  if (!global._accounts) global._accounts = {};
+  if (!global._accounts[userId]) {
+    global._accounts[userId] = { courant: 1000, epargne: 0, investissement: 0 };
+  }
+  return global._accounts[userId];
+}
 
 async function handleStockInteractions(interaction) {
-  // 1) Sélection d’item dans le select menu
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId === 'stock_select_item'
-  ) {
+  // Gestion du Select Menu pour la commande /stock add
+  if (interaction.isStringSelectMenu() && interaction.customId === 'stock_select_item') {
     const selectedItem = interaction.values[0]; // ex: "cattleman_revolver"
 
-    // Créer un modal pour saisir la quantité
+    // Création d'un modal pour demander la quantité
     const modal = new ModalBuilder()
       .setCustomId(`stock_quantity_modal_${selectedItem}`)
       .setTitle('Quantité à ajouter');
 
-    // Champ de saisie
     const quantityInput = new TextInputBuilder()
       .setCustomId('stock_quantity_input')
-      .setLabel(`Combien de ${selectedItem} ?`)
+      .setLabel(`Combien de ${selectedItem} souhaitez-vous ajouter ?`)
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('Ex: 5')
       .setRequired(true);
@@ -44,38 +57,26 @@ async function handleStockInteractions(interaction) {
     const row = new ActionRowBuilder().addComponents(quantityInput);
     modal.addComponents(row);
 
-    // Affiche le modal à l’utilisateur
     await interaction.showModal(modal);
   }
-
-  // 2) Réception du modal
+  // Gestion de la soumission du modal
   else if (
     interaction.type === InteractionType.ModalSubmit &&
     interaction.customId.startsWith('stock_quantity_modal_')
   ) {
     const selectedItem = interaction.customId.replace('stock_quantity_modal_', '');
-    const quantityInput = interaction.fields.getTextInputValue('stock_quantity_input');
-    const quantity = parseFloat(quantityInput);
-
+    const quantityValue = interaction.fields.getTextInputValue('stock_quantity_input');
+    const quantity = parseFloat(quantityValue);
     if (isNaN(quantity) || quantity <= 0) {
-      return interaction.reply({
-        content: 'Quantité invalide. Veuillez réessayer.',
-        ephemeral: true,
-      });
+      return interaction.reply({ content: 'Quantité invalide. Veuillez réessayer.', ephemeral: true });
     }
-
-    // Vérifier que l’item existe
     const pricePerUnit = availableItems[selectedItem];
     if (!pricePerUnit) {
-      return interaction.reply({
-        content: 'Item introuvable.',
-        ephemeral: true,
-      });
+      return interaction.reply({ content: 'Item introuvable.', ephemeral: true });
     }
-
     const totalPrice = pricePerUnit * quantity;
 
-    // Exemple : on retire l’argent du compte de l’utilisateur
+    // Vérification des fonds du joueur
     const account = getOrCreateAccount(interaction.user.id);
     if (account.courant < totalPrice) {
       return interaction.reply({
@@ -83,23 +84,17 @@ async function handleStockInteractions(interaction) {
         ephemeral: true,
       });
     }
-
-    // Retirer du joueur
+    // Déduction des fonds du joueur
     account.courant -= totalPrice;
-
-    // Ajouter à l’usine (ID stocké dans process.env.USINE_PRODUCTION_ID)
+    // Ajout des fonds à l'usine de production
     const factoryAccount = getOrCreateAccount(process.env.USINE_PRODUCTION_ID);
     factoryAccount.courant += totalPrice;
-
-    // Mettre à jour le stock global
+    // Mise à jour du stock global
     if (!global.stockData) global.stockData = {};
-    if (!global.stockData[selectedItem]) {
-      global.stockData[selectedItem] = { quantite: 0, prixtotal: 0 };
-    }
+    if (!global.stockData[selectedItem]) global.stockData[selectedItem] = { quantite: 0, prixtotal: 0 };
     global.stockData[selectedItem].quantite += quantity;
     global.stockData[selectedItem].prixtotal += totalPrice;
 
-    // Réponse finale
     const embed = new EmbedBuilder()
       .setColor(0xff0000)
       .setTitle('Stock mis à jour')
@@ -107,9 +102,8 @@ async function handleStockInteractions(interaction) {
         `Vous avez ajouté **${quantity}** de **${selectedItem}**.\n` +
         `Prix unitaire : $${pricePerUnit.toFixed(2)}\n` +
         `Total : $${totalPrice.toFixed(2)}\n\n` +
-        `Stock mis à jour avec succès !`
+        `Les fonds ont été déduits et crédités à l'usine de production.`
       );
-
     await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 }
