@@ -9,21 +9,19 @@ const ticketSystem = require('./ticket.js');
 // Import du module pour les commandes économiques (texte)
 const { handleEconomyCommand } = require('./economy');
 
-// Création du client Discord avec les intents nécessaires
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds,            // pour accéder aux serveurs
-    GatewayIntentBits.GuildMessages,     // pour recevoir les messages dans les serveurs
-    GatewayIntentBits.MessageContent,    // pour lire le contenu des messages
-    GatewayIntentBits.GuildMembers,      // pour gérer les rôles et membres
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ]
 });
 
-// Collection pour stocker les commandes slash
+// Collection pour les commandes slash
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
   if ('data' in command && 'execute' in command) {
@@ -31,14 +29,14 @@ for (const file of commandFiles) {
   }
 }
 
-// Set pour éviter de traiter plusieurs fois le même message texte
+// Set pour éviter les doublons dans les commandes texte
 const processedMessageIds = new Set();
 
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
   // Envoi automatique du panel de ticket dans le canal dédié
-  const panelChannelId = "1308118937904480318"; // ID du salon dédié au panel de ticket
+  const panelChannelId = process.env.ID_DU_CANAL_POUR_TICKET; // 1308118937904480318
   try {
     const panelChannel = await client.channels.fetch(panelChannelId);
     if (panelChannel && ticketSystem && typeof ticketSystem(client).sendTicketPanel === 'function') {
@@ -64,9 +62,8 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ content: 'Une erreur est survenue lors de l\'exécution de la commande.', ephemeral: true });
     }
   }
-  // Gestion des autres interactions (select menus, modals, etc.)
+  // Gestion des autres interactions (Select Menus, Modals)
   else {
-    // Exemple : gestion des interactions pour le stock (voir fichier interaction/stockInteraction.js)
     const { handleStockInteractions } = require('./interaction/stockInteraction');
     if (handleStockInteractions) {
       await handleStockInteractions(interaction);
@@ -74,17 +71,12 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Gestion des commandes texte pour l'économie (préfixées par "!")
+// Gestion des commandes texte (économie)
 client.on('messageCreate', async (message) => {
-  // Ignorer les messages des bots et hors serveur (DM)
   if (message.author.bot || !message.guild) return;
-
-  // Vérifier si ce message a déjà été traité
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
   console.log(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
-
-  // On considère que toutes les commandes texte commencent par "!"
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
   }
