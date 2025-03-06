@@ -1,5 +1,6 @@
 // src/economy.js
 const { EmbedBuilder } = require('discord.js');
+const { handleMsgsuprCommand } = require('./commands/msgsupr'); // Import du module msgsupr
 
 // Stockage en mémoire des comptes bancaires
 const bankData = new Map();
@@ -19,7 +20,8 @@ function hasRole(member, roleId) {
   return member.roles.cache.has(roleId);
 }
 
-const embedReply = (description) => new EmbedBuilder().setColor(0xff0000).setDescription(description);
+const embedReply = (description) =>
+  new EmbedBuilder().setColor(0xff0000).setDescription(description);
 
 // Liste des items disponibles pour la commande ajouterstock
 const availableItems = {
@@ -257,15 +259,12 @@ async function handleEconomyCommand(message) {
       global.stockData[itemType].prixtotal += totalPrice;
       return message.reply({ embeds: [embedReply(`Ajouté ${quantite} de ${itemType} pour un total de $${totalPrice.toFixed(2)}.\nL'argent a été retiré de votre compte et crédité à l'usine de production.`)] });
     }
-    case "affichestock": {
-      if (!global.stockData)
-        return message.reply({ embeds: [embedReply("Aucun stock enregistré.")] });
-      let stockMessage = "Contenu du stock:\n";
-      for (const type in global.stockData) {
-        const data = global.stockData[type];
-        stockMessage += `${type}: ${data.quantite} unités, Total: $${data.prixtotal.toFixed(2)}\n`;
-      }
-      return message.reply({ embeds: [embedReply(stockMessage)] });
+    // -------------- Ajout du cas !msgsupr --------------
+    case "msgsupr": {
+      // Appel de la fonction du module msgsupr
+      const { handleMsgsuprCommand } = require('./commands/msgsupr');
+      await handleMsgsuprCommand(message, args);
+      break;
     }
     // ------------------------------
     // Commandes concernant les taxes
@@ -328,6 +327,7 @@ async function handleEconomyCommand(message) {
 !remboursement [montant] [emprunt]
 !ajouterstock [type] [quantité] [prixtotal]
 !affichestock
+!msgsupr [nombre de messages]
 !déclarertaxe [montant]
 !calculertaxe [montant] [taux]
 !rapportsfinanciers
