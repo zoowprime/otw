@@ -1,21 +1,10 @@
 // src/economy.js
+require('dotenv').config({ path: './id.env' });
 const { EmbedBuilder } = require('discord.js');
-const { handleMsgsuprCommand } = require('./commands/msgsupr'); // Import du module msgsupr
+const { getOrCreateAccount, updateAccount } = require('./economyData');
+const { handleMsgsuprCommand } = require('./commands/msgsupr'); // Commande de suppression de messages
 
-// Stockage en mémoire des comptes bancaires
-const bankData = new Map();
-
-function getOrCreateAccount(userId) {
-  if (!bankData.has(userId)) {
-    bankData.set(userId, {
-      epargne: 0,
-      courant: 0,
-      investissement: 0,
-    });
-  }
-  return bankData.get(userId);
-}
-
+// Vérifie si un membre possède un rôle donné
 function hasRole(member, roleId) {
   return member.roles.cache.has(roleId);
 }
@@ -61,7 +50,7 @@ const availableItems = {
   "whisky_ecossais_tonneau": 3500.00,
   "whisky_irlandais_bouteille": 14.00,
   "whisky_irlandais_tonneau": 2000.00,
-  // Ajoutez ici le reste de vos items selon votre liste...
+  // Ajoutez ici le reste de vos items...
 };
 
 if (!global.stockData) global.stockData = {};
@@ -72,13 +61,15 @@ async function handleEconomyCommand(message) {
 
   switch (command) {
     case "compte": {
-      const account = getOrCreateAccount(message.author.id);
+      // Si un utilisateur est mentionné, afficher son compte
+      const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
+      const account = target ? getOrCreateAccount(target.id) : getOrCreateAccount(message.author.id);
       const liquide = account.courant;
       const banque = account.epargne + account.investissement;
       const total = liquide + banque;
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle("Informations de votre compte")
+        .setTitle(target ? `Compte de ${target.user.username}` : "Informations de votre compte")
         .setDescription(
           `**Argent en liquide :** $${liquide.toFixed(2)}\n` +
           `**Argent en banque :** $${banque.toFixed(2)}\n` +
@@ -90,7 +81,7 @@ async function handleEconomyCommand(message) {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
       if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !ajouterargent [joueur] [montant]")] });
+        return message.reply({ embeds: [embedReply("Usage: !ajouterargent [@joueur] [montant]")] });
       const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
       if (!target)
         return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
@@ -99,6 +90,7 @@ async function handleEconomyCommand(message) {
         return message.reply({ embeds: [embedReply("Montant invalide.")] });
       const account = getOrCreateAccount(target.id);
       account.courant += amount;
+      updateAccount(target.id, account);
       return message.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été ajoutés au compte de ${target.user.tag}.`)] });
     }
     case "ouvrircompte": {
@@ -110,19 +102,28 @@ async function handleEconomyCommand(message) {
       const account = getOrCreateAccount(message.author.id);
       if (account[type] !== undefined)
         return message.reply({ embeds: [embedReply(`Vous possédez déjà un compte de type ${type}.`)] });
-      else {
-        account[type] = 0;
-        return message.reply({ embeds: [embedReply(`Compte de type ${type} créé.`)] });
-      }
+      account[type] = 0;
+      updateAccount(message.author.id, account);
+      return message.reply({ embeds: [embedReply(`Compte de type ${type} créé.`)] });
     }
     case "solde": {
       if (args.length < 1)
-        return message.reply({ embeds: [embedReply("Usage: !solde [type]")] });
-      const type = args[0].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined)
-        return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      return message.reply({ embeds: [embedReply(`Votre solde pour le compte ${type} est $${account[type].toFixed(2)}.`)] });
+        return message.reply({ embeds: [embedReply("Usage: !solde [type] ou !compte [@joueur]")] });
+      // Si un utilisateur est mentionné, afficher son compte
+      const target = message.mentions.members.first();
+      const account = target ? getOrCreateAccount(target.id) : getOrCreateAccount(message.author.id);
+      const liquide = account.courant;
+      const banque = account.epargne + account.investissement;
+      const total = liquide + banque;
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle(target ? `Compte de ${target.user.username}` : "Informations de votre compte")
+        .setDescription(
+          `**Argent en liquide :** $${liquide.toFixed(2)}\n` +
+          `**Argent en banque :** $${banque.toFixed(2)}\n` +
+          `**Total :** $${total.toFixed(2)}`
+        );
+      return message.reply({ embeds: [embed] });
     }
     case "déposer": {
       if (args.length < 2)
@@ -135,6 +136,7 @@ async function handleEconomyCommand(message) {
       if (account[type] === undefined)
         return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
       account[type] += amount;
+      updateAccount(message.author.id, account);
       return message.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} sur votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
     }
     case "retirer": {
@@ -150,6 +152,7 @@ async function handleEconomyCommand(message) {
       if (account[type] < amount)
         return message.reply({ embeds: [embedReply("Fonds insuffisants.")] });
       account[type] -= amount;
+      updateAccount(message.author.id, account);
       return message.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} de votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
     }
     case "transférer": {
@@ -172,6 +175,8 @@ async function handleEconomyCommand(message) {
         return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte.")] });
       senderAccount[type] -= amount;
       receiverAccount[type] += amount;
+      updateAccount(message.author.id, senderAccount);
+      updateAccount(target.id, receiverAccount);
       return message.reply({ embeds: [embedReply(`Transfert de $${amount.toFixed(2)} de votre compte ${type} vers ${target.user.tag} effectué.`)] });
     }
     case "investir": {
@@ -259,12 +264,50 @@ async function handleEconomyCommand(message) {
       global.stockData[itemType].prixtotal += totalPrice;
       return message.reply({ embeds: [embedReply(`Ajouté ${quantite} de ${itemType} pour un total de $${totalPrice.toFixed(2)}.\nL'argent a été retiré de votre compte et crédité à l'usine de production.`)] });
     }
-    // -------------- Ajout du cas !msgsupr --------------
+    // -------------- Cas pour la commande !msgsupr --------------
     case "msgsupr": {
-      // Appel de la fonction du module msgsupr
-      const { handleMsgsuprCommand } = require('./commands/msgsupr');
       await handleMsgsuprCommand(message, args);
       break;
+    }
+    // -------------- Cas pour la commande !paye --------------
+    case "paye": {
+      // La commande !paye [@joueur] [montant]
+      if (args.length < 2)
+        return message.reply({ embeds: [embedReply("Usage: !paye [@joueur] [montant]")] });
+      const target = message.mentions.members.first();
+      if (!target)
+        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
+      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
+      if (isNaN(amount) || amount <= 0)
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const senderAccount = getOrCreateAccount(message.author.id);
+      const receiverAccount = getOrCreateAccount(target.id);
+      if (senderAccount.courant < amount)
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte pour effectuer ce paiement.")] });
+      senderAccount.courant -= amount;
+      receiverAccount.courant += amount;
+      updateAccount(message.author.id, senderAccount);
+      updateAccount(target.id, receiverAccount);
+      return message.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.user.tag}.`)] });
+    }
+    // -------------- Cas pour la commande !retirerargent (banquiers uniquement) --------------
+    case "retirerargent": {
+      if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
+        return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
+      if (args.length < 2)
+        return message.reply({ embeds: [embedReply("Usage: !retirerargent [@joueur] [montant]")] });
+      const target = message.mentions.members.first();
+      if (!target)
+        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
+      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
+      if (isNaN(amount) || amount <= 0)
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const account = getOrCreateAccount(target.id);
+      if (account.courant < amount)
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur le compte du joueur.")] });
+      account.courant -= amount;
+      updateAccount(target.id, account);
+      return message.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été retirés du compte de ${target.user.tag}.`)] });
     }
     // ------------------------------
     // Commandes concernant les taxes
@@ -308,15 +351,17 @@ async function handleEconomyCommand(message) {
     case "aide": {
       const helpMessage = `
 **Commandes Banquier:**
-!ajouterargent [joueur] [montant]
+!ajouterargent [@joueur] [montant]
 !ouvrircompte [type]
 !transférer [montant] [destinataire] [type]
 !emprunter [montant] [durée]
 !contrat [type] [détails]
+!retirerargent [@joueur] [montant]
 
 **Commandes Citoyen:**
-!compte
+!compte [@joueur]
 !solde [type]
+!paye [@joueur] [montant]
 !déposer [montant] [type]
 !retirer [montant] [type]
 !investir [montant] [entreprise]
