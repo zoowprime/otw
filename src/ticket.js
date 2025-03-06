@@ -4,7 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  SelectMenuBuilder,
+  StringSelectMenuBuilder
 } = require('discord.js');
 require('dotenv').config({ path: './id.env' });
 
@@ -31,20 +31,19 @@ async function sendTicketPanel(channel) {
 /**
  * Gère les interactions liées aux tickets.
  * - Bouton "open_ticket" : création d'un canal ticket.
- * - Select Menu "ticket_type_select" : choix du type de ticket.
- * - Boutons "close_ticket" et "delete_ticket" : fermeture et suppression du ticket.
+ * - Menu de sélection "ticket_type_select" : choix du type de ticket, renommage du canal et suppression du message d'origine.
+ * - Bouton "close_ticket" et "delete_ticket" : fermeture et suppression du ticket.
  * @param {Interaction} interaction 
  */
 async function handleTicketInteraction(interaction) {
   // Gestion du bouton "Ouvrir un ticket"
   if (interaction.isButton() && interaction.customId === "open_ticket") {
-    // Accuser réception immédiatement pour éviter l'expiration
-    await interaction.deferReply({ flags: 64 }); // flags: 64 correspond à MessageFlags.Ephemeral
+    await interaction.deferReply({ flags: 64 }); // Accuser réception de manière éphémère
     if (!interaction.guild) {
       return interaction.editReply({ content: "Cette action ne peut être utilisée que dans un serveur." });
     }
-    const openCategory = process.env.OPEN_TICKET_CATEGORY_ID;
-    if (!openCategory) {
+    const openCategoryId = process.env.OPEN_TICKET_CATEGORY_ID;
+    if (!openCategoryId) {
       return interaction.editReply({ content: "La catégorie pour les tickets ouverts n'est pas configurée." });
     }
     const ticketChannelName = `ticket-${interaction.user.username}-${Date.now()}`;
@@ -52,7 +51,7 @@ async function handleTicketInteraction(interaction) {
       const ticketChannel = await interaction.guild.channels.create({
         name: ticketChannelName,
         type: 0, // Canal textuel
-        parent: openCategory,
+        parent: openCategoryId,
         permissionOverwrites: [
           { id: interaction.guild.id, deny: ["ViewChannel"] },
           { id: interaction.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
@@ -61,49 +60,54 @@ async function handleTicketInteraction(interaction) {
       });
       await interaction.editReply({ content: `Votre ticket a été créé: ${ticketChannel}` });
 
-      // Dans le canal du ticket, envoyer un embed avec un menu de sélection pour le type de ticket
+      // Envoyer l'embed avec le menu de sélection du type de ticket
       const ticketEmbed = new EmbedBuilder()
         .setTitle("Ouverture de Ticket")
         .setDescription("Quel type de ticket souhaitez-vous ouvrir ?")
         .setColor(0xff0000);
 
-      const options = [
-        { label: "Demande particulière (externe au serveur)", value: "demande_particuliere" },
-        { label: "Création de projet", value: "creation_projet" },
-        { label: "Dépôt dossier groupe illégal", value: "depot_dossier" },
-        { label: "Wipe (changement de personnage ou mort RP)", value: "wipe" },
-        { label: "Demande de mort RP", value: "demande_mort_rp" },
-        { label: "Demande de scène staff", value: "demande_scene_staff" },
-        { label: "Problème avec un groupe/joueur", value: "probleme_groupe" },
-        { label: "Question pertinente", value: "question_pertinente" },
-      ];
-
-      const selectMenu = new SelectMenuBuilder()
+      // Utilisez StringSelectMenuBuilder (remplace SelectMenuBuilder)
+      const selectMenu = new StringSelectMenuBuilder()
         .setCustomId("ticket_type_select")
         .setPlaceholder("Sélectionnez le type de ticket")
-        .addOptions(options);
+        .addOptions([
+          { label: "Demande particulière (externe au serveur)", value: "demande_particuliere" },
+          { label: "Création de projet", value: "creation_projet" },
+          { label: "Dépôt dossier groupe illégal", value: "depot_dossier" },
+          { label: "Wipe (changement de personnage ou mort RP)", value: "wipe" },
+          { label: "Demande de mort RP", value: "demande_mort_rp" },
+          { label: "Demande de scène staff", value: "demande_scene_staff" },
+          { label: "Problème avec un groupe/joueur", value: "probleme_groupe" },
+          { label: "Question pertinente", value: "question_pertinente" },
+        ]);
 
       const selectRow = new ActionRowBuilder().addComponents(selectMenu);
-      await ticketChannel.send({ embeds: [ticketEmbed], components: [selectRow] });
+
+      // Envoyer le message et conserver la référence pour pouvoir le supprimer plus tard
+      const selectionMessage = await ticketChannel.send({ embeds: [ticketEmbed], components: [selectRow] });
     } catch (error) {
       console.error("Erreur lors de la création du ticket:", error);
       return interaction.editReply({ content: "Une erreur est survenue lors de la création du ticket." });
     }
   }
-  // Gestion du Select Menu pour choisir le type de ticket
-  else if (interaction.isSelectMenu() && interaction.customId === "ticket_type_select") {
-    // Accuser réception
+  // Gestion du menu de sélection pour le type de ticket
+  else if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type_select") {
     await interaction.deferUpdate();
     const selectedType = interaction.values[0];
-    // Optionnel : renommer le canal pour y inclure le type de ticket
+    // Renommer le canal pour y inclure le type de ticket sélectionné
     await interaction.channel.setName(`ticket-${selectedType}-${interaction.user.username}`);
+    
+    // Envoyer une confirmation dans le canal
     const replyEmbed = new EmbedBuilder()
       .setTitle("Ticket ouvert")
-      .setDescription(`Vous avez sélectionné: **${selectedType}**.\nUn membre du staff vous contactera sous peu.`)
+      .setDescription(`Vous avez sélectionné: **${selectedType}**.\nUn membre de l'équipe STAFF OTW vous prendra en charge le plus vite possible.`)
       .setColor(0xff0000);
     await interaction.channel.send({ embeds: [replyEmbed] });
 
-    // Ajouter un bouton pour fermer le ticket (réservé aux staffs)
+    // Supprimer le message contenant le menu de sélection pour "faire disparaître" l'embed
+    await interaction.message.delete().catch(console.error);
+
+    // Ajouter un bouton pour fermer le ticket (visible uniquement aux staffs)
     const closeButton = new ButtonBuilder()
       .setCustomId("close_ticket")
       .setLabel("Fermer le ticket")
