@@ -1,14 +1,16 @@
 {
   "name": "discord-bot",
   "version": "1.0.0",
-  "description": "Bot Discord gérant un QCM et un système de messages anonymes.",
+  "description": "Bot Discord gérant tickets, commandes slash et économie.",
   "main": "src/bot.js",
   "scripts": {
-    "start": "node src/bot.js"
+    "start": "node src/bot.js",
+    "deploy": "node deploy-commands.js"
   },
   "engines": {
     "node": ">=18.0.0"
   },
+  "license": "MIT",
   "dependencies": {
     "discord.js": "^14.0.3",
     "dotenv": "^16.0.3"
