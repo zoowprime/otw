@@ -19,12 +19,12 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 
 (async () => {
   try {
-    console.log('Début du déploiement des commandes...');
+    console.log('Déploiement des commandes slash...');
     await rest.put(
       Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
       { body: commands }
     );
-    console.log('Les commandes slash ont été déployées !');
+    console.log('Commandes slash déployées avec succès !');
   } catch (error) {
     console.error(error);
   }
