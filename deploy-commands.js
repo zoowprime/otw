@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const commands = [];
+// On lit les commandes depuis le dossier 'src/commands'
 const commandsPath = path.join(__dirname, 'src', 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
@@ -20,6 +21,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 (async () => {
   try {
     console.log('Déploiement des commandes slash...');
+    // Déploiement pour un serveur spécifique (guild scope)
     await rest.put(
       Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
       { body: commands }
