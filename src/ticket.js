@@ -4,7 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  SelectMenuBuilder
+  SelectMenuBuilder,
 } = require('discord.js');
 require('dotenv').config({ path: './id.env' });
 
@@ -29,30 +29,30 @@ async function sendTicketPanel(channel) {
 }
 
 /**
- * Gère toutes les interactions liées aux tickets.
- * - Bouton "open_ticket" : création d'un canal ticket et envoi d'un menu de sélection.
+ * Gère les interactions liées aux tickets.
+ * - Bouton "open_ticket" : création d'un canal ticket.
  * - Select Menu "ticket_type_select" : choix du type de ticket.
- * - Bouton "close_ticket" et "delete_ticket" : fermeture et suppression du ticket.
+ * - Boutons "close_ticket" et "delete_ticket" : fermeture et suppression du ticket.
  * @param {Interaction} interaction 
  */
 async function handleTicketInteraction(interaction) {
   // Gestion du bouton "Ouvrir un ticket"
   if (interaction.isButton() && interaction.customId === "open_ticket") {
-    // Différer la réponse immédiatement pour éviter l'expiration
-    await interaction.deferReply({ flags: 64 }); // 64 correspond à MessageFlags.Ephemeral
+    // Accuser réception immédiatement pour éviter l'expiration
+    await interaction.deferReply({ flags: 64 }); // flags: 64 correspond à MessageFlags.Ephemeral
     if (!interaction.guild) {
       return interaction.editReply({ content: "Cette action ne peut être utilisée que dans un serveur." });
     }
-    const openCategoryId = process.env.OPEN_TICKET_CATEGORY_ID;
-    if (!openCategoryId) {
+    const openCategory = process.env.OPEN_TICKET_CATEGORY_ID;
+    if (!openCategory) {
       return interaction.editReply({ content: "La catégorie pour les tickets ouverts n'est pas configurée." });
     }
     const ticketChannelName = `ticket-${interaction.user.username}-${Date.now()}`;
     try {
       const ticketChannel = await interaction.guild.channels.create({
         name: ticketChannelName,
-        type: 0, // Text Channel
-        parent: openCategoryId,
+        type: 0, // Canal textuel
+        parent: openCategory,
         permissionOverwrites: [
           { id: interaction.guild.id, deny: ["ViewChannel"] },
           { id: interaction.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
@@ -61,11 +61,12 @@ async function handleTicketInteraction(interaction) {
       });
       await interaction.editReply({ content: `Votre ticket a été créé: ${ticketChannel}` });
 
-      // Envoyer dans le canal du ticket un embed avec un menu de sélection pour choisir le type de ticket
+      // Dans le canal du ticket, envoyer un embed avec un menu de sélection pour le type de ticket
       const ticketEmbed = new EmbedBuilder()
         .setTitle("Ouverture de Ticket")
         .setDescription("Quel type de ticket souhaitez-vous ouvrir ?")
         .setColor(0xff0000);
+
       const options = [
         { label: "Demande particulière (externe au serveur)", value: "demande_particuliere" },
         { label: "Création de projet", value: "creation_projet" },
@@ -76,10 +77,12 @@ async function handleTicketInteraction(interaction) {
         { label: "Problème avec un groupe/joueur", value: "probleme_groupe" },
         { label: "Question pertinente", value: "question_pertinente" },
       ];
+
       const selectMenu = new SelectMenuBuilder()
         .setCustomId("ticket_type_select")
         .setPlaceholder("Sélectionnez le type de ticket")
         .addOptions(options);
+
       const selectRow = new ActionRowBuilder().addComponents(selectMenu);
       await ticketChannel.send({ embeds: [ticketEmbed], components: [selectRow] });
     } catch (error) {
@@ -89,16 +92,18 @@ async function handleTicketInteraction(interaction) {
   }
   // Gestion du Select Menu pour choisir le type de ticket
   else if (interaction.isSelectMenu() && interaction.customId === "ticket_type_select") {
+    // Accuser réception
     await interaction.deferUpdate();
     const selectedType = interaction.values[0];
+    // Optionnel : renommer le canal pour y inclure le type de ticket
     await interaction.channel.setName(`ticket-${selectedType}-${interaction.user.username}`);
     const replyEmbed = new EmbedBuilder()
       .setTitle("Ticket ouvert")
-      .setDescription(`Vous avez sélectionné: **${selectedType}**.\nUn membre du staff va prendre contact avec vous sous peu.`)
+      .setDescription(`Vous avez sélectionné: **${selectedType}**.\nUn membre du staff vous contactera sous peu.`)
       .setColor(0xff0000);
     await interaction.channel.send({ embeds: [replyEmbed] });
 
-    // Ajouter un bouton pour fermer le ticket (visible aux staffs)
+    // Ajouter un bouton pour fermer le ticket (réservé aux staffs)
     const closeButton = new ButtonBuilder()
       .setCustomId("close_ticket")
       .setLabel("Fermer le ticket")
@@ -111,7 +116,7 @@ async function handleTicketInteraction(interaction) {
     if (!interaction.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
       return interaction.reply({ content: "Vous n'avez pas la permission de fermer ce ticket.", flags: 64 });
     }
-    await interaction.deferUpdate();
+    await interaction.deferReply({ flags: 64 });
     const closedCategory = process.env.CLOSED_TICKET_CATEGORY_ID;
     if (!closedCategory) return interaction.editReply({ content: "La catégorie des tickets fermés n'est pas configurée." });
     await interaction.channel.setParent(closedCategory);
@@ -132,17 +137,14 @@ async function handleTicketInteraction(interaction) {
       return interaction.reply({ content: "Vous n'avez pas la permission de supprimer ce ticket.", flags: 64 });
     }
     await interaction.deferReply({ flags: 64 });
-    await interaction.reply({ content: "Suppression du ticket...", flags: 64 });
+    await interaction.editReply({ content: "Suppression du ticket..." });
     setTimeout(() => {
       interaction.channel.delete().catch(console.error);
     }, 3000);
   }
 }
 
-module.exports = (client) => {
-  client.on('interactionCreate', async (interaction) => {
-    // Nous ne gérons ici que les interactions liées aux tickets.
-    await handleTicketInteraction(interaction);
-  });
-  return { sendTicketPanel };
+module.exports = {
+  sendTicketPanel,
+  handleTicketInteraction,
 };
