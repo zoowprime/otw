@@ -4,9 +4,9 @@ const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord
 const fs = require('fs');
 const path = require('path');
 
-// Import du module ticket pour le panel et interactions de ticket
-const ticketSystem = require('./ticket.js');
-// Import du module économie pour les commandes texte
+// Import du module ticket (pour le panel et interactions)
+const ticketModule = require('./ticket.js');
+// Import du module pour les commandes économiques en mode texte
 const { handleEconomyCommand } = require('./economy');
 
 const client = new Client({
@@ -18,7 +18,7 @@ const client = new Client({
   ]
 });
 
-// Charger les commandes slash depuis src/commands
+// Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
@@ -39,8 +39,8 @@ client.once('ready', async () => {
   const panelChannelId = process.env.ID_DU_CANAL_POUR_TICKET || "1308118937904480318";
   try {
     const panelChannel = await client.channels.fetch(panelChannelId);
-    if (panelChannel && ticketSystem && typeof ticketSystem(client).sendTicketPanel === 'function') {
-      ticketSystem(client).sendTicketPanel(panelChannel);
+    if (panelChannel && typeof ticketModule.sendTicketPanel === 'function') {
+      await ticketModule.sendTicketPanel(panelChannel);
       console.log("Panel de ticket envoyé dans le salon dédié.");
     } else {
       console.error("Le canal pour le panel de ticket est introuvable ou le module ticket est mal configuré.");
@@ -52,7 +52,8 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction) => {
   console.log("Interaction reçue:", interaction.customId);
-  // Gestion des commandes slash
+  
+  // Si c'est une commande slash
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -63,28 +64,35 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ content: 'Une erreur est survenue lors de l\'exécution de la commande.', flags: MessageFlags.Ephemeral });
     }
   }
-  // Gestion des interactions pour le stock (Select Menus, Modals)
-  else if (interaction.isStringSelectMenu() || interaction.type === 'MODAL_SUBMIT') {
+  // Gestion des interactions pour les tickets (boutons et select menus)
+  else if (
+    (interaction.isButton() && ["open_ticket", "close_ticket", "delete_ticket"].includes(interaction.customId)) ||
+    (interaction.isSelectMenu() && interaction.customId === "ticket_type_select")
+  ) {
+    try {
+      await ticketModule.handleTicketInteraction(interaction);
+    } catch (error) {
+      console.error("Erreur lors du traitement de l'interaction de ticket:", error);
+      if (!interaction.replied) {
+        await interaction.reply({ content: 'Une erreur est survenue lors du traitement de l\'interaction.', flags: MessageFlags.Ephemeral });
+      }
+    }
+  }
+  // Gestion des interactions pour le stock ou autres
+  else {
     const { handleStockInteractions } = require('./interaction/stockInteraction');
     if (handleStockInteractions) {
       await handleStockInteractions(interaction);
     }
   }
-  // Gestion des interactions liées aux tickets (boutons)
-  else if (interaction.isButton() && (interaction.customId === "open_ticket" || interaction.customId === "close_ticket" || interaction.customId === "delete_ticket")) {
-    const ticketModule = require('./ticket.js')(client);
-    await ticketModule.handleTicketInteraction(interaction);
-  }
 });
 
+// Gestion des commandes texte pour l'économie (préf. "!")
 client.on('messageCreate', async (message) => {
-  // Ignorer les messages des bots et hors serveur
   if (message.author.bot || !message.guild) return;
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
   console.log(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
-
-  // Toutes les commandes texte commencent par "!"
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
   }
