@@ -2,9 +2,24 @@
 const fs = require('fs');
 const path = require('path');
 
-// Utiliser le chemin absolu pour le dossier data sur votre disque C:
-const dataPath = path.join('C:\\data', 'economyData.json');
+// Vérifier que le dossier C:\data existe, sinon le créer
+const dataDir = 'C:\\data';
+if (!fs.existsSync(dataDir)) {
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    console.log(`Dossier ${dataDir} créé avec succès.`);
+  } catch (err) {
+    console.error(`Erreur lors de la création du dossier ${dataDir} :`, err);
+  }
+}
 
+// Chemin complet vers le fichier
+const dataPath = path.join(dataDir, 'economyData.json');
+
+/**
+ * Charge les données depuis le fichier JSON.
+ * Retourne un objet vide si le fichier n'existe pas ou en cas d'erreur de parsing.
+ */
 function loadEconomyData() {
   if (fs.existsSync(dataPath)) {
     try {
@@ -18,6 +33,10 @@ function loadEconomyData() {
   return {};
 }
 
+/**
+ * Sauvegarde les données dans le fichier JSON.
+ * @param {object} data - L'objet à sauvegarder.
+ */
 function saveEconomyData(data) {
   try {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf8');
@@ -26,8 +45,14 @@ function saveEconomyData(data) {
   }
 }
 
+// Charger les données existantes (ou un objet vide si le fichier n'existe pas)
 const bankData = loadEconomyData();
 
+/**
+ * Retourne le compte pour un userId donné,
+ * le crée si nécessaire.
+ * @param {string} userId - L'identifiant de l'utilisateur.
+ */
 function getOrCreateAccount(userId) {
   if (!bankData[userId]) {
     bankData[userId] = {
@@ -40,6 +65,11 @@ function getOrCreateAccount(userId) {
   return bankData[userId];
 }
 
+/**
+ * Met à jour le compte d'un utilisateur et sauvegarde les données.
+ * @param {string} userId - L'identifiant de l'utilisateur.
+ * @param {object} account - L'objet représentant le compte (epargne, courant, investissement).
+ */
 function updateAccount(userId, account) {
   bankData[userId] = account;
   saveEconomyData(bankData);
