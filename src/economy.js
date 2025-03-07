@@ -1,7 +1,7 @@
 // src/economy.js
 require('dotenv').config({ path: './id.env' });
 const { EmbedBuilder } = require('discord.js');
-const { getOrCreateAccount, updateAccount, getAccount } = require('./economyData'); // Module de persistance
+const { getOrCreateAccount, updateAccount, getAccount } = require('./economyData');
 const { handleMsgsuprCommand } = require('./commands/msgsupr'); // Commande de suppression de messages
 
 // Vérifie si un membre possède un rôle donné
@@ -61,7 +61,7 @@ async function handleEconomyCommand(message) {
 
   switch (command) {
     case "compte": {
-      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur.
+      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur
       const target = message.mentions.members.first();
       const account = target ? getAccount(target.id) : getOrCreateAccount(message.author.id);
       if (!account) {
@@ -112,7 +112,7 @@ async function handleEconomyCommand(message) {
     case "solde": {
       if (args.length < 1)
         return message.reply({ embeds: [embedReply("Usage: !solde [type] ou !compte [@joueur]")] });
-      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur.
+      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur
       const target = message.mentions.members.first();
       const account = target ? getAccount(target.id) : getOrCreateAccount(message.author.id);
       const liquide = account.courant;
@@ -274,6 +274,7 @@ async function handleEconomyCommand(message) {
     }
     // -------------- Cas pour la commande !paye --------------
     case "paye": {
+      // La commande !paye [@joueur] [montant]
       if (args.length < 2)
         return message.reply({ embeds: [embedReply("Usage: !paye [@joueur] [montant]")] });
       const target = message.mentions.members.first();
