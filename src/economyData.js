@@ -1,26 +1,26 @@
 // src/economyData.js
 const fs = require('fs');
 const path = require('path');
-const dataPath = path.join(__dirname, 'economyData.json');
 
-// Charger les données depuis le fichier, ou initialiser un objet vide
+// Utiliser le chemin absolu pour le dossier data sur votre disque C:
+const dataPath = path.join('C:\\data', 'economyData.json');
+
 function loadEconomyData() {
   if (fs.existsSync(dataPath)) {
     try {
-      const rawData = fs.readFileSync(dataPath);
+      const rawData = fs.readFileSync(dataPath, 'utf8');
       return JSON.parse(rawData);
     } catch (err) {
-      console.error("Erreur de lecture/parsing de economyData.json :", err);
+      console.error("Erreur de lecture ou de parsing de economyData.json :", err);
       return {};
     }
   }
   return {};
 }
 
-// Sauvegarder les données dans le fichier
 function saveEconomyData(data) {
   try {
-    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
     console.error("Erreur lors de la sauvegarde de economyData.json :", err);
   }
