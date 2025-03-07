@@ -38,6 +38,15 @@ const processedMessageIds = new Set();
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
+// Test : Afficher le contenu de /data
+  const fs = require('fs');
+  try {
+    const files = fs.readdirSync('/data');
+    console.log('Contenu de /data :', files);
+  } catch (err) {
+    console.error('Erreur en listant /data :', err);
+  }
+
   // Envoi automatique du panel de ticket dans le salon dédié
   const panelChannelId = process.env.ID_DU_CANAL_POUR_TICKET || "1308118937904480318";
   try {
