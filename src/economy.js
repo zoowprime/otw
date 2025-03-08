@@ -60,26 +60,44 @@ async function handleEconomyCommand(message) {
   const command = args.shift().toLowerCase();
 
   switch (command) {
+    // !compte [@joueur] [type]
     case "compte": {
-      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur
-      const target = message.mentions.members.first();
-      const account = target ? getAccount(target.id) : getOrCreateAccount(message.author.id);
-      if (!account) {
-        return message.reply({ embeds: [embedReply("Aucun compte trouvé.")] });
+      // Si un utilisateur est mentionné, affiche son compte, sinon le vôtre.
+      // Le type de compte est requis pour epargne et entreprise.
+      const target = message.mentions.members.first() || message.member;
+      const type = args[0] ? args[0].toLowerCase() : "courant"; // Par défaut courant
+      // Pour le compte courant, on le crée automatiquement. Sinon, on vérifie qu'il existe.
+      let account;
+      if (type === "courant") {
+        account = getOrCreateAccount(target.id);
+      } else {
+        account = getAccount(target.id);
+        if (!account || account[type] === undefined) {
+          return message.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.user.username}. Veuillez contacter un banquier.`)] });
+        }
       }
-      const liquide = account.courant;
-      const banque = account.epargne + account.investissement;
-      const total = liquide + banque;
+      const value = account[type];
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle(target ? `Compte de ${target.user.username}` : "Informations de votre compte")
-        .setDescription(
-          `**Argent en liquide :** $${liquide.toFixed(2)}\n` +
-          `**Argent en banque :** $${banque.toFixed(2)}\n` +
-          `**Total :** $${total.toFixed(2)}`
-        );
+        .setTitle(`Compte ${type} de ${target.user.username}`)
+        .setDescription(`Votre solde pour le compte ${type} est $${value.toFixed(2)}.`);
       return message.reply({ embeds: [embed] });
     }
+
+    // !solde [type]
+    case "solde": {
+      if (args.length < 1)
+        return message.reply({ embeds: [embedReply("Usage: !solde [type]")] });
+      const type = args[0].toLowerCase();
+      const account = getOrCreateAccount(message.author.id);
+      if (account[type] === undefined) {
+        return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé pour vous.`)] });
+      }
+      const value = account[type];
+      return message.reply({ embeds: [embedReply(`Votre solde pour le compte ${type} est $${value.toFixed(2)}.`)] });
+    }
+
+    // !ajouterargent [@joueur] [montant]
     case "ajouterargent": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
@@ -96,68 +114,28 @@ async function handleEconomyCommand(message) {
       updateAccount(target.id, account);
       return message.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été ajoutés au compte de ${target.user.tag}.`)] });
     }
+
+    // !ouvrircompte [type]
+    // Seules les commandes pour créer un compte epargne ou entreprise (le compte courant existe de base)
     case "ouvrircompte": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
       if (args.length < 1)
-        return message.reply({ embeds: [embedReply("Usage: !ouvrircompte [type]")] });
+        return message.reply({ embeds: [embedReply("Usage: !ouvrircompte [type] (epargne/entreprise)")] });
       const type = args[0].toLowerCase();
+      if (type === "courant") {
+        return message.reply({ embeds: [embedReply("Le compte courant est créé automatiquement.")] });
+      }
       const account = getOrCreateAccount(message.author.id);
-      if (account[type] !== undefined)
+      if (account[type] !== undefined) {
         return message.reply({ embeds: [embedReply(`Vous possédez déjà un compte de type ${type}.`)] });
+      }
       account[type] = 0;
       updateAccount(message.author.id, account);
-      return message.reply({ embeds: [embedReply(`Compte de type ${type} créé.`)] });
+      return message.reply({ embeds: [embedReply(`Compte de type ${type} créé pour ${message.author.tag}.`)] });
     }
-    case "solde": {
-      if (args.length < 1)
-        return message.reply({ embeds: [embedReply("Usage: !solde [type] ou !compte [@joueur]")] });
-      // Si un utilisateur est mentionné, afficher son compte ; sinon, afficher le compte de l'auteur
-      const target = message.mentions.members.first();
-      const account = target ? getAccount(target.id) : getOrCreateAccount(message.author.id);
-      const liquide = account.courant;
-      const banque = account.epargne + account.investissement;
-      const total = liquide + banque;
-      const embed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle(target ? `Compte de ${target.user.username}` : "Informations de votre compte")
-        .setDescription(
-          `**Argent en liquide :** $${liquide.toFixed(2)}\n` +
-          `**Argent en banque :** $${banque.toFixed(2)}\n` +
-          `**Total :** $${total.toFixed(2)}`
-        );
-      return message.reply({ embeds: [embed] });
-    }
-    case "déposer": {
-      if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !déposer [montant] [type]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount))
-        return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const type = args[1].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined)
-        return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      account[type] += amount;
-      updateAccount(message.author.id, account);
-      return message.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} sur votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
-    }
-    case "retirer": {
-      if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !retirer [montant] [type]")] });
-      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(amount))
-        return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const type = args[1].toLowerCase();
-      const account = getOrCreateAccount(message.author.id);
-      if (account[type] === undefined)
-        return message.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)] });
-      if (account[type] < amount)
-        return message.reply({ embeds: [embedReply("Fonds insuffisants.")] });
-      account[type] -= amount;
-      updateAccount(message.author.id, account);
-      return message.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} de votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
-    }
+
+    // !transférer [montant] [destinataire] [type]
     case "transférer": {
       if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
         return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
@@ -172,16 +150,211 @@ async function handleEconomyCommand(message) {
       const type = args[2].toLowerCase();
       const senderAccount = getOrCreateAccount(message.author.id);
       const receiverAccount = getOrCreateAccount(target.id);
-      if (senderAccount[type] === undefined || receiverAccount[type] === undefined)
-        return message.reply({ embeds: [embedReply("Type de compte inexistant pour l'un des utilisateurs.")] });
-      if (senderAccount[type] < amount)
-        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte.")] });
+      if (senderAccount[type] === undefined || receiverAccount[type] === undefined) {
+        return message.reply({ embeds: [embedReply("Type de compte inexistant pour l'un des utilisateurs.")], ephemeral: true });
+      }
+      if (senderAccount[type] < amount) {
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte.")], ephemeral: true });
+      }
       senderAccount[type] -= amount;
       receiverAccount[type] += amount;
       updateAccount(message.author.id, senderAccount);
       updateAccount(target.id, receiverAccount);
       return message.reply({ embeds: [embedReply(`Transfert de $${amount.toFixed(2)} de votre compte ${type} vers ${target.user.tag} effectué.`)] });
     }
+
+    // !emprunter [montant] [durée]
+    case "emprunter": {
+      if (args.length < 2)
+        return message.reply({ embeds: [embedReply("Usage: !emprunter [montant] [durée]")] });
+      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(amount))
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const duree = args[1];
+      // Logique d'emprunt à développer
+      return message.reply({ embeds: [embedReply(`Demande d'emprunt de $${amount.toFixed(2)} pour ${duree} reçue.`)] });
+    }
+
+    // !contrat [nombanque] [adressebanque] [@client] [adresseclient] [typecompte] [depotinitial] [frais]
+    case "contrat": {
+      if (args.length < 7)
+        return message.reply({ embeds: [embedReply("Usage: !contrat [nombanque] [adressebanque] [@client] [adresseclient] [typecompte] [depotinitial] [frais]")] });
+      const nomBanque = args[0];
+      const adresseBanque = args[1];
+      const client = message.mentions.members.first();
+      if (!client)
+        return message.reply({ embeds: [embedReply("Client non trouvé.")] });
+      const adresseClient = args[2]; // Vous pouvez ajuster si l'adresse comporte des espaces
+      const typeCompte = args[3].toLowerCase();
+      const depotInitial = parseFloat(args[4].replace('$', '').replace(',', '.'));
+      const frais = parseFloat(args[5].replace('$', '').replace(',', '.'));
+      if (isNaN(depotInitial) || isNaN(frais))
+        return message.reply({ embeds: [embedReply("Montant de dépôt ou frais invalide.")] });
+      const conditions = `Conditions Générales de Soumission d’un Compte Bancaire
+Les présentes conditions générales régissent l'ouverture et la gestion d'un compte bancaire auprès de la Banque. En soumettant une demande d'ouverture de compte, le client accepte expressément ces conditions.
+
+Types de Comptes Offerts
+• Compte d'Épargne : taux d'intérêt de 5 % annuel.
+• Compte Courant : pour transactions quotidiennes.
+• Compte d’Entreprise : réservé aux entreprises.
+• Dépôt National spécifique pour l’état
+
+Conditions d'Ouverture
+• Âge minimum : 18 ans.
+• Pièce d'identité valide.
+• Dépôt minimum : 50$ pour épargne, 100$ pour courant.
+
+Gestion du Compte
+• Maintien d'un solde minimum sur le compte courant.
+• Conformité aux lois.
+• Notification des changements.
+
+Droits de la Banque
+• Modification des taux et frais avec préavis.
+• Fermeture du compte en cas de non-respect.
+
+Protection
+• Fonds protégés jusqu'à 1 000$ par client.
+
+Confidentialité
+• Les informations restent confidentielles.
+
+Résiliation
+• Clôture possible à tout moment avec remboursement sous 10 jours.
+
+Signatures :
+Signature du Représentant de la Banque`;
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle("Demande d'ouverture de compte bancaire")
+        .setDescription(
+          `**Nom de la Banque :** ${nomBanque}\n` +
+          `**Adresse de la Banque :** ${adresseBanque}\n\n` +
+          `**Nom du Client :** ${client.user.username}\n` +
+          `**Adresse du Client :** ${adresseClient}\n` +
+          `**Type de Compte :** ${typeCompte}\n` +
+          `**Montant de Dépôt Initial :** $${depotInitial.toFixed(2)}\n` +
+          `**Frais Bancaires :** $${frais.toFixed(2)}\n\n` +
+          conditions
+        );
+      return message.reply({ embeds: [embed] });
+    }
+
+    // !retirerargent [@joueur] [montant]
+    case "retirerargent": {
+      if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
+        return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
+      if (args.length < 2)
+        return message.reply({ embeds: [embedReply("Usage: !retirerargent [@joueur] [montant]")] });
+      const target = message.mentions.members.first();
+      if (!target)
+        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
+      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
+      if (isNaN(amount) || amount <= 0)
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const account = getOrCreateAccount(target.id);
+      if (account.courant < amount)
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur le compte du joueur.")] });
+      account.courant -= amount;
+      updateAccount(target.id, account);
+      return message.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été retirés du compte de ${target.user.tag}.`)] });
+    }
+
+    // !retirermoney [montant]
+    case "retirermoney": {
+      if (args.length < 1)
+        return message.reply({ embeds: [embedReply("Usage: !retirermoney [montant]")] });
+      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(amount))
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const account = getOrCreateAccount(message.author.id);
+      const bankAmount = account.epargne + account.investissement;
+      if (bankAmount < amount) {
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte en banque.")], ephemeral: true });
+      }
+      let reste = amount;
+      if (account.epargne >= reste) {
+        account.epargne -= reste;
+        reste = 0;
+      } else {
+        reste -= account.epargne;
+        account.epargne = 0;
+        if (account.investissement >= reste) {
+          account.investissement -= reste;
+          reste = 0;
+        } else {
+          return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte en banque.")], ephemeral: true });
+        }
+      }
+      account.courant += amount;
+      updateAccount(message.author.id, account);
+      return message.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} de votre compte en banque. Nouveau solde liquide: $${account.courant.toFixed(2)}.`)] });
+    }
+
+    // !depargent [montant]
+    case "depargent": {
+      if (args.length < 1)
+        return message.reply({ embeds: [embedReply("Usage: !depargent [montant]")] });
+      const amount = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(amount))
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const account = getOrCreateAccount(message.author.id);
+      if (account.courant < amount) {
+        return message.reply({ embeds: [embedReply("Fonds insuffisants en liquide.")], ephemeral: true });
+      }
+      account.courant -= amount;
+      account.epargne += amount;
+      updateAccount(message.author.id, account);
+      return message.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} de votre liquide sur votre compte en banque. Nouveau solde épargne: $${account.epargne.toFixed(2)}.`)] });
+    }
+
+      // -------------- Cas pour la commande !msgsupr --------------
+case "msgsupr": {
+  await handleMsgsuprCommand(message, args);
+  break;
+  }
+
+    // !paye [@joueur] [montant] [type]
+    case "paye": {
+      if (args.length < 3)
+        return message.reply({ embeds: [embedReply("Usage: !paye [@joueur] [montant] [type]")] });
+      const target = message.mentions.members.first();
+      if (!target)
+        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
+      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
+      if (isNaN(amount) || amount <= 0)
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const type = args[2].toLowerCase();
+      let senderAccount;
+      if (type === "courant") {
+        senderAccount = getOrCreateAccount(message.author.id);
+      } else {
+        senderAccount = getAccount(message.author.id);
+        if (!senderAccount || senderAccount[type] === undefined) {
+          return message.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour vous. Veuillez contacter un banquiers.`)], ephemeral: true });
+        }
+      }
+      let receiverAccount;
+      if (type === "courant") {
+        receiverAccount = getOrCreateAccount(target.id);
+      } else {
+        receiverAccount = getAccount(target.id);
+        if (!receiverAccount || receiverAccount[type] === undefined) {
+          return message.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.user.username}.`)], ephemeral: true });
+        }
+      }
+      if (senderAccount[type] < amount) {
+        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte pour effectuer ce paiement.")], ephemeral: true });
+      }
+      senderAccount[type] -= amount;
+      receiverAccount[type] += amount;
+      updateAccount(message.author.id, senderAccount);
+      updateAccount(target.id, receiverAccount);
+      return message.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.user.tag} depuis votre compte ${type}.`)] });
+    }
+
+    // !investir [montant] [entreprise]
     case "investir": {
       if (args.length < 2)
         return message.reply({ embeds: [embedReply("Usage: !investir [montant] [entreprise]")] });
@@ -191,6 +364,8 @@ async function handleEconomyCommand(message) {
       const entreprise = args.slice(1).join(" ");
       return message.reply({ embeds: [embedReply(`Vous avez investi $${amount.toFixed(2)} dans ${entreprise}.`)] });
     }
+
+    // !acheterpart [montant] [entreprise]
     case "acheterpart": {
       if (args.length < 2)
         return message.reply({ embeds: [embedReply("Usage: !acheterpart [montant] [entreprise]")] });
@@ -200,6 +375,8 @@ async function handleEconomyCommand(message) {
       const entreprise = args.slice(1).join(" ");
       return message.reply({ embeds: [embedReply(`Vous avez acheté des parts pour $${amount.toFixed(2)} dans ${entreprise}.`)] });
     }
+
+    // !achetermaison [prix] [adresse]
     case "achetermaison": {
       if (args.length < 2)
         return message.reply({ embeds: [embedReply("Usage: !achetermaison [prix] [adresse]")] });
@@ -209,6 +386,8 @@ async function handleEconomyCommand(message) {
       const adresse = args.slice(1).join(" ");
       return message.reply({ embeds: [embedReply(`Maison achetée à ${adresse} pour $${prix.toFixed(2)}.`)] });
     }
+
+    // !acheterproduit [produit] [quantité] [prix]
     case "acheterproduit": {
       if (args.length < 3)
         return message.reply({ embeds: [embedReply("Usage: !acheterproduit [produit] [quantité] [prix]")] });
@@ -219,6 +398,8 @@ async function handleEconomyCommand(message) {
         return message.reply({ embeds: [embedReply("Quantité ou prix invalide.")] });
       return message.reply({ embeds: [embedReply(`Vous avez acheté ${quantite} ${produit} pour $${prix.toFixed(2)}.`)] });
     }
+
+    // !vendrestock [type] [quantité] [prixtotal]
     case "vendrestock": {
       if (args.length < 3)
         return message.reply({ embeds: [embedReply("Usage: !vendrestock [type] [quantité] [prixtotal]")] });
@@ -233,6 +414,19 @@ async function handleEconomyCommand(message) {
       global.stockData[itemType].prixtotal -= prixtotal;
       return message.reply({ embeds: [embedReply(`Vous avez vendu ${quantite} de ${itemType} pour un total de $${prixtotal.toFixed(2)}.`)] });
     }
+
+    // !remboursement [montant] [emprunt]
+    case "remboursement": {
+      if (args.length < 2)
+        return message.reply({ embeds: [embedReply("Usage: !remboursement [montant] [emprunt]")] });
+      const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
+      if (isNaN(montant))
+        return message.reply({ embeds: [embedReply("Montant invalide.")] });
+      const emprunt = args[1];
+      return message.reply({ embeds: [embedReply(`Remboursement de $${montant.toFixed(2)} effectué pour l'emprunt ${emprunt}.`)] });
+    }
+
+    // !ajouterstock [type] [quantité] [prixtotal]
     case "ajouterstock": {
       if (args.length < 2) {
         let list = "Items disponibles à commander:\n";
@@ -267,106 +461,30 @@ async function handleEconomyCommand(message) {
       global.stockData[itemType].prixtotal += totalPrice;
       return message.reply({ embeds: [embedReply(`Ajouté ${quantite} de ${itemType} pour un total de $${totalPrice.toFixed(2)}.\nL'argent a été retiré de votre compte et crédité à l'usine de production.`)] });
     }
-    // -------------- Cas pour la commande !msgsupr --------------
+
+    // !msgsupr [nombre de messages]
     case "msgsupr": {
       await handleMsgsuprCommand(message, args);
       break;
     }
-    // -------------- Cas pour la commande !paye --------------
-    case "paye": {
-      // La commande !paye [@joueur] [montant]
-      if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !paye [@joueur] [montant]")] });
-      const target = message.mentions.members.first();
-      if (!target)
-        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
-      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
-      if (isNaN(amount) || amount <= 0)
-        return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const senderAccount = getOrCreateAccount(message.author.id);
-      const receiverAccount = getOrCreateAccount(target.id);
-      if (senderAccount.courant < amount)
-        return message.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte pour effectuer ce paiement.")] });
-      senderAccount.courant -= amount;
-      receiverAccount.courant += amount;
-      updateAccount(message.author.id, senderAccount);
-      updateAccount(target.id, receiverAccount);
-      return message.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.user.tag}.`)] });
-    }
-    // -------------- Cas pour la commande !retirerargent (banquiers uniquement) --------------
-    case "retirerargent": {
-      if (!hasRole(message.member, process.env.BANQUIER_ROLE_ID))
-        return message.reply({ embeds: [embedReply("Cette commande est réservée aux banquiers.")] });
-      if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !retirerargent [@joueur] [montant]")] });
-      const target = message.mentions.members.first();
-      if (!target)
-        return message.reply({ embeds: [embedReply("Joueur non trouvé.")] });
-      const amount = parseFloat(args[1].replace('$', '').replace(',', '.'));
-      if (isNaN(amount) || amount <= 0)
-        return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      const account = getOrCreateAccount(target.id);
-      if (account.courant < amount)
-        return message.reply({ embeds: [embedReply("Fonds insuffisants sur le compte du joueur.")] });
-      account.courant -= amount;
-      updateAccount(target.id, account);
-      return message.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été retirés du compte de ${target.user.tag}.`)] });
-    }
-    // ------------------------------
-    // Commandes concernant les taxes
-    // ------------------------------
-    case "déclarertaxe": {
-      if (args.length < 1)
-        return message.reply({ embeds: [embedReply("Usage: !déclarertaxe [montant]")] });
-      const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      if (isNaN(montant))
-        return message.reply({ embeds: [embedReply("Montant invalide.")] });
-      return message.reply({ embeds: [embedReply(`Taxe déclarée: $${montant.toFixed(2)}.`)] });
-    }
-    case "calculertaxe": {
-      if (args.length < 2)
-        return message.reply({ embeds: [embedReply("Usage: !calculertaxe [montant] [taux]")] });
-      const montant = parseFloat(args[0].replace('$', '').replace(',', '.'));
-      const taux = parseFloat(args[1].replace('%', '').replace(',', '.'));
-      if (isNaN(montant) || isNaN(taux))
-        return message.reply({ embeds: [embedReply("Montant ou taux invalide.")] });
-      const taxe = montant * (taux / 100);
-      return message.reply({ embeds: [embedReply(`La taxe pour $${montant.toFixed(2)} à ${taux}% est $${taxe.toFixed(2)}.`)] });
-    }
-    // ------------------------------
-    // Autres commandes économiques
-    // ------------------------------
-    case "rapportsfinanciers": {
-      return message.reply({ embeds: [embedReply("Rapport financier généré (simulation).")] });
-    }
-    case "statistiqueséconomiques": {
-      return message.reply({ embeds: [embedReply("Statistiques économiques globales (simulation).")] });
-    }
-    case "tauxdinteret": {
-      return message.reply({ embeds: [embedReply("Le taux d'intérêt actuel est de 5% (simulation).")] });
-    }
-    case "ajoutertauxdinteret": {
-      return message.reply({ embeds: [embedReply("Taux d'intérêt ajouté (simulation).")] });
-    }
-    case "supprimertauxdinteret": {
-      return message.reply({ embeds: [embedReply("Taux d'intérêt supprimé (simulation).")] });
-    }
+
+    // !aide
     case "aide": {
       const helpMessage = `
 **Commandes Banquier:**
 !ajouterargent [@joueur] [montant]
-!ouvrircompte [type]
+!ouvrircompte [type] (epargne/entreprise)
 !transférer [montant] [destinataire] [type]
 !emprunter [montant] [durée]
-!contrat [type] [détails]
+!contrat [nombanque] [adressebanque] [@client] [adresseclient] [typecompte] [depotinitial] [frais]
 !retirerargent [@joueur] [montant]
 
 **Commandes Citoyen:**
-!compte [@joueur]
+!compte [@joueur] [type]
 !solde [type]
-!paye [@joueur] [montant]
-!déposer [montant] [type]
-!retirer [montant] [type]
+!paye [@joueur] [montant] [type]
+!retirermoney [montant]
+!depargent [montant]
 !investir [montant] [entreprise]
 !acheterpart [montant] [entreprise]
 !achetermaison [prix] [adresse]
@@ -387,6 +505,7 @@ async function handleEconomyCommand(message) {
       `;
       return message.reply({ embeds: [embedReply(helpMessage)] });
     }
+
     default:
       return; // Commande inconnue
   }
