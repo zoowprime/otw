@@ -2,8 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 
-// Vérifier que le dossier C:\data existe, sinon le créer
+// Définir le dossier de stockage sur votre disque C:
 const dataDir = 'C:\\data';
+
+// Vérifier que le dossier existe, sinon le créer
 if (!fs.existsSync(dataDir)) {
   try {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -11,48 +13,43 @@ if (!fs.existsSync(dataDir)) {
   } catch (err) {
     console.error(`Erreur lors de la création du dossier ${dataDir} :`, err);
   }
+} else {
+  console.log(`Le dossier ${dataDir} existe déjà.`);
 }
 
-// Chemin complet vers le fichier
+// Chemin complet vers le fichier de données
 const dataPath = path.join(dataDir, 'economyData.json');
 
-/**
- * Charge les données depuis le fichier JSON.
- * Retourne un objet vide si le fichier n'existe pas ou en cas d'erreur de parsing.
- */
+// Fonction pour charger les données depuis le fichier JSON
 function loadEconomyData() {
   if (fs.existsSync(dataPath)) {
     try {
       const rawData = fs.readFileSync(dataPath, 'utf8');
+      console.log(`Fichier ${dataPath} lu avec succès.`);
       return JSON.parse(rawData);
     } catch (err) {
       console.error("Erreur de lecture ou de parsing de economyData.json :", err);
       return {};
     }
+  } else {
+    console.log(`Fichier ${dataPath} n'existe pas. Un nouvel objet sera créé.`);
+    return {};
   }
-  return {};
 }
 
-/**
- * Sauvegarde les données dans le fichier JSON.
- * @param {object} data - L'objet à sauvegarder.
- */
+// Fonction pour sauvegarder les données dans le fichier JSON
 function saveEconomyData(data) {
   try {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`Données sauvegardées dans ${dataPath}`);
   } catch (err) {
     console.error("Erreur lors de la sauvegarde de economyData.json :", err);
   }
 }
 
-// Charger les données existantes (ou un objet vide si le fichier n'existe pas)
 const bankData = loadEconomyData();
 
-/**
- * Retourne le compte pour un userId donné,
- * le crée si nécessaire.
- * @param {string} userId - L'identifiant de l'utilisateur.
- */
+// Fonction pour obtenir ou créer un compte pour un utilisateur
 function getOrCreateAccount(userId) {
   if (!bankData[userId]) {
     bankData[userId] = {
@@ -60,18 +57,16 @@ function getOrCreateAccount(userId) {
       courant: 0,
       investissement: 0,
     };
+    console.log(`Création d'un compte pour l'utilisateur ${userId}`);
     saveEconomyData(bankData);
   }
   return bankData[userId];
 }
 
-/**
- * Met à jour le compte d'un utilisateur et sauvegarde les données.
- * @param {string} userId - L'identifiant de l'utilisateur.
- * @param {object} account - L'objet représentant le compte (epargne, courant, investissement).
- */
+// Fonction pour mettre à jour un compte et sauvegarder les données
 function updateAccount(userId, account) {
   bankData[userId] = account;
+  console.log(`Mise à jour du compte pour l'utilisateur ${userId}:`, account);
   saveEconomyData(bankData);
 }
 
