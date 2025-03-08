@@ -1,8 +1,7 @@
 // src/commands/economy.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getOrCreateAccount, updateAccount, getAccount } = require('../economyData');
+const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// Utilitaire pour créer un embed rouge
 const embedReply = (description) =>
   new EmbedBuilder().setColor(0xff0000).setDescription(description);
 
@@ -10,20 +9,18 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('economy')
     .setDescription('Commandes économiques')
-    
-    // Affiche le compte d’un joueur (ou le vôtre)
+    // Sous-commande: afficher le compte (pour soi ou pour un autre)
     .addSubcommand(subcommand =>
       subcommand
         .setName('compte')
         .setDescription('Affiche le compte d’un joueur ou le vôtre')
         .addUserOption(option =>
           option.setName('target')
-            .setDescription('Le joueur dont afficher le compte')
+            .setDescription("L'utilisateur dont afficher le compte")
             .setRequired(false)
         )
     )
-    
-    // Affiche le solde d’un compte (type)
+    // Sous-commande: afficher le solde d’un compte (type)
     .addSubcommand(subcommand =>
       subcommand
         .setName('solde')
@@ -34,8 +31,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Déclare une taxe
+    // Sous-commande: déclarer une taxe
     .addSubcommand(subcommand =>
       subcommand
         .setName('declarertaxe')
@@ -46,8 +42,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Calcule une taxe
+    // Sous-commande: calculer une taxe
     .addSubcommand(subcommand =>
       subcommand
         .setName('calculertaxe')
@@ -63,42 +58,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Déposer de l’argent sur un compte
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('deposer')
-        .setDescription('Déposer de l’argent sur un compte')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Le montant à déposer')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Le type de compte (epargne, courant, investissement)')
-            .setRequired(true)
-        )
-    )
-    
-    // Retirer de l’argent d’un compte
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('retirer')
-        .setDescription('Retirer de l’argent d’un compte')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Le montant à retirer')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Le type de compte')
-            .setRequired(true)
-        )
-    )
-    
-    // Investir dans une entreprise
+    // Sous-commande: investir
     .addSubcommand(subcommand =>
       subcommand
         .setName('investir')
@@ -110,16 +70,15 @@ module.exports = {
         )
         .addStringOption(option =>
           option.setName('entreprise')
-            .setDescription('Le nom de l’entreprise')
+            .setDescription("Le nom de l'entreprise")
             .setRequired(true)
         )
     )
-    
-    // Acheter des parts
+    // Sous-commande: acheter des parts
     .addSubcommand(subcommand =>
       subcommand
         .setName('acheterpart')
-        .setDescription('Acheter des parts dans une entreprise')
+        .setDescription("Acheter des parts dans une entreprise")
         .addNumberOption(option =>
           option.setName('montant')
             .setDescription('Le montant pour acheter des parts')
@@ -127,12 +86,11 @@ module.exports = {
         )
         .addStringOption(option =>
           option.setName('entreprise')
-            .setDescription('Le nom de l’entreprise')
+            .setDescription("Le nom de l'entreprise")
             .setRequired(true)
         )
     )
-    
-    // Acheter une maison
+    // Sous-commande: acheter une maison
     .addSubcommand(subcommand =>
       subcommand
         .setName('achetermaison')
@@ -144,12 +102,11 @@ module.exports = {
         )
         .addStringOption(option =>
           option.setName('adresse')
-            .setDescription('L’adresse de la maison')
+            .setDescription("L'adresse de la maison")
             .setRequired(true)
         )
     )
-    
-    // Acheter un produit
+    // Sous-commande: acheter un produit
     .addSubcommand(subcommand =>
       subcommand
         .setName('acheterproduit')
@@ -170,8 +127,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Vendre des stocks
+    // Sous-commande: vendre des stocks
     .addSubcommand(subcommand =>
       subcommand
         .setName('vendrestock')
@@ -192,12 +148,11 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Rembourser un emprunt
+    // Sous-commande: rembourser un emprunt
     .addSubcommand(subcommand =>
       subcommand
         .setName('remboursement')
-        .setDescription('Rembourser un emprunt')
+        .setDescription("Rembourser un emprunt")
         .addNumberOption(option =>
           option.setName('montant')
             .setDescription('Le montant à rembourser')
@@ -209,15 +164,14 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Ajouter des stocks
+    // Sous-commande: ajouter des stocks
     .addSubcommand(subcommand =>
       subcommand
         .setName('ajouterstock')
         .setDescription('Ajouter des stocks et créditer l’usine de production')
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Le type d’item')
+            .setDescription("Le type d’item")
             .setRequired(true)
         )
         .addNumberOption(option =>
@@ -231,8 +185,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Retirer de l'argent du compte en banque (mettre en liquide)
+    // Sous-commande: retirer de l'argent du compte en banque (pour le mettre en liquide)
     .addSubcommand(subcommand =>
       subcommand
         .setName('retirermoney')
@@ -243,8 +196,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Déposer de l'argent liquide sur le compte en banque
+    // Sous-commande: déposer de l'argent liquide sur le compte en banque
     .addSubcommand(subcommand =>
       subcommand
         .setName('depargent')
@@ -255,8 +207,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Paiement entre joueurs
+    // Sous-commande: paiement entre joueurs
     .addSubcommand(subcommand =>
       subcommand
         .setName('paye')
@@ -272,15 +223,15 @@ module.exports = {
             .setRequired(true)
         )
     ),
-
+    
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
 
     // /economy compte [target]
     if (subcommand === 'compte') {
       const target = interaction.options.getUser('target');
-      const account = target ? (getAccount(target.id) || getOrCreateAccount(target.id))
-                             : getOrCreateAccount(interaction.user.id);
+      // Utiliser getOrCreateAccount pour créer le compte s'il n'existe pas
+      const account = target ? getOrCreateAccount(target.id) : getOrCreateAccount(interaction.user.id);
       const liquide = account.courant;
       const banque = account.epargne + account.investissement;
       const total = liquide + banque;
@@ -318,35 +269,6 @@ module.exports = {
       const taux = interaction.options.getNumber('taux');
       const taxe = montant * (taux / 100);
       return interaction.reply({ embeds: [embedReply(`La taxe pour $${montant.toFixed(2)} à ${taux}% est $${taxe.toFixed(2)}.`)] });
-    }
-    
-    // /economy deposer [montant] [type]
-    if (subcommand === 'deposer') {
-      const montant = interaction.options.getNumber('montant');
-      const type = interaction.options.getString('type').toLowerCase();
-      const account = getOrCreateAccount(interaction.user.id);
-      if (account[type] === undefined) {
-        return interaction.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)], ephemeral: true });
-      }
-      account[type] += montant;
-      updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez déposé $${montant.toFixed(2)} sur votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
-    }
-    
-    // /economy retirer [montant] [type]
-    if (subcommand === 'retirer') {
-      const montant = interaction.options.getNumber('montant');
-      const type = interaction.options.getString('type').toLowerCase();
-      const account = getOrCreateAccount(interaction.user.id);
-      if (account[type] === undefined) {
-        return interaction.reply({ embeds: [embedReply(`Aucun compte de type ${type} trouvé.`)], ephemeral: true });
-      }
-      if (account[type] < montant) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants.")], ephemeral: true });
-      }
-      account[type] -= montant;
-      updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez retiré $${montant.toFixed(2)} de votre compte ${type}. Nouveau solde: $${account[type].toFixed(2)}.`)] });
     }
     
     // /economy investir [montant] [entreprise]
@@ -430,11 +352,12 @@ module.exports = {
     if (subcommand === 'retirermoney') {
       const montant = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(interaction.user.id);
-      // Supposons que le compte en banque correspond aux comptes 'epargne' et 'investissement'
+      // Ici, nous considérons que l'argent en banque correspond à la somme de l'épargne et de l'investissement
       const bankAmount = account.epargne + account.investissement;
       if (bankAmount < montant) {
         return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte en banque.")], ephemeral: true });
       }
+      // Retrait prioritaire de l'épargne puis de l'investissement
       let reste = montant;
       if (account.epargne >= reste) {
         account.epargne -= reste;
