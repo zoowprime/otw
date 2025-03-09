@@ -379,23 +379,31 @@ module.exports = {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === 'compte') {
-      const target = interaction.options.getUser('target') || interaction.user;
-      const type = interaction.options.getString('type').toLowerCase();
-      let account;
-      if (type === 'courant') {
-        account = getOrCreateAccount(target.id);
-      } else {
-        account = getAccount(target.id);
-        if (!account || account[type] === undefined) {
-          return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.username}. Veuillez contacter un banquier.`)], ephemeral: true });
+      try {
+        const target = interaction.options.getUser('target') || interaction.user;
+        const type = interaction.options.getString('type').toLowerCase();
+        let account;
+        if (type === 'courant') {
+          account = getOrCreateAccount(target.id);
+        } else {
+          account = getAccount(target.id);
+          if (!account || account[type] === undefined) {
+            return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.username}. Veuillez contacter un banquiers.`)], ephemeral: true });
+          }
         }
+        const value = account[type];
+        if (typeof value !== 'number') {
+          throw new Error(`La valeur du compte ${type} pour ${target.username} n'est pas un nombre.`);
+        }
+        const embed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle(`Compte ${type} de ${target.username}`)
+          .setDescription(`Votre solde pour le compte ${type} est $${value.toFixed(2)}.`);
+        return interaction.reply({ embeds: [embed] });
+      } catch (error) {
+        console.error("Erreur dans la sous-commande /economy compte:", error);
+        return interaction.reply({ content: "Une erreur est survenue lors de l'exécution de la commande.", ephemeral: true });
       }
-      const value = account[type];
-      const embed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle(`Compte ${type} de ${target.username}`)
-        .setDescription(`Votre solde pour le compte ${type} est $${value.toFixed(2)}.`);
-      return interaction.reply({ embeds: [embed] });
     }
 
     if (subcommand === 'solde') {
