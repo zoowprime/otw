@@ -1,10 +1,11 @@
 // src/commands/ci.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { setRecensement } = require('../recensementData');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ci')
-    .setDescription('Recensement civil de l’état de Belleshore')
+    .setDescription('Enregistre votre recensement civil de l’état de Belleshore')
     .addStringOption(option =>
       option.setName('nom')
         .setDescription('Votre nom')
@@ -24,7 +25,6 @@ module.exports = {
       option.setName('sexe')
         .setDescription('Votre sexe')
         .setRequired(true)
-        // Vous pouvez proposer des choix
         .addChoices(
           { name: 'homme', value: 'homme' },
           { name: 'femme', value: 'femme' }
@@ -50,34 +50,44 @@ module.exports = {
         .setDescription('Insérez une photo')
         .setRequired(true)
     ),
-    
   async execute(interaction) {
-    // Récupération des options
     const nom = interaction.options.getString('nom');
     const prenom = interaction.options.getString('prenom');
     const telegramme = interaction.options.getUser('telegramme');
     const sexe = interaction.options.getString('sexe');
-    const dateNaissance = interaction.options.getString('datenaissance');
-    const lieuNaissance = interaction.options.getString('lieunais');
+    const datenaissance = interaction.options.getString('datenaissance');
+    const lieunais = interaction.options.getString('lieunais');
     const nationalite = interaction.options.getString('nationalite');
     const photo = interaction.options.getAttachment('photo');
 
-    // Création de l'embed avec la couleur rouge
     const embed = new EmbedBuilder()
       .setColor(0xff0000)
       .setTitle("Recensement civil de l'état de Belleshore")
       .setDescription(
         `**Nom :** ${nom}\n` +
         `**Prénom :** ${prenom}\n` +
-        `**Télégramme :** ${telegramme}\n` +
+        `**Télégramme :** <@${telegramme.id}>\n` +
         `**Sexe :** ${sexe}\n` +
-        `**Date de naissance :** ${dateNaissance}\n` +
-        `**Lieu de naissance :** ${lieuNaissance}\n` +
+        `**Date de naissance :** ${datenaissance}\n` +
+        `**Lieu de naissance :** ${lieunais}\n` +
         `**Nationalité :** ${nationalite}`
       )
       .setImage(photo.url);
 
-    // Réponse à l'interaction
-    await interaction.reply({ embeds: [embed] });
+    // Enregistrer le recensement pour l'utilisateur
+    const recensement = {
+      nom,
+      prenom,
+      telegramme: telegramme.id,
+      sexe,
+      datenaissance,
+      lieunais,
+      nationalite,
+      photo: photo.url,
+      timestamp: Date.now()
+    };
+    setRecensement(interaction.user.id, recensement);
+
+    return interaction.reply({ embeds: [embed] });
   },
 };
