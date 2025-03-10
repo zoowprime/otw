@@ -21,6 +21,9 @@ const client = new Client({
 // src/bot.js (ajoutez cette ligne après la création du client)
 require('./events/welcome.js')(client);
 
+// ***** AJOUT DU SYSTÈME DE NIVEAUX *****
+require('./events/levelSystem')(client);
+
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
