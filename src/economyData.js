@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// Utilisez la variable d'environnement DATA_DIR, sinon utilisez "/data" par défaut.
+// Utilisez la variable d'environnement DATA_DIR, sinon utilisez "C:\data" par défaut.
 const dataDir = process.env.DATA_DIR || '/data';
 
 // Vérifier que le dossier existe, sinon le créer
@@ -44,18 +44,14 @@ function saveEconomyData(data) {
   }
 }
 
-// Charger les données en mémoire
 const bankData = loadEconomyData();
 
-/**
- * Crée un compte par défaut pour l'utilisateur s'il n'existe pas déjà.
- */
 function getOrCreateAccount(userId) {
   if (!bankData[userId]) {
     bankData[userId] = {
-      courant: 0,
-      epargne: 0,
-      investissement: 0,
+      courant: { liquide: 0, banque: 0 },
+      entreprise: { liquide: 0, banque: 0 },
+      epargne: 0
     };
     console.log(`Création d'un compte pour l'utilisateur ${userId}`);
     saveEconomyData(bankData);
@@ -63,22 +59,14 @@ function getOrCreateAccount(userId) {
   return bankData[userId];
 }
 
-/**
- * Récupère le compte d'un utilisateur sans rien créer.
- * Renvoie null si aucun compte n'existe.
- */
 function getAccount(userId) {
   return bankData[userId] || null;
 }
 
-/**
- * Met à jour un compte d’utilisateur et sauvegarde sur disque.
- */
 function updateAccount(userId, account) {
   bankData[userId] = account;
   console.log(`Mise à jour du compte pour l'utilisateur ${userId}:`, account);
   saveEconomyData(bankData);
 }
 
-// Export des fonctions nécessaires
 module.exports = { getOrCreateAccount, getAccount, updateAccount };
