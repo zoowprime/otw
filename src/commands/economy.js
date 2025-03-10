@@ -17,19 +17,17 @@ module.exports = {
     .setName('economy')
     .setDescription('Commandes économiques')
     
-    // Sous-commande: compte (obligatoire: type, facultatif: target)
+    // Sous-commande: compte (affiche le compte d’un joueur ou le vôtre)
     .addSubcommand(subcommand =>
       subcommand
         .setName('compte')
         .setDescription('Affiche le compte d’un joueur ou le vôtre')
-        // OPTION OBLIGATOIRE en premier :
         .addStringOption(option =>
           option.setName('type')
             .setDescription('Type de compte (courant, epargne, entreprise)')
             .setRequired(true)
             .addChoices(...accountTypes)
         )
-        // OPTION FACULTATIVE ensuite :
         .addUserOption(option =>
           option.setName('target')
             .setDescription("L'utilisateur dont afficher le compte")
@@ -37,7 +35,7 @@ module.exports = {
         )
     )
     
-    // Sous-commande: solde (type obligatoire)
+    // Sous-commande: solde (affiche le solde d’un compte)
     .addSubcommand(subcommand =>
       subcommand
         .setName('solde')
@@ -50,7 +48,7 @@ module.exports = {
         )
     )
     
-    // Sous-commande: declarertaxe (montant requis)
+    // Sous-commande: declarertaxe
     .addSubcommand(subcommand =>
       subcommand
         .setName('declarertaxe')
@@ -62,7 +60,7 @@ module.exports = {
         )
     )
     
-    // Sous-commande: calculertaxe (montant et taux requis)
+    // Sous-commande: calculertaxe
     .addSubcommand(subcommand =>
       subcommand
         .setName('calculertaxe')
@@ -96,14 +94,19 @@ module.exports = {
         )
     )
     
-    // Sous-commande: ouvrircompte (pour epargne ou entreprise)
+    // Sous-commande: ouvrircompte (pour epargne ou entreprise, réservé aux banquiers)
     .addSubcommand(subcommand =>
       subcommand
         .setName('ouvrircompte')
-        .setDescription('Ouvre un compte bancaire (epargne ou entreprise)')
+        .setDescription('Ouvre un compte bancaire pour un joueur (epargne ou entreprise, banquiers uniquement)')
+        .addUserOption(option =>
+          option.setName('target')
+            .setDescription("Le joueur pour lequel ouvrir le compte")
+            .setRequired(true)
+        )
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Type de compte à ouvrir')
+            .setDescription('Type de compte à ouvrir (epargne ou entreprise)')
             .setRequired(true)
             .addChoices(
               { name: 'epargne', value: 'epargne' },
@@ -220,10 +223,19 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('retirermoney')
-        .setDescription('Retire de l’argent du compte en banque et le met en liquide')
+        .setDescription('Retire de l’argent d’un compte bancaire (hors epargne) et le met en liquide')
+        .addStringOption(option =>
+          option.setName('type')
+            .setDescription('Sélectionnez le compte (courant ou entreprise)')
+            .setRequired(true)
+            .addChoices(
+              { name: 'courant', value: 'courant' },
+              { name: 'entreprise', value: 'entreprise' }
+            )
+        )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à retirer du compte en banque')
+            .setDescription('Le montant à retirer du compte sélectionné')
             .setRequired(true)
         )
     )
@@ -232,10 +244,19 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('depargent')
-        .setDescription('Dépose de l’argent liquide sur le compte en banque')
+        .setDescription('Dépose de l’argent liquide sur un compte bancaire (hors epargne)')
+        .addStringOption(option =>
+          option.setName('type')
+            .setDescription('Sélectionnez le compte (courant ou entreprise)')
+            .setRequired(true)
+            .addChoices(
+              { name: 'courant', value: 'courant' },
+              { name: 'entreprise', value: 'entreprise' }
+            )
+        )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à déposer sur le compte en banque')
+            .setDescription('Le montant à déposer sur le compte sélectionné')
             .setRequired(true)
         )
     )
@@ -441,14 +462,24 @@ module.exports = {
     }
 
     if (subcommand === 'ouvrircompte') {
+      // Cette commande est réservée aux banquiers pour ouvrir un compte pour un joueur
+      if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
+        return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
+      }
+      const target = interaction.options.getUser('target');
       const type = interaction.options.getString('type').toLowerCase();
-      const account = getOrCreateAccount(interaction.user.id);
-      if (account[type] !== undefined) {
-        return interaction.reply({ embeds: [embedReply(`Vous possédez déjà un compte de type ${type}.`)], ephemeral: true });
+      // Seuls "epargne" et "entreprise" sont autorisés pour l'ouverture de compte par un banquier
+      const allowedTypes = ['epargne', 'entreprise'];
+      if (!allowedTypes.includes(type)) {
+        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' peuvent être ouverts par un banquier.")], ephemeral: true });
+      }
+      const account = getOrCreateAccount(target.id);
+      if (account[type] !== undefined && account[type] !== 0) {
+        return interaction.reply({ embeds: [embedReply(`Le joueur ${target.username} possède déjà un compte de type ${type}.`)], ephemeral: true });
       }
       account[type] = 0;
-      updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Compte de type ${type} créé pour ${interaction.user.username}.`)] });
+      updateAccount(target.id, account);
+      return interaction.reply({ embeds: [embedReply(`Compte de type ${type} créé pour ${target.username}.`)] });
     }
 
     if (subcommand === 'transférer') {
@@ -552,41 +583,37 @@ Résiliation
     }
 
     if (subcommand === 'retirermoney') {
+      const type = interaction.options.getString('type').toLowerCase();
+      // Refuser l'utilisation du compte epargne pour retirer de l'argent
+      if (type === 'epargne') {
+        return interaction.reply({ embeds: [embedReply("Opération invalide. Le compte 'epargne' ne peut être utilisé pour retirer des fonds.")], ephemeral: true });
+      }
       const amount = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(interaction.user.id);
-      const bankAmount = account.epargne + account.investissement;
-      if (bankAmount < amount) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte en banque.")], ephemeral: true });
+      if (account[type] < amount) {
+        return interaction.reply({ embeds: [embedReply(`Fonds insuffisants dans le compte ${type}.`)], ephemeral: true });
       }
-      let reste = amount;
-      if (account.epargne >= reste) {
-        account.epargne -= reste;
-        reste = 0;
-      } else {
-        reste -= account.epargne;
-        account.epargne = 0;
-        if (account.investissement >= reste) {
-          account.investissement -= reste;
-          reste = 0;
-        } else {
-          return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte en banque.")], ephemeral: true });
-        }
-      }
+      account[type] -= amount;
       account.courant += amount;
       updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} de votre compte en banque. Nouveau solde liquide: $${account.courant.toFixed(2)}.`)] });
+      return interaction.reply({ embeds: [embedReply(`Vous avez retiré $${amount.toFixed(2)} du compte ${type}. Nouveau solde liquide: $${account.courant.toFixed(2)}.`)] });
     }
 
     if (subcommand === 'depargent') {
+      const type = interaction.options.getString('type').toLowerCase();
+      // Refuser l'utilisation du compte epargne pour déposer de l'argent
+      if (type === 'epargne') {
+        return interaction.reply({ embeds: [embedReply("Opération invalide. Le compte 'epargne' ne peut être utilisé pour déposer des fonds.")], ephemeral: true });
+      }
       const amount = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(interaction.user.id);
       if (account.courant < amount) {
         return interaction.reply({ embeds: [embedReply("Fonds insuffisants en liquide.")], ephemeral: true });
       }
       account.courant -= amount;
-      account.epargne += amount;
+      account[type] += amount;
       updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} de votre liquide sur votre compte en banque. Nouveau solde épargne: $${account.epargne.toFixed(2)}.`)] });
+      return interaction.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} dans le compte ${type}. Nouveau solde ${type}: $${account[type].toFixed(2)}.`)] });
     }
 
     if (subcommand === 'paye') {
@@ -599,7 +626,7 @@ Résiliation
       } else {
         senderAccount = getAccount(interaction.user.id);
         if (!senderAccount || senderAccount[type] === undefined) {
-          return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour vous. Veuillez contacter un banquier.`)], ephemeral: true });
+          return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour vous. Veuillez contacter un banquiers.`)], ephemeral: true });
         }
       }
       let receiverAccount;
