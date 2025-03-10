@@ -12,10 +12,13 @@ const dataDir = process.env.DATA_DIR || '/data';
 const levelsDataPath = path.join(dataDir, 'levelsData.json');
 
 // URL de l'image de "niveau atteint". Mettez l'URL réelle de votre image ici :
-const LEVEL_UP_IMAGE_URL = 'https://exemple.com/images/niveau_atteint.jpg';
+const LEVEL_UP_IMAGE_URL = 'file:///C:/Users/kenka/Downloads/Règlement%20Légal.jpg';
 
-// Variable en mémoire pour stocker les niveaux
-// (chargée depuis levelsData.json au démarrage).
+// ID du salon où seront envoyés les messages de niveau
+// Mettez l’ID du salon de votre choix, ou utilisez une variable d’environnement
+const levelUpChannelId = process.env.LEVEL_UP_CHANNEL_ID || '1348682023350435932';
+
+// Variable en mémoire pour stocker les niveaux (chargée depuis levelsData.json).
 let levelsData = {};
 
 /**
@@ -91,6 +94,13 @@ module.exports = (client) => {
     if (newCount % 100 === 0) {
       const newLevel = newCount / 100; // 1, 2, 3, etc.
 
+      // Chercher le salon spécifique
+      const levelUpChannel = message.guild.channels.cache.get(levelUpChannelId);
+      if (!levelUpChannel) {
+        console.error(`Le salon de niveau (ID: ${levelUpChannelId}) est introuvable.`);
+        return; 
+      }
+
       // Créer l'embed pour annoncer le nouveau niveau
       const embed = new EmbedBuilder()
         .setColor(0xff9900)
@@ -101,8 +111,8 @@ module.exports = (client) => {
         )
         .setImage(LEVEL_UP_IMAGE_URL);
 
-      // Poster le message dans le même salon
-      message.channel.send({ embeds: [embed] });
+      // Envoyer l’embed dans le salon dédié
+      levelUpChannel.send({ embeds: [embed] });
     }
   });
 };
