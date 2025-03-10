@@ -16,7 +16,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('economy')
     .setDescription('Commandes économiques')
-    
+
     // Sous-commande: compte (affiche le compte d’un joueur ou le vôtre)
     .addSubcommand(subcommand =>
       subcommand
@@ -34,7 +34,7 @@ module.exports = {
             .setRequired(false)
         )
     )
-    
+
     // Sous-commande: solde (affiche le solde d’un compte)
     .addSubcommand(subcommand =>
       subcommand
@@ -47,7 +47,7 @@ module.exports = {
             .addChoices(...accountTypes)
         )
     )
-    
+
     // Sous-commande: declarertaxe
     .addSubcommand(subcommand =>
       subcommand
@@ -59,7 +59,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: calculertaxe
     .addSubcommand(subcommand =>
       subcommand
@@ -76,7 +76,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: ajouterargent (banquiers uniquement)
     .addSubcommand(subcommand =>
       subcommand
@@ -87,14 +87,20 @@ module.exports = {
             .setDescription("Le joueur cible")
             .setRequired(true)
         )
+        .addStringOption(option =>
+          option.setName('type')
+            .setDescription('Sélectionnez le compte à créditer')
+            .setRequired(true)
+            .addChoices(...accountTypes)
+        )
         .addNumberOption(option =>
           option.setName('montant')
             .setDescription("Le montant à ajouter")
             .setRequired(true)
         )
     )
-    
-    // Sous-commande: ouvrircompte (pour epargne ou entreprise, réservée aux banquiers)
+
+    // Sous-commande: ouvrircompte (banquiers uniquement)
     .addSubcommand(subcommand =>
       subcommand
         .setName('ouvrircompte')
@@ -114,7 +120,7 @@ module.exports = {
             )
         )
     )
-    
+
     // Sous-commande: transférer (banquiers uniquement)
     .addSubcommand(subcommand =>
       subcommand
@@ -127,7 +133,7 @@ module.exports = {
         )
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Type de compte')
+            .setDescription('Type de compte concerné')
             .setRequired(true)
             .addChoices(...accountTypes)
         )
@@ -137,7 +143,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: emprunter
     .addSubcommand(subcommand =>
       subcommand
@@ -154,7 +160,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: contrat
     .addSubcommand(subcommand =>
       subcommand
@@ -201,7 +207,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: retirerargent (banquiers uniquement)
     .addSubcommand(subcommand =>
       subcommand
@@ -218,8 +224,8 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Sous-commande: retirermoney (retirer des fonds d'un compte bancaire vers le liquide)
+
+    // Sous-commande: retirermoney (conversion de fonds du compte bancaire vers liquide)
     .addSubcommand(subcommand =>
       subcommand
         .setName('retirermoney')
@@ -239,8 +245,8 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Sous-commande: depargent (déposer de l'argent liquide sur un compte bancaire)
+
+    // Sous-commande: depargent (conversion de fonds du liquide vers un compte bancaire)
     .addSubcommand(subcommand =>
       subcommand
         .setName('depargent')
@@ -260,26 +266,26 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
-    // Sous-commande: paye (effectue un paiement à un autre joueur)
+
+    // Sous-commande: paye (paiement entre joueurs)
     .addSubcommand(subcommand =>
       subcommand
         .setName('paye')
         .setDescription('Effectue un paiement à un autre joueur')
-        // Option pour sélectionner le compte source (payer)
+        // Sélection du compte source du payeur (courant ou entreprise)
         .addStringOption(option =>
           option.setName('source')
-            .setDescription('Sélectionnez votre compte à débiter (source) (courant ou entreprise)')
+            .setDescription('Sélectionnez votre compte à débiter (source)')
             .setRequired(true)
             .addChoices(
               { name: 'courant', value: 'courant' },
               { name: 'entreprise', value: 'entreprise' }
             )
         )
-        // Option pour sélectionner le compte destination (du destinataire)
+        // Sélection du compte destination du destinataire (courant, epargne, entreprise)
         .addStringOption(option =>
           option.setName('destination')
-            .setDescription('Sélectionnez le compte à créditer (destination) (courant, entreprise ou epargne)')
+            .setDescription('Sélectionnez le compte à créditer (destination)')
             .setRequired(true)
             .addChoices(...accountTypes)
         )
@@ -294,7 +300,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: investir
     .addSubcommand(subcommand =>
       subcommand
@@ -311,7 +317,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: acheterpart
     .addSubcommand(subcommand =>
       subcommand
@@ -328,7 +334,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: achetermaison
     .addSubcommand(subcommand =>
       subcommand
@@ -345,7 +351,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: acheterproduit
     .addSubcommand(subcommand =>
       subcommand
@@ -367,7 +373,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: vendrestock
     .addSubcommand(subcommand =>
       subcommand
@@ -389,7 +395,7 @@ module.exports = {
             .setRequired(true)
         )
     )
-    
+
     // Sous-commande: remboursement
     .addSubcommand(subcommand =>
       subcommand
@@ -423,28 +429,27 @@ module.exports = {
             return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.username}. Veuillez contacter un banquier.`)], ephemeral: true });
           }
         }
-        let embed;
-        if (type === 'epargne') {
-          // Pour epargne, on affiche uniquement le solde total
-          embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle(`Compte ${type} de ${target.username}`)
-            .setDescription(`**Argent sur votre compte ${type} :** $${account.epargne.toFixed(2)}`);
+        // Calcul pour l'affichage
+        const liquide = getOrCreateAccount(target.id).courant;
+        let banque;
+        if (type === 'courant') {
+          // Pour "courant", la partie banque est considérée comme la somme des autres comptes (epargne et entreprise)
+          banque = (account.epargne || 0) + (account.entreprise || 0);
         } else {
-          // Pour courant et entreprise, l'affichage est identique
-          const liquide = getOrCreateAccount(target.id).courant;
-          const banque = account[type];
-          const total = liquide + banque;
-          embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle(`Compte ${type} de ${target.username}`)
-            .setDescription(
-              `**Argent sur votre compte ${type} :**\n` +
-              `**Liquide :** $${liquide.toFixed(2)}\n` +
-              `**Banque :** $${banque.toFixed(2)}\n` +
-              `**Total :** $${total.toFixed(2)}`
-            );
+          banque = account[type];
         }
+        const total = liquide + banque;
+        const embed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle(`Compte ${type} de ${target.username}`)
+          .setDescription(
+            type === 'epargne'
+              ? `**Argent sur votre compte ${type} :** $${account.epargne.toFixed(2)}`
+              : `**Argent sur votre compte ${type} :**\n` +
+                `**Liquide :** $${liquide.toFixed(2)}\n` +
+                `**Banque :** $${banque.toFixed(2)}\n` +
+                `**Total :** $${total.toFixed(2)}`
+          );
         return interaction.reply({ embeds: [embed] });
       } catch (error) {
         console.error("Erreur dans la sous-commande /economy compte:", error);
@@ -479,15 +484,18 @@ module.exports = {
         return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
       }
       const target = interaction.options.getUser('target');
+      const type = interaction.options.getString('type').toLowerCase();
       const amount = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(target.id);
-      account.courant += amount;
+      if (account[type] === undefined) {
+        return interaction.reply({ embeds: [embedReply(`Le compte ${type} n'est pas créé pour ${target.username}.`)], ephemeral: true });
+      }
+      account[type] += amount;
       updateAccount(target.id, account);
-      return interaction.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été ajoutés au compte de ${target.username}.`)] });
+      return interaction.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été ajoutés au compte ${type} de ${target.username}.`)] });
     }
 
     if (subcommand === 'ouvrircompte') {
-      // Commande réservée aux banquiers pour ouvrir un compte (epargne ou entreprise) pour un joueur
       if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
         return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
       }
@@ -495,7 +503,7 @@ module.exports = {
       const type = interaction.options.getString('type').toLowerCase();
       const allowedTypes = ['epargne', 'entreprise'];
       if (!allowedTypes.includes(type)) {
-        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' peuvent être ouverts par un banquier.")], ephemeral: true });
+        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' peuvent être ouverts par un banquiers.")], ephemeral: true });
       }
       const account = getOrCreateAccount(target.id);
       if (account[type] !== undefined && account[type] !== 0) {
@@ -608,10 +616,7 @@ Résiliation
 
     if (subcommand === 'retirermoney') {
       const type = interaction.options.getString('type').toLowerCase();
-      // Pour retirermoney, seuls les comptes courant et entreprise sont autorisés.
-      if (type === 'epargne') {
-        return interaction.reply({ embeds: [embedReply("Opération invalide. Le compte 'epargne' ne peut être utilisé pour retirer des fonds.")], ephemeral: true });
-      }
+      // Pour retirermoney, on autorise courant ou entreprise
       const amount = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(interaction.user.id);
       if (account[type] < amount) {
@@ -625,10 +630,6 @@ Résiliation
 
     if (subcommand === 'depargent') {
       const type = interaction.options.getString('type').toLowerCase();
-      // Pour depargent, seuls les comptes courant et entreprise sont autorisés.
-      if (type === 'epargne') {
-        return interaction.reply({ embeds: [embedReply("Opération invalide. Le compte 'epargne' ne peut être utilisé pour déposer des fonds.")], ephemeral: true });
-      }
       const amount = interaction.options.getNumber('montant');
       const account = getOrCreateAccount(interaction.user.id);
       if (account.courant < amount) {
@@ -645,12 +646,10 @@ Résiliation
       const amount = interaction.options.getNumber('montant');
       const sourceType = interaction.options.getString('source').toLowerCase();
       const destinationType = interaction.options.getString('destination').toLowerCase();
-      // Vérifier que le compte source appartient à l'utilisateur (source: courant ou entreprise)
       let senderAccount = getAccount(interaction.user.id) || getOrCreateAccount(interaction.user.id);
       if (senderAccount[sourceType] === undefined) {
         return interaction.reply({ embeds: [embedReply(`Votre compte ${sourceType} n'est pas créé. Veuillez contacter un banquiers.`)], ephemeral: true });
       }
-      // Vérifier le compte destination du destinataire
       let receiverAccount = getAccount(target.id) || getOrCreateAccount(target.id);
       if (receiverAccount[destinationType] === undefined) {
         return interaction.reply({ embeds: [embedReply(`Le compte ${destinationType} n'est pas créé pour ${target.username}.`)], ephemeral: true });
