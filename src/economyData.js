@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Utilisez la variable d'environnement DATA_DIR ou "C:\data" par défaut.
-const dataDir = process.env.DATA_DIR || 'C:\\data';
+const dataDir = process.env.DATA_DIR || '/data';
 
 // Vérifier que le dossier existe, sinon le créer
 if (!fs.existsSync(dataDir)) {
