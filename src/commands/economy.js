@@ -5,14 +5,14 @@ const { getOrCreateAccount, updateAccount, getAccount } = require('../economyDat
 const embedReply = (description) =>
   new EmbedBuilder().setColor(0xff0000).setDescription(description);
 
-// Options d'affichage pour le type de compte global
+// Options globales pour le type de compte
 const accountTypes = [
   { name: 'Courant', value: 'courant' },
   { name: 'Entreprise', value: 'entreprise' },
   { name: 'Epargne', value: 'epargne' }
 ];
 
-// Options pour accéder aux sous-champs
+// Options pour les sous-champs
 const subAccountChoices = [
   { name: 'Courant (Liquide)',    value: 'courant_liquide' },
   { name: 'Courant (Banque)',     value: 'courant_banque' },
@@ -23,14 +23,13 @@ const subAccountChoices = [
 
 /**
  * Récupère la valeur d’un sous-champ dans un compte.
- * ex: "courant_liquide" → account.courant.liquide
  */
 function getBalanceRef(account, choice) {
   switch (choice) {
-    case 'courant_liquide':    return account.courant?.liquide;
-    case 'courant_banque':     return account.courant?.banque;
-    case 'entreprise_liquide': return account.entreprise?.liquide;
-    case 'entreprise_banque':  return account.entreprise?.banque;
+    case 'courant_liquide':    return account.courant.liquide;
+    case 'courant_banque':     return account.courant.banque;
+    case 'entreprise_liquide': return account.entreprise.liquide;
+    case 'entreprise_banque':  return account.entreprise.banque;
     case 'epargne':            return account.epargne;
     default:                   return null;
   }
@@ -42,7 +41,7 @@ function getBalanceRef(account, choice) {
 function setBalanceRef(account, choice, newValue) {
   switch (choice) {
     case 'courant_liquide':    account.courant.liquide = newValue; break;
-    case 'courant_banque':     account.courant.banque = newValue;  break;
+    case 'courant_banque':     account.courant.banque = newValue; break;
     case 'entreprise_liquide': account.entreprise.liquide = newValue; break;
     case 'entreprise_banque':  account.entreprise.banque = newValue; break;
     case 'epargne':            account.epargne = newValue; break;
@@ -53,16 +52,16 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('economy')
     .setDescription('Système économique avec comptes courant, entreprise et épargne.')
-    
+
     // ─────────────────────────────────────────────────────────────
     // Sous-commande: /economy compte
     .addSubcommand(subcommand =>
       subcommand
         .setName('compte')
-        .setDescription('Affiche un compte (Courant, Entreprise ou Epargne) avec ses détails.')
+        .setDescription('Affiche le compte choisi (Courant, Entreprise ou Epargne).')
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Choisissez le type de compte (courant, entreprise ou epargne)')
+            .setDescription('Choisissez le type de compte')
             .setRequired(true)
             .addChoices(...accountTypes)
         )
@@ -78,7 +77,7 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('solde')
-        .setDescription('Affiche le solde total d’un compte pour vous')
+        .setDescription('Affiche le solde total de votre compte sélectionné.')
         .addStringOption(option =>
           option.setName('type')
             .setDescription('Type de compte (courant, entreprise ou epargne)')
@@ -92,10 +91,10 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('declarertaxe')
-        .setDescription('Déclare une taxe')
+        .setDescription('Déclare une taxe.')
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant de la taxe')
+            .setDescription('Montant de la taxe')
             .setRequired(true)
         )
     )
@@ -105,15 +104,15 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('calculertaxe')
-        .setDescription('Calcule la taxe sur un montant')
+        .setDescription('Calcule la taxe sur un montant donné.')
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant')
+            .setDescription('Montant')
             .setRequired(true)
         )
         .addNumberOption(option =>
           option.setName('taux')
-            .setDescription('Le taux (en %)')
+            .setDescription('Taux en pourcentage')
             .setRequired(true)
         )
     )
@@ -123,7 +122,7 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('ajouterargent')
-        .setDescription('Ajoute de l’argent dans un sous-champ (banquiers uniquement)')
+        .setDescription('Ajoute de l’argent dans un champ précis (banquiers uniquement).')
         .addUserOption(option =>
           option.setName('target')
             .setDescription("Le joueur cible")
@@ -137,7 +136,7 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription("Le montant à ajouter")
+            .setDescription("Montant à ajouter")
             .setRequired(true)
         )
     )
@@ -147,15 +146,15 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('ouvrircompte')
-        .setDescription('Ouvre un compte pour un joueur (banquiers uniquement, epargne ou entreprise)')
+        .setDescription('Ouvre un compte pour un joueur (banquiers uniquement, épargne ou entreprise).')
         .addUserOption(option =>
           option.setName('target')
-            .setDescription("Le joueur pour lequel ouvrir le compte")
+            .setDescription("Le joueur cible")
             .setRequired(true)
         )
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Type de compte à ouvrir (epargne ou entreprise)')
+            .setDescription('Type de compte à ouvrir (épargne ou entreprise)')
             .setRequired(true)
             .addChoices(
               { name: 'Epargne', value: 'epargne' },
@@ -169,15 +168,15 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('transférer')
-        .setDescription('Transfère de l’argent d’un sous-champ à un autre (banquiers uniquement)')
+        .setDescription('Transfère de l’argent d’un champ à un autre (banquiers uniquement).')
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à transférer')
+            .setDescription('Montant à transférer')
             .setRequired(true)
         )
         .addStringOption(option =>
           option.setName('type')
-            .setDescription('Type de sous-champ concerné')
+            .setDescription('Champ concerné')
             .setRequired(true)
             .addChoices(...subAccountChoices)
         )
@@ -196,12 +195,12 @@ module.exports = {
         .setDescription("Demande d'emprunt")
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à emprunter')
+            .setDescription('Montant à emprunter')
             .setRequired(true)
         )
         .addStringOption(option =>
           option.setName('duree')
-            .setDescription("La durée de l’emprunt (ex: 12 mois)")
+            .setDescription("Durée de l’emprunt (ex: 12 mois)")
             .setRequired(true)
         )
     )
@@ -259,7 +258,7 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('retirerargent')
-        .setDescription("Retire de l'argent du compte courant d'un joueur (banquiers uniquement)")
+        .setDescription("Retire de l'argent du compte courant (banquiers uniquement)")
         .addUserOption(option =>
           option.setName('target')
             .setDescription('Le joueur cible')
@@ -267,7 +266,7 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à retirer')
+            .setDescription('Montant à retirer')
             .setRequired(true)
         )
     )
@@ -289,13 +288,13 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à convertir')
+            .setDescription('Montant à convertir')
             .setRequired(true)
         )
     )
 
     // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy depargent (conversion du liquide vers un compte bancaire)
+    // Sous-commande: /economy depargent (conversion du liquide vers le compte bancaire)
     .addSubcommand(subcommand =>
       subcommand
         .setName('depargent')
@@ -311,7 +310,7 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à déposer')
+            .setDescription('Montant à déposer')
             .setRequired(true)
         )
     )
@@ -333,7 +332,7 @@ module.exports = {
         )
         .addStringOption(option =>
           option.setName('destination')
-            .setDescription("Champ du destinataire (ex: courant_banque, entreprise_banque, epargne)")
+            .setDescription("Champ du destinataire (ex: courant_banque, entreprise_banque ou epargne)")
             .setRequired(true)
             .addChoices(...subAccountChoices)
         )
@@ -344,7 +343,7 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à payer')
+            .setDescription('Montant à payer')
             .setRequired(true)
         )
     )
@@ -357,7 +356,7 @@ module.exports = {
         .setDescription('Investit dans une entreprise')
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à investir')
+            .setDescription('Montant à investir')
             .setRequired(true)
         )
         .addStringOption(option =>
@@ -375,7 +374,7 @@ module.exports = {
         .setDescription('Acheter des parts dans une entreprise')
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant pour acheter des parts')
+            .setDescription('Montant pour acheter des parts')
             .setRequired(true)
         )
         .addStringOption(option =>
@@ -393,12 +392,12 @@ module.exports = {
         .setDescription('Acheter une maison')
         .addNumberOption(option =>
           option.setName('prix')
-            .setDescription('Le prix de la maison')
+            .setDescription('Prix de la maison')
             .setRequired(true)
         )
         .addStringOption(option =>
           option.setName('adresse')
-            .setDescription("L'adresse de la maison")
+            .setDescription("Adresse de la maison")
             .setRequired(true)
         )
     )
@@ -416,12 +415,12 @@ module.exports = {
         )
         .addNumberOption(option =>
           option.setName('quantite')
-            .setDescription('La quantité à acheter')
+            .setDescription('Quantité à acheter')
             .setRequired(true)
         )
         .addNumberOption(option =>
           option.setName('prix')
-            .setDescription('Le prix du produit')
+            .setDescription('Prix du produit')
             .setRequired(true)
         )
     )
@@ -434,17 +433,17 @@ module.exports = {
         .setDescription('Vendre des stocks')
         .addStringOption(option =>
           option.setName('type')
-            .setDescription("Le type d'item")
+            .setDescription("Type d'item")
             .setRequired(true)
         )
         .addNumberOption(option =>
           option.setName('quantite')
-            .setDescription('La quantité à vendre')
+            .setDescription('Quantité à vendre')
             .setRequired(true)
         )
         .addNumberOption(option =>
           option.setName('prixtotal')
-            .setDescription('Le prix total de la vente')
+            .setDescription('Prix total de la vente')
             .setRequired(true)
         )
     )
@@ -457,12 +456,12 @@ module.exports = {
         .setDescription("Rembourser un emprunt")
         .addNumberOption(option =>
           option.setName('montant')
-            .setDescription('Le montant à rembourser')
+            .setDescription('Montant à rembourser')
             .setRequired(true)
         )
         .addStringOption(option =>
           option.setName('emprunt')
-            .setDescription("L'identifiant de l'emprunt")
+            .setDescription("Identifiant de l'emprunt")
             .setRequired(true)
         )
     ),
@@ -583,9 +582,10 @@ module.exports = {
       const type = interaction.options.getString('type').toLowerCase();
       const allowedTypes = ['epargne', 'entreprise'];
       if (!allowedTypes.includes(type)) {
-        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' peuvent être ouverts par un banquier.")], ephemeral: true });
+        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' sont autorisés.")], ephemeral: true });
       }
       const account = getOrCreateAccount(target.id);
+      // On vérifie ici si le compte existe déjà (différent de zéro)
       if (account[type] !== undefined && account[type] !== 0) {
         return interaction.reply({ embeds: [embedReply(`${target.username} possède déjà un compte de type ${type}.`)], ephemeral: true });
       }
@@ -703,7 +703,7 @@ Les présentes conditions régissent l'ouverture d'un compte. (Texte complet ici
     if (subcommand === 'paye') {
       const target = interaction.options.getUser('target');
       const sourceChoice = interaction.options.getString('source').toLowerCase(); // ex: "courant_liquide" ou "entreprise_liquide"
-      const destinationChoice = interaction.options.getString('destination').toLowerCase(); // ex: "courant_banque", "entreprise_banque", ou "epargne"
+      const destinationChoice = interaction.options.getString('destination').toLowerCase(); // ex: "courant_banque", "entreprise_banque" ou "epargne"
       const amount = interaction.options.getNumber('montant');
       
       const senderAcc = getOrCreateAccount(interaction.user.id);
@@ -726,7 +726,7 @@ Les présentes conditions régissent l'ouverture d'un compte. (Texte complet ici
       updateAccount(interaction.user.id, senderAcc);
       updateAccount(target.id, receiverAcc);
       
-      return interaction.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.username} depuis votre ${sourceChoice} vers leur ${destinationChoice}.`)] });
+      return interaction.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.username} de votre ${sourceChoice} vers leur ${destinationChoice}.`)] });
     }
 
     // ─────────────────────────────────────────────────────────────
