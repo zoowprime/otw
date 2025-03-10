@@ -3,23 +3,29 @@ const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
-/**
- * Configuration :
- * - Chemin vers le dossier de stockage des données. Sur Render, assurez-vous
- *   que DATA_DIR=/data (ou que vous utilisez '/data' en dur).
- */
+// Récupère le dossier de données depuis la variable d'environnement DATA_DIR, sinon utilise '/data'
 const dataDir = process.env.DATA_DIR || '/data';
+
+// Vérifier que le dossier existe, sinon le créer
+if (!fs.existsSync(dataDir)) {
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    console.log(`Dossier ${dataDir} créé avec succès.`);
+  } catch (err) {
+    console.error(`Erreur lors de la création du dossier ${dataDir} :`, err);
+  }
+} else {
+  console.log(`Le dossier ${dataDir} existe déjà.`);
+}
+
+// Chemin complet vers le fichier de données
 const levelsDataPath = path.join(dataDir, 'levelsData.json');
 
-// URL de l'image de "niveau atteint". Mettez l'URL réelle de votre image ici :
-const LEVEL_UP_IMAGE_URL = 'file:///C:/Users/kenka/Downloads/Règlement%20Légal.jpg';
+// URL publique de l'image de niveau (modifiez cette URL avec le lien de votre image)
+const LEVEL_UP_IMAGE_URL = 'https://i.imgur.com/jJB8z7Y.jpg';
 
-// ID du salon où seront envoyés les messages de niveau
-// Mettez l’ID du salon de votre choix, ou utilisez une variable d’environnement
+// ID du salon où seront envoyés les annonces de niveaux
 const levelUpChannelId = process.env.LEVEL_UP_CHANNEL_ID || '1348682023350435932';
-
-// Variable en mémoire pour stocker les niveaux (chargée depuis levelsData.json).
-let levelsData = {};
 
 /**
  * Charge le fichier levelsData.json, ou renvoie un objet vide s’il n’existe pas.
@@ -27,91 +33,74 @@ let levelsData = {};
 function loadLevelsData() {
   if (fs.existsSync(levelsDataPath)) {
     try {
-      const raw = fs.readFileSync(levelsDataPath, 'utf8');
-      return JSON.parse(raw);
+      const rawData = fs.readFileSync(levelsDataPath, 'utf8');
+      console.log(`Fichier ${levelsDataPath} lu avec succès.`);
+      return JSON.parse(rawData);
     } catch (err) {
-      console.error('Erreur de lecture/parsing levelsData.json :', err);
+      console.error('Erreur de lecture/parsing de levelsData.json :', err);
       return {};
     }
   } else {
-    console.log('Fichier levelsData.json non trouvé. Création à la volée.');
+    console.log(`Fichier ${levelsDataPath} n'existe pas. Un nouvel objet sera créé.`);
     return {};
   }
 }
 
 /**
- * Sauvegarde en JSON dans levelsData.json
+ * Sauvegarde les données dans levelsData.json.
  */
-function saveLevelsData() {
+function saveLevelsData(data) {
   try {
-    fs.writeFileSync(levelsDataPath, JSON.stringify(levelsData, null, 2), 'utf8');
+    fs.writeFileSync(levelsDataPath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`Données sauvegardées dans ${levelsDataPath}`);
   } catch (err) {
-    console.error('Erreur de sauvegarde de levelsData.json :', err);
+    console.error('Erreur lors de la sauvegarde de levelsData.json :', err);
   }
 }
 
-/**
- * Retourne le nombre de messages actuels pour un userId donné,
- * en l’initialisant à 0 si nécessaire.
- */
-function getUserMessageCount(userId) {
-  if (!levelsData[userId]) {
-    levelsData[userId] = { messageCount: 0 };
-  }
-  return levelsData[userId].messageCount;
-}
+let levelsData = loadLevelsData();
 
 /**
- * Incrémente le compteur de messages pour userId de 1,
- * puis sauvegarde le fichier.
+ * Incrémente le compteur de messages pour l'utilisateur userId, sauvegarde et retourne la nouvelle valeur.
  */
 function incrementUserMessageCount(userId) {
   if (!levelsData[userId]) {
     levelsData[userId] = { messageCount: 0 };
   }
   levelsData[userId].messageCount += 1;
-  saveLevelsData();
+  saveLevelsData(levelsData);
   return levelsData[userId].messageCount;
 }
 
 /**
- * Fonction principale exportée : attache un listener sur messageCreate
+ * Attache un listener sur l'événement messageCreate pour gérer les niveaux.
  */
 module.exports = (client) => {
-  // Charger en mémoire les données existantes
-  levelsData = loadLevelsData();
-
-  // Écoute de l'événement messageCreate
   client.on('messageCreate', async (message) => {
-    // Ignorer les messages des bots ou en DM
+    // Ignorer les messages des bots et les messages privés
     if (!message.guild || message.author.bot) return;
 
-    // Récupérer le nouveau compteur de messages pour l'utilisateur
+    // Incrémente le compteur pour cet utilisateur
     const newCount = incrementUserMessageCount(message.author.id);
 
-    // Vérifier si on franchit un palier de 100 messages
-    // Ex : si newCount = 100, 200, 300, etc.
+    // Si le nouveau compteur est un multiple de 100 (ex: 100, 200, 300, ...)
     if (newCount % 100 === 0) {
-      const newLevel = newCount / 100; // 1, 2, 3, etc.
-
-      // Chercher le salon spécifique
+      const newLevel = newCount / 100;
+      // Récupérer le salon de niveau
       const levelUpChannel = message.guild.channels.cache.get(levelUpChannelId);
       if (!levelUpChannel) {
         console.error(`Le salon de niveau (ID: ${levelUpChannelId}) est introuvable.`);
-        return; 
+        return;
       }
 
-      // Créer l'embed pour annoncer le nouveau niveau
+      // Créer l'embed de félicitations
       const embed = new EmbedBuilder()
         .setColor(0xff9900)
         .setTitle('Nouveau niveau atteint !')
-        .setDescription(
-          `Félicitations <@${message.author.id}> !\n` +
-          `Tu passes désormais **niveau ${newLevel}** 🥳`
-        )
+        .setDescription(`Félicitations <@${message.author.id}> !\nTu passes désormais **niveau ${newLevel}** 🥳`)
         .setImage(LEVEL_UP_IMAGE_URL);
 
-      // Envoyer l’embed dans le salon dédié
+      // Envoyer l'embed dans le salon dédié
       levelUpChannel.send({ embeds: [embed] });
     }
   });
