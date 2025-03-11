@@ -62,7 +62,8 @@ async function triggerMission(client) {
       guild = await client.guilds.fetch(process.env.GUILD_ID);
     } catch (err) {
       console.error("Erreur lors de la récupération de la guild via GUILD_ID :", err);
-      return;
+      console.log("Utilisation du premier serveur du cache en fallback.");
+      guild = client.guilds.cache.first();
     }
   } else {
     guild = client.guilds.cache.first();
