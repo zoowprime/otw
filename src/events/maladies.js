@@ -45,14 +45,14 @@ async function selectRandomCitizen(guild) {
  * Déclenche l'événement maladie.
  */
 async function triggerMaladie(client) {
-  // Récupérer la guild en utilisant GUILD_ID si défini, sinon utiliser le premier serveur du cache
+  // Récupérer la guild en utilisant GUILD_ID si défini et non vide, sinon utiliser le premier serveur du cache
   let guild;
-  if (process.env.GUILD_ID) {
+  if (process.env.GUILD_ID && process.env.GUILD_ID.trim() !== "") {
     try {
       guild = await client.guilds.fetch(process.env.GUILD_ID);
     } catch (err) {
       console.error("Erreur lors de la récupération de la guild via GUILD_ID :", err);
-      return;
+      guild = client.guilds.cache.first();
     }
   } else {
     guild = client.guilds.cache.first();
@@ -79,15 +79,20 @@ async function triggerMaladie(client) {
     console.error(`Le salon de maladie (ID: ${virusChannelId}) est introuvable.`);
     return;
   }
-  virusChannel.send({ embeds: [embed] });
+  try {
+    await virusChannel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("Erreur lors de l'envoi du message de maladie :", err);
+  }
 }
 
 module.exports = (client) => {
-  // Déclencher l'événement maladie toutes les 7 jours
-  setInterval(() => {
+  // Attendre 10 secondes après le démarrage pour déclencher la première maladie
+  setTimeout(() => {
     triggerMaladie(client);
-  }, INTERVAL_7_DAYS);
-
-  // Optionnel : pour tester immédiatement lors du démarrage (décommentez la ligne ci-dessous)
-  // triggerMaladie(client);
+    // Ensuite, déclencher l'événement maladie toutes les 7 jours
+    setInterval(() => {
+      triggerMaladie(client);
+    }, INTERVAL_7_DAYS);
+  }, 10000);
 };
