@@ -2,10 +2,20 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// Liste des missions et leurs récompenses
+// Durée entre les missions (2 heures en millisecondes)
+const MISSION_INTERVAL = 2 * 60 * 60 * 1000;
+// Timeout d'acceptation de la mission : 15 minutes
+const ACCEPT_TIMEOUT = 15 * 60 * 1000;
+
+// Retourne une durée aléatoire de mission entre 20 et 35 minutes (en millisecondes)
+function getMissionDuration() {
+  return (Math.floor(Math.random() * (35 - 20 + 1)) + 20) * 60 * 1000;
+}
+
+// Liste des missions avec leur récompense
 const missions = [
   { text: "Voler une diligence à Saint-Denis et la rapporter à Van Horn", reward: 13 },
-  { text: "Aller chez le receleur de Rhodes et apporter les couteaux de lancer au commerçant de saint Denis", reward: 6 },
+  { text: "Aller chez le receleur de Rhodes et apporter les couteaux de lancer au commerçant de Saint Denis", reward: 6 },
   { text: "Fouiller les conteneurs des quais de Saint-Denis pendant 5 minutes et rapporter les objets trouvés à l’usine pétrolière de New-Hanover", reward: 16 },
   { text: "Distribuer les télégrammes du bureau de poste de Rhodes au bureau de poste de Annesburg", reward: 11 },
   { text: "Brûler les champs du manoir Caliga Hall et s’enfuir discrètement", reward: 22 },
@@ -17,20 +27,15 @@ const missions = [
   { text: "Aller au manoir Caliga Hall et s’occuper des chevaux", reward: 7.50 }
 ];
 
-// Durée entre missions (2 heures en millisecondes)
-const MISSION_INTERVAL = 2 * 60 * 60 * 1000;
-// Délai d'acceptation de la mission : 15 minutes
-const ACCEPT_TIMEOUT = 15 * 60 * 1000;
+// ID du salon où les missions seront publiées (défini via la variable d'environnement MISSION_CHANNEL_ID ou en dur)
+const missionChannelId = process.env.MISSION_CHANNEL_ID || '123456789012345678';
 
-// Retourne une durée aléatoire de mission entre 20 et 35 minutes en millisecondes
-function getRandomMissionDuration() {
-  return (Math.floor(Math.random() * (35 - 20 + 1)) + 20) * 60 * 1000;
-}
-
-// Variables pour stocker la mission active
+// Variable globale pour stocker la mission active
 let activeMission = null;
 
-// Fonction pour déclencher une mission
+/**
+ * Déclenche une nouvelle mission.
+ */
 async function triggerMission(client) {
   // Choisir une mission aléatoirement
   const mission = missions[Math.floor(Math.random() * missions.length)];
@@ -50,13 +55,12 @@ async function triggerMission(client) {
     .setStyle(ButtonStyle.Primary);
   const row = new ActionRowBuilder().addComponents(acceptButton);
 
-  // Récupérer le salon de mission
+  // Récupérer le salon de mission depuis le serveur
   const guild = client.guilds.cache.first();
   if (!guild) {
     console.error("Aucun serveur trouvé.");
     return;
   }
-  const missionChannelId = process.env.MISSION_CHANNEL_ID;
   const missionChannel = guild.channels.cache.get(missionChannelId);
   if (!missionChannel) {
     console.error(`Le salon de mission (ID: ${missionChannelId}) est introuvable.`);
@@ -78,19 +82,21 @@ async function triggerMission(client) {
       try {
         await activeMission.message.delete();
       } catch (err) {
-        console.error("Erreur lors de la suppression de la mission non acceptée :", err);
+        console.error("Erreur lors de la suppression du message de mission non acceptée :", err);
       }
       activeMission = null;
     }
   }, ACCEPT_TIMEOUT);
 }
 
-// Fonction pour gérer les interactions liées aux missions
+/**
+ * Configure l'écoute des interactions liées aux missions.
+ */
 function setupMissionInteractions(client) {
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
-    // Bouton d'acceptation de mission
+    // Bouton "Accepter la mission"
     if (interaction.customId === 'mission_accept') {
       if (!activeMission || activeMission.acceptedBy) {
         return interaction.reply({ content: "Cette mission n'est plus disponible.", ephemeral: true });
@@ -104,8 +110,8 @@ function setupMissionInteractions(client) {
       }
       await interaction.reply({ content: "Mission acceptée ! Ton temps démarre maintenant.", ephemeral: true });
 
-      // Démarrer le chronomètre de mission (20 à 35 minutes)
-      const missionDuration = getRandomMissionDuration();
+      // Démarrer le chronomètre de mission (durée aléatoire entre 20 et 35 minutes)
+      const missionDuration = getMissionDuration();
       activeMission.timeoutMission = setTimeout(async () => {
         // Créer l'embed de confirmation de mission
         const confirmEmbed = new EmbedBuilder()
@@ -121,7 +127,6 @@ function setupMissionInteractions(client) {
           .setLabel('❌ Non')
           .setStyle(ButtonStyle.Danger);
         const row = new ActionRowBuilder().addComponents(yesButton, noButton);
-
         try {
           await interaction.channel.send({ content: `<@${activeMission.acceptedBy}>`, embeds: [confirmEmbed], components: [row] });
         } catch (err) {
@@ -129,7 +134,7 @@ function setupMissionInteractions(client) {
         }
       }, missionDuration);
     }
-    // Bouton pour confirmer la réussite de la mission
+    // Bouton "✅ Oui" pour confirmer la réussite de la mission
     else if (interaction.customId === 'mission_yes') {
       if (!activeMission || interaction.user.id !== activeMission.acceptedBy) {
         return interaction.reply({ content: "Vous n'êtes pas autorisé à répondre à cette mission.", ephemeral: true });
@@ -142,7 +147,7 @@ function setupMissionInteractions(client) {
       await interaction.reply({ content: `Parfait, voici ton argent 💰 $${reward.toFixed(2)} ajouté à ton compte courant.`, ephemeral: true });
       activeMission = null;
     }
-    // Bouton pour refuser la réussite de la mission
+    // Bouton "❌ Non" pour refuser la réussite
     else if (interaction.customId === 'mission_no') {
       if (!activeMission || interaction.user.id !== activeMission.acceptedBy) {
         return interaction.reply({ content: "Vous n'êtes pas autorisé à répondre à cette mission.", ephemeral: true });
@@ -154,7 +159,7 @@ function setupMissionInteractions(client) {
 }
 
 module.exports = (client) => {
-  // Déclencher une mission immédiatement, puis toutes les 2 heures
+  // Déclencher immédiatement une mission, puis toutes les 2 heures si aucune mission active n'est en cours
   triggerMission(client);
   setInterval(() => {
     if (!activeMission) {
@@ -165,21 +170,3 @@ module.exports = (client) => {
   // Configurer l'écoute des interactions liées aux missions
   setupMissionInteractions(client);
 };
-
-// Fonction d'import dynamique pour les comptes, à placer ici si nécessaire
-function getOrCreateAccount(userId) {
-  try {
-    return require('../economyData').getOrCreateAccount(userId);
-  } catch (err) {
-    console.error("Erreur dans getOrCreateAccount:", err);
-    return { courant: { liquide: 0, banque: 0 }, entreprise: { liquide: 0, banque: 0 }, epargne: 0 };
-  }
-}
-
-function updateAccount(userId, account) {
-  try {
-    require('../economyData').updateAccount(userId, account);
-  } catch (err) {
-    console.error("Erreur dans updateAccount:", err);
-  }
-}
