@@ -9,6 +9,9 @@ const ticketModule = require('./ticket.js');
 // Import du module pour les commandes économiques en mode texte
 const { handleEconomyCommand } = require('./economy');
 
+// Import du module logger
+const logger = require('./logger');
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,            
@@ -17,6 +20,9 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,      
   ]
 });
+
+// Initialiser le logger avec le client
+logger.setClient(client);
 
 // src/bot.js (ajoutez cette ligne après la création du client)
 require('./events/welcome.js')(client);
@@ -46,13 +52,16 @@ const processedMessageIds = new Set();
 
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+  logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
 
   // Test : Afficher le contenu de /data
   try {
     const files = fs.readdirSync('/data');
     console.log('Contenu de /data :', files);
+    logger.sendLog(`Contenu de /data : ${files.join(', ')}`);
   } catch (err) {
     console.error('Erreur en listant /data :', err);
+    logger.sendError(err);
   }
 
   // Envoi automatique du panel de ticket dans le salon dédié
@@ -62,17 +71,21 @@ client.once('ready', async () => {
     if (panelChannel && typeof ticketModule.sendTicketPanel === 'function') {
       await ticketModule.sendTicketPanel(panelChannel);
       console.log("Panel de ticket envoyé dans le salon dédié.");
+      logger.sendLog("Panel de ticket envoyé dans le salon dédié.");
     } else {
       console.error("Le canal pour le panel de ticket est introuvable ou le module ticket est mal configuré.");
+      logger.sendLog("Le canal pour le panel de ticket est introuvable ou le module ticket est mal configuré.");
     }
   } catch (error) {
     console.error("Erreur lors de la récupération du canal du panel de ticket :", error);
+    logger.sendError(error);
   }
 });
 
 client.on('interactionCreate', async (interaction) => {
   console.log("Interaction reçue:", interaction.customId);
-  
+  logger.sendLog(`Interaction reçue: ${interaction.customId}`);
+
   // Si c'est une commande slash
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
@@ -81,6 +94,7 @@ client.on('interactionCreate', async (interaction) => {
       await command.execute(interaction);
     } catch (error) {
       console.error("Erreur lors de l'exécution de la commande slash :", error);
+      logger.sendError(error);
       await interaction.reply({ content: 'Une erreur est survenue lors de l\'exécution de la commande.', flags: MessageFlags.Ephemeral });
     }
   }
@@ -93,6 +107,7 @@ client.on('interactionCreate', async (interaction) => {
       await ticketModule.handleTicketInteraction(interaction);
     } catch (error) {
       console.error("Erreur lors du traitement de l'interaction de ticket:", error);
+      logger.sendError(error);
       if (!interaction.replied) {
         await interaction.reply({ content: 'Une erreur est survenue lors du traitement de l\'interaction.', flags: MessageFlags.Ephemeral });
       }
@@ -113,6 +128,7 @@ client.on('messageCreate', async (message) => {
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
   console.log(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
+  logger.sendLog(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
   }
