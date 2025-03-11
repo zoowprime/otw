@@ -1,4 +1,3 @@
-// src/commands/partirenchasse.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
@@ -76,31 +75,32 @@ const animals = [
 const types = ["peau", "cadavre"];
 const states = ["état parfait", "état bon", "état médiocre"];
 
-/**
- * Exporte une fonction qui enregistre la commande /partirenchasse et ses interactions.
- */
+// Retourne une durée de mission aléatoire (ici non utilisée pour la chasse, mais pour référence)
+function getMissionDuration() {
+  // Pour la chasse, le délai de réponse est fixe à 30 minutes
+  return 30 * 60 * 1000;
+}
+
 module.exports = (client) => {
   // Création de la commande slash
   const data = new SlashCommandBuilder()
     .setName('partirenchasse')
     .setDescription('Lance une session de chasse sur bateau.');
 
-  // Enregistrement de la commande dans la collection de commandes
+  // Enregistrement de la commande dans la collection
   client.commands = client.commands || new Map();
   client.commands.set(data.name, { data, execute });
 
   // Fonction d'exécution de la commande slash
   async function execute(interaction) {
     const userId = interaction.user.id;
-
-    // Vérification du cooldown
     const currentMission = global.activeHuntingMissions.get(userId);
     if (currentMission && (Date.now() - currentMission.startTime < COOLDOWN)) {
       return interaction.reply({ content: "Tu dois attendre une heure avant de refaire une session de chasse.", ephemeral: true });
     }
 
     // Génération des valeurs aléatoires
-    const count = Math.floor(Math.random() * 3) + 1; // 1 à 3
+    const count = Math.floor(Math.random() * 3) + 1; // Nombre entre 1 et 3
     const chosenType = types[Math.floor(Math.random() * types.length)];
     const animal = animals[Math.floor(Math.random() * animals.length)];
     const chosenState = states[Math.floor(Math.random() * states.length)];
@@ -108,7 +108,7 @@ module.exports = (client) => {
     // Construction du message de mission
     const description = `Alors mon ami ? J’aimerai que tu me rapportes **${count} ${chosenType}${count > 1 ? 's' : ''}** de **${animal.name}** en **${chosenState}** venant de **${animal.habitat}**.\nTu as **30 minutes** !`;
 
-    // Calcul du prix unitaire selon l'état de l'animal
+    // Calcul du prix unitaire selon l'état
     const rewardUnit = animal.prices[chosenState];
 
     // Sauvegarder la mission pour cet utilisateur
@@ -131,7 +131,7 @@ module.exports = (client) => {
       .setDescription(description)
       .setFooter({ text: "Réponds dans 30 minutes en utilisant le prompt qui suivra." });
 
-    // Récupérer le salon de chasse via la variable d'environnement CHASSE_CHANNEL_ID
+    // Récupérer le salon de chasse via CHASSE_CHANNEL_ID
     const chasseChannelId = process.env.CHASSE_CHANNEL_ID;
     if (!chasseChannelId) {
       return interaction.reply({ content: "La variable CHASSE_CHANNEL_ID n'est pas définie.", ephemeral: true });
@@ -173,10 +173,10 @@ module.exports = (client) => {
       } catch (err) {
         console.error("Erreur lors de l'envoi du prompt de confirmation pour la chasse :", err);
       }
-    }, 30 * 60 * 1000); // 30 minutes
+    }, 30 * 60 * 1000); // 30 minutes en millisecondes
   }
 
-  // Enregistrement global des interactions de boutons spécifiques à cette commande
+  // Enregistrement global des interactions de boutons pour cette commande
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
     if (interaction.customId.startsWith('chasse_yes_') || interaction.customId.startsWith('chasse_no_')) {
@@ -192,7 +192,6 @@ module.exports = (client) => {
       if (interaction.customId.startsWith('chasse_yes_')) {
         const totalReward = mission.rewardUnit * mission.count;
         const account = getOrCreateAccount(userId);
-        // Ajouter la récompense au compte courant
         account.courant += totalReward;
         updateAccount(userId, account);
         mission.completed = true;
