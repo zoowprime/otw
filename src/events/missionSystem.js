@@ -154,6 +154,10 @@ function setupMissionInteractions(client) {
       const reward = activeMission.mission.reward;
       const account = getOrCreateAccount(interaction.user.id);
       // Ajouter la récompense au champ liquide du compte courant
+      // (Assurez-vous que votre structure de compte correspond, ici nous supposons que 'account.courant' est un objet avec une propriété 'liquide')
+      if (!account.courant || typeof account.courant.liquide !== 'number') {
+        account.courant = { liquide: 0 };
+      }
       account.courant.liquide += reward;
       updateAccount(interaction.user.id, account);
       await interaction.reply({ content: `Parfait, voici ton argent 💰 $${reward.toFixed(2)} ajouté à ton compte courant.`, ephemeral: true });
@@ -171,13 +175,15 @@ function setupMissionInteractions(client) {
 }
 
 module.exports = (client) => {
-  // Déclencher immédiatement une mission, puis toutes les 2 heures si aucune mission active n'est en cours
-  triggerMission(client);
-  setInterval(() => {
-    if (!activeMission) {
-      triggerMission(client);
-    }
-  }, MISSION_INTERVAL);
+  // Attendre 10 secondes après que le bot soit prêt pour déclencher la première mission
+  setTimeout(() => {
+    triggerMission(client);
+    setInterval(() => {
+      if (!activeMission) {
+        triggerMission(client);
+      }
+    }, MISSION_INTERVAL);
+  }, 10000);
 
   // Configurer l'écoute des interactions liées aux missions
   setupMissionInteractions(client);
