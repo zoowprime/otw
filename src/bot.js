@@ -36,10 +36,6 @@ require('./events/missionSystem')(client);
 // ***** AJOUT DU SYSTÈME DE MALADIES *****
 require('./events/maladies')(client);
 
-// ***** AJOUT DU SYSTÈME DE CHASSE *****
-require('./commands/partirenchasse')(client);
-
-
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
