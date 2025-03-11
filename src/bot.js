@@ -27,6 +27,9 @@ require('./events/levelSystem')(client);
 // ***** AJOUT DU SYSTÈME DE MISSIONS *****
 require('./events/missionSystem')(client);
 
+// ***** AJOUT DU SYSTÈME DE MISSIONS *****
+require('./events/maladies')(client);
+
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
