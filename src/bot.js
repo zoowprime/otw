@@ -24,6 +24,9 @@ require('./events/welcome.js')(client);
 // ***** AJOUT DU SYSTÈME DE NIVEAUX *****
 require('./events/levelSystem')(client);
 
+// ***** AJOUT DU SYSTÈME DE MISSIONS *****
+require('./events/missionSystem')(client);
+
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
@@ -41,8 +44,7 @@ const processedMessageIds = new Set();
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
-// Test : Afficher le contenu de /data
-  const fs = require('fs');
+  // Test : Afficher le contenu de /data
   try {
     const files = fs.readdirSync('/data');
     console.log('Contenu de /data :', files);
