@@ -5,7 +5,7 @@ const { getOrCreateAccount, updateAccount } = require('../economyData');
 // Initialiser (ou récupérer) la map globale pour les missions de chasse
 global.activeHuntingMissions = global.activeHuntingMissions || new Map();
 
-// Cooldown pour empêcher les réutilisations trop fréquentes (1 heure en millisecondes)
+// Cooldown pour empêcher les réutilisations trop fréquentes (1 heure)
 const COOLDOWN = 60 * 60 * 1000;
 
 // Liste des animaux avec leurs données de chasse
@@ -76,32 +76,41 @@ const animals = [
 const types = ["peau", "cadavre"];
 const states = ["état parfait", "état bon", "état médiocre"];
 
-module.exports = {
-  data: new SlashCommandBuilder()
+/**
+ * Exporte une fonction qui enregistre la commande /partirenchasse et ses interactions.
+ */
+module.exports = (client) => {
+  // Création de la commande slash
+  const data = new SlashCommandBuilder()
     .setName('partirenchasse')
-    .setDescription('Lance une session de chasse sur bateau.'),
-  
-  async execute(interaction) {
+    .setDescription('Lance une session de chasse sur bateau.');
+
+  // Enregistrement de la commande dans la collection de commandes
+  client.commands = client.commands || new Map();
+  client.commands.set(data.name, { data, execute });
+
+  // Fonction d'exécution de la commande slash
+  async function execute(interaction) {
     const userId = interaction.user.id;
-    
-    // Vérifier le cooldown : empêcher le joueur de relancer trop rapidement la commande
+
+    // Vérification du cooldown
     const currentMission = global.activeHuntingMissions.get(userId);
     if (currentMission && (Date.now() - currentMission.startTime < COOLDOWN)) {
       return interaction.reply({ content: "Tu dois attendre une heure avant de refaire une session de chasse.", ephemeral: true });
     }
-    
-    // Génération des valeurs aléatoires pour la mission
-    const count = Math.floor(Math.random() * 3) + 1; // nombre entre 1 et 3
-    const chosenType = types[Math.floor(Math.random() * types.length)]; // "peau" ou "cadavre"
+
+    // Génération des valeurs aléatoires
+    const count = Math.floor(Math.random() * 3) + 1; // 1 à 3
+    const chosenType = types[Math.floor(Math.random() * types.length)];
     const animal = animals[Math.floor(Math.random() * animals.length)];
     const chosenState = states[Math.floor(Math.random() * states.length)];
-    
+
     // Construction du message de mission
     const description = `Alors mon ami ? J’aimerai que tu me rapportes **${count} ${chosenType}${count > 1 ? 's' : ''}** de **${animal.name}** en **${chosenState}** venant de **${animal.habitat}**.\nTu as **30 minutes** !`;
-    
+
     // Calcul du prix unitaire selon l'état de l'animal
     const rewardUnit = animal.prices[chosenState];
-    
+
     // Sauvegarder la mission pour cet utilisateur
     const missionData = {
       userId,
@@ -114,15 +123,15 @@ module.exports = {
       completed: false,
     };
     global.activeHuntingMissions.set(userId, missionData);
-    
+
     // Création de l'embed de mission
     const embed = new EmbedBuilder()
       .setColor(0x66ccff) // Bleu clair
       .setTitle("Mission de chasse sur bateau")
       .setDescription(description)
       .setFooter({ text: "Réponds dans 30 minutes en utilisant le prompt qui suivra." });
-    
-    // Récupérer le salon de chasse à partir de l'ID défini dans CHASSE_CHANNEL_ID
+
+    // Récupérer le salon de chasse via la variable d'environnement CHASSE_CHANNEL_ID
     const chasseChannelId = process.env.CHASSE_CHANNEL_ID;
     if (!chasseChannelId) {
       return interaction.reply({ content: "La variable CHASSE_CHANNEL_ID n'est pas définie.", ephemeral: true });
@@ -131,7 +140,7 @@ module.exports = {
     if (!chasseChannel) {
       return interaction.reply({ content: "Salon de chasse introuvable.", ephemeral: true });
     }
-    
+
     try {
       await chasseChannel.send({ embeds: [embed] });
       await interaction.reply({ content: "Mission de chasse lancée dans le salon Partir en Chasse.", ephemeral: true });
@@ -139,17 +148,16 @@ module.exports = {
       console.error("Erreur lors de l'envoi de la mission de chasse :", err);
       return interaction.reply({ content: "Erreur lors de l'envoi de la mission de chasse.", ephemeral: true });
     }
-    
+
     // Démarrer un chronomètre de 30 minutes pour demander la confirmation de mission
     setTimeout(async () => {
-      const currentMission = global.activeHuntingMissions.get(userId);
-      if (!currentMission || currentMission.completed) return;
-      
+      const mission = global.activeHuntingMissions.get(userId);
+      if (!mission || mission.completed) return;
+
       const confirmEmbed = new EmbedBuilder()
         .setColor(0x66ccff)
         .setTitle("Mission terminée ?")
         .setDescription("As-tu accompli ta mission ?");
-      
       const yesButton = new ButtonBuilder()
         .setCustomId(`chasse_yes_${userId}`)
         .setLabel('✅ Oui')
@@ -159,12 +167,41 @@ module.exports = {
         .setLabel('❌ Non')
         .setStyle(ButtonStyle.Danger);
       const row = new ActionRowBuilder().addComponents(yesButton, noButton);
-      
+
       try {
         await interaction.followUp({ content: `<@${userId}>`, embeds: [confirmEmbed], components: [row], ephemeral: true });
       } catch (err) {
         console.error("Erreur lors de l'envoi du prompt de confirmation pour la chasse :", err);
       }
-    }, 30 * 60 * 1000); // 30 minutes en millisecondes
+    }, 30 * 60 * 1000); // 30 minutes
   }
+
+  // Enregistrement global des interactions de boutons spécifiques à cette commande
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    if (interaction.customId.startsWith('chasse_yes_') || interaction.customId.startsWith('chasse_no_')) {
+      const parts = interaction.customId.split('_');
+      const userId = parts[2]; // L'ID du joueur est stocké ici
+      if (interaction.user.id !== userId) {
+        return interaction.reply({ content: "Tu n'es pas autorisé à répondre à cette mission.", ephemeral: true });
+      }
+      const mission = global.activeHuntingMissions.get(userId);
+      if (!mission) {
+        return interaction.reply({ content: "Aucune mission active trouvée.", ephemeral: true });
+      }
+      if (interaction.customId.startsWith('chasse_yes_')) {
+        const totalReward = mission.rewardUnit * mission.count;
+        const account = getOrCreateAccount(userId);
+        // Ajouter la récompense au compte courant
+        account.courant += totalReward;
+        updateAccount(userId, account);
+        mission.completed = true;
+        global.activeHuntingMissions.delete(userId);
+        return interaction.reply({ content: `Parfait, voici ton argent 💰 $${totalReward.toFixed(2)} ajouté à ton compte courant.`, ephemeral: true });
+      } else if (interaction.customId.startsWith('chasse_no_')) {
+        global.activeHuntingMissions.delete(userId);
+        return interaction.reply({ content: "Dommage pour toi, réessaie plus tard.", ephemeral: true });
+      }
+    }
+  });
 };
