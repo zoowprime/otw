@@ -2,8 +2,8 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// Durée entre les missions (2 heures en millisecondes)
-const MISSION_INTERVAL = 2 * 60 * 60 * 1000;
+// Durée entre les missions (1 minute en millisecondes)
+const MISSION_INTERVAL = 1 * 60 * 1000;
 // Timeout d'acceptation de la mission : 15 minutes
 const ACCEPT_TIMEOUT = 15 * 60 * 1000;
 
