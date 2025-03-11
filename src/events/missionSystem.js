@@ -55,13 +55,13 @@ async function triggerMission(client) {
     .setStyle(ButtonStyle.Primary);
   const row = new ActionRowBuilder().addComponents(acceptButton);
 
-  // Récupérer la guild en utilisant GUILD_ID si défini, sinon via le cache
+  // Récupérer la guild en utilisant GUILD_ID si défini et non vide, sinon utiliser le premier serveur du cache
   let guild;
-  if (process.env.GUILD_ID) {
+  if (process.env.GUILD_ID && process.env.GUILD_ID.trim() !== "") {
     try {
       guild = await client.guilds.fetch(process.env.GUILD_ID);
     } catch (err) {
-      console.error("Erreur lors de la récupération de la guild via GUILD_ID:", err);
+      console.error("Erreur lors de la récupération de la guild via GUILD_ID :", err);
       return;
     }
   } else {
