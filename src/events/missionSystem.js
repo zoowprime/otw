@@ -15,7 +15,7 @@ function getMissionDuration() {
 // Liste des missions avec leur récompense
 const missions = [
   { text: "Voler une diligence à Saint-Denis et la rapporter à Van Horn", reward: 13 },
-  { text: "Aller chez le receleur de Rhodes et apporter les couteaux de lancer au commerçant de Saint Denis", reward: 6 },
+  { text: "Aller chez le receleur de Rhodes et apporter les couteaux de lancer au commerçant de saint Denis", reward: 6 },
   { text: "Fouiller les conteneurs des quais de Saint-Denis pendant 5 minutes et rapporter les objets trouvés à l’usine pétrolière de New-Hanover", reward: 16 },
   { text: "Distribuer les télégrammes du bureau de poste de Rhodes au bureau de poste de Annesburg", reward: 11 },
   { text: "Brûler les champs du manoir Caliga Hall et s’enfuir discrètement", reward: 22 },
@@ -55,12 +55,23 @@ async function triggerMission(client) {
     .setStyle(ButtonStyle.Primary);
   const row = new ActionRowBuilder().addComponents(acceptButton);
 
-  // Récupérer le salon de mission depuis le serveur
-  const guild = client.guilds.cache.first();
+  // Récupérer la guild en utilisant GUILD_ID si défini, sinon via le cache
+  let guild;
+  if (process.env.GUILD_ID) {
+    try {
+      guild = await client.guilds.fetch(process.env.GUILD_ID);
+    } catch (err) {
+      console.error("Erreur lors de la récupération de la guild via GUILD_ID:", err);
+      return;
+    }
+  } else {
+    guild = client.guilds.cache.first();
+  }
   if (!guild) {
     console.error("Aucun serveur trouvé.");
     return;
   }
+
   const missionChannel = guild.channels.cache.get(missionChannelId);
   if (!missionChannel) {
     console.error(`Le salon de mission (ID: ${missionChannelId}) est introuvable.`);
