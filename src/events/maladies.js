@@ -45,7 +45,19 @@ async function selectRandomCitizen(guild) {
  * Déclenche l'événement maladie.
  */
 async function triggerMaladie(client) {
-  const guild = client.guilds.cache.first();
+  // Récupérer la guild en utilisant GUILD_ID si défini, sinon utiliser le premier serveur du cache
+  let guild;
+  if (process.env.GUILD_ID) {
+    try {
+      guild = await client.guilds.fetch(process.env.GUILD_ID);
+    } catch (err) {
+      console.error("Erreur lors de la récupération de la guild via GUILD_ID :", err);
+      return;
+    }
+  } else {
+    guild = client.guilds.cache.first();
+  }
+  
   if (!guild) {
     console.error("Aucun serveur trouvé.");
     return;
@@ -71,11 +83,11 @@ async function triggerMaladie(client) {
 }
 
 module.exports = (client) => {
-  // Déclenche l'événement maladie toutes les 7 jours
+  // Déclencher l'événement maladie toutes les 7 jours
   setInterval(() => {
     triggerMaladie(client);
   }, INTERVAL_7_DAYS);
 
-  // Optionnel : pour tester immédiatement lors du démarrage
+  // Optionnel : pour tester immédiatement lors du démarrage (décommentez la ligne ci-dessous)
   // triggerMaladie(client);
 };
