@@ -28,7 +28,7 @@ const missions = [
 ];
 
 // ID du salon où les missions seront publiées (défini via la variable d'environnement MISSION_CHANNEL_ID ou en dur)
-const missionChannelId = process.env.MISSION_CHANNEL_ID || '123456789012345678';
+const missionChannelId = process.env.MISSION_CHANNEL_ID || '1348963727449522288';
 
 // Variable globale pour stocker la mission active
 let activeMission = null;
