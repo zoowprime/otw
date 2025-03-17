@@ -85,7 +85,7 @@ module.exports = {
     
     const embed = new EmbedBuilder()
       .setColor(0xff69b4) // Rose
-      .setTitle("Mission de Récolte de Plantes Médicinales Sakura")
+      .setTitle("Mission de Récolte de Plantes Médicinales pour le médecin")
       .setDescription(missionDescription);
     
     // Sauvegarder la mission pour cet utilisateur
