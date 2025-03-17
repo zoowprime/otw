@@ -79,7 +79,7 @@ module.exports = (client) => {
   // Création de la commande slash
   const data = new SlashCommandBuilder()
     .setName('chasse')
-    .setDescription('Lance une session de chasse sur bateau.');
+    .setDescription('Lance une mission de chasse excitante.');
 
   // Enregistrement dans la collection des commandes
   client.commands = client.commands || new Map();
