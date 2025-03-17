@@ -10,13 +10,13 @@ const CHASE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const animals = [
   { 
     name: "Cerf de Virginie", 
-    habitat: "Forêts et plaines de Lemoyne et New Hanover", 
+    habitat: "plaines et forêts denses de Big Valley et Tall Trees", 
     prices: { "état parfait": 7.00, "état bon": 4.20, "état médiocre": 2.80 } 
   },
   { 
-    name: "Bouc à queue blanche", 
-    habitat: "Régions montagneuses et collines de New Hanover", 
-    prices: { "état parfait": 10.00, "état bon": 6.00, "état médiocre": 4.00 } 
+    name: "Élan d'Amérique", 
+    habitat: "Forêts profondes de Tall Trees et rivières du nord", 
+    prices: { "état parfait": 10.00, "état bon": 6.00, "état médiocre": 3.00 } 
   },
   { 
     name: "Sanglier", 
@@ -24,28 +24,28 @@ const animals = [
     prices: { "état parfait": 5.75, "état bon": 3.45, "état médiocre": 1.75 } 
   },
   { 
-    name: "Lapin Blacktail", 
-    habitat: "Zones boisées et prairies de New Hanover", 
-    prices: { "état parfait": 3.50, "état bon": 2.10, "état médiocre": 1.40 } 
+    name: "Ours Noir", 
+    habitat: "Tall Trees, Big Valley et rivières reculées", 
+    prices: { "état parfait": 15.00, "état bon": 8.00, "état médiocre": 4.00 } 
   },
   { 
-    name: "Loup gris", 
-    habitat: "Régions boisées de New Hanover", 
-    prices: { "état parfait": 5.25, "état bon": 3.15, "état médiocre": 2.10 } 
+    name: "Ours Grizzly", 
+    habitat: "Montagnes de West Elizabeth, Big Valley et Tall Trees", 
+    prices: { "état parfait": 18.00, "état bon": 10.00, "état médiocre": 5.00 } 
   },
   { 
-    name: "Mouflon d'Amérique des montagnes Rocheuses", 
-    habitat: "Régions montagneuses de New Hanover", 
-    prices: { "état parfait": 7.50, "état bon": 4.50, "état médiocre": 3.00 } 
+    name: "Loup Gris", 
+    habitat: "Tall Trees et montagnes boisées", 
+    prices: { "état parfait": 9.00, "état bon": 5.00, "état médiocre": 2.50 } 
   },
   { 
     name: "Bison américain", 
-    habitat: "Plaines de New Hanover", 
+    habitat: "Plaines de West-Elisabeth", 
     prices: { "état parfait": 5.25, "état bon": 3.15, "état médiocre": 2.10 } 
   },
   { 
     name: "Ours noir américain", 
-    habitat: "Forêts de New Hanover", 
+    habitat: "Forêts de Tall Tress", 
     prices: { "état parfait": 3.50, "état bon": 2.10, "état médiocre": 1.40 } 
   },
   { 
@@ -78,7 +78,7 @@ const states = ["état parfait", "état bon", "état médiocre"];
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('chasse')
-    .setDescription('Lance une mission de chasse sur bateau.'),
+    .setDescription('Lance une mission de chasse excitante !.'),
   
   async execute(interaction) {
     const userId = interaction.user.id;
