@@ -30,9 +30,6 @@ require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
 require('./events/maladies')(client);
 
-// ***** AJOUT DU MODULE DE CHASSE *****
-require('./commands/chasse')(client);
-
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
