@@ -1,12 +1,12 @@
-// src/commands/chasse.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// Durée du cooldown (1 heure) et du délai de confirmation de mission (30 minutes)
+// Cooldown de 1 heure pour empêcher une réutilisation trop fréquente
 const COOLDOWN = 60 * 60 * 1000;
+// Délai pour confirmer la mission : 30 minutes
 const CHASE_TIMEOUT = 30 * 60 * 1000;
 
-// Liste des animaux avec leurs caractéristiques de chasse
+// Liste des animaux avec leurs caractéristiques
 const animals = [
   { 
     name: "Cerf de Virginie", 
@@ -74,14 +74,14 @@ const animals = [
 const types = ["peau", "cadavre"];
 const states = ["état parfait", "état bon", "état médiocre"];
 
-// Exporter la commande en tant que fonction qui s'enregistre dans la collection de commandes du client
+// Exportation de la commande /chasse
 module.exports = (client) => {
   // Création de la commande slash
   const data = new SlashCommandBuilder()
     .setName('chasse')
     .setDescription('Lance une session de chasse sur bateau.');
 
-  // Enregistrer la commande dans la collection du client
+  // Enregistrement dans la collection des commandes
   client.commands = client.commands || new Map();
   client.commands.set(data.name, { data, execute });
 
@@ -99,15 +99,15 @@ module.exports = (client) => {
       global.activeChaseMissions = new Map();
     }
 
-    // Génération des valeurs aléatoires
-    const count = Math.floor(Math.random() * 3) + 1; // entre 1 et 3
-    const chosenType = types[Math.floor(Math.random() * types.length)]; // "peau" ou "cadavre"
+    // Génération aléatoire des valeurs
+    const count = Math.floor(Math.random() * 3) + 1; // Entre 1 et 3
+    const chosenType = types[Math.floor(Math.random() * types.length)];
     const animal = animals[Math.floor(Math.random() * animals.length)];
     const chosenState = states[Math.floor(Math.random() * states.length)];
 
     const missionDescription = `Alors mon ami ? J’aimerai que tu me rapportes **${count} ${chosenType}${count > 1 ? 's' : ''}** de **${animal.name}** en **${chosenState}** venant de **${animal.habitat}**.\nTu as **30 minutes** !`;
 
-    // Calcul du prix unitaire en fonction de l'état
+    // Calcul du prix unitaire en fonction de l'état de l'animal
     const rewardUnit = animal.prices[chosenState];
 
     // Sauvegarder la mission pour cet utilisateur
@@ -148,7 +148,7 @@ module.exports = (client) => {
       return interaction.reply({ content: "Erreur lors de l'envoi de la mission de chasse.", ephemeral: true });
     }
 
-    // Démarrer un chronomètre de 30 minutes pour demander la confirmation de mission
+    // Démarrer un chronomètre de 30 minutes pour demander la confirmation de la mission
     setTimeout(async () => {
       const mission = global.activeChaseMissions.get(userId);
       if (!mission || mission.completed) return;
@@ -175,7 +175,7 @@ module.exports = (client) => {
     }, CHASE_TIMEOUT);
   }
 
-  // Enregistrer globalement les interactions pour les boutons de la mission de chasse
+  // Gestion des interactions pour les boutons de la mission de chasse
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
     if (interaction.customId.startsWith('chasse_yes_') || interaction.customId.startsWith('chasse_no_')) {
@@ -189,7 +189,6 @@ module.exports = (client) => {
         return interaction.reply({ content: "Aucune mission active trouvée.", ephemeral: true });
       }
       if (interaction.customId.startsWith('chasse_yes_')) {
-        // Calcul du total de la récompense
         const totalReward = mission.rewardUnit * mission.count;
         const account = getOrCreateAccount(targetId);
         account.courant += totalReward;
@@ -202,5 +201,5 @@ module.exports = (client) => {
         return interaction.reply({ content: "Dommage pour toi, réessaie plus tard.", ephemeral: true });
       }
     }
-  };
+  });
 };
