@@ -24,17 +24,14 @@ const client = new Client({
 // Initialiser le logger avec le client
 logger.setClient(client);
 
-// src/bot.js (ajoutez cette ligne après la création du client)
+// Charger les modules d'événements globaux
 require('./events/welcome.js')(client);
-
-// ***** AJOUT DU SYSTÈME DE NIVEAUX *****
 require('./events/levelSystem')(client);
-
-// ***** AJOUT DU SYSTÈME DE MISSIONS *****
 require('./events/missionSystem')(client);
-
-// ***** AJOUT DU SYSTÈME DE MALADIES *****
 require('./events/maladies')(client);
+
+// ***** AJOUT DU MODULE DE CHASSE *****
+require('./commands/chasse')(client);
 
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
