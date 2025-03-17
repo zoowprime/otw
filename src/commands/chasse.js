@@ -1,10 +1,10 @@
+// src/commands/chasse.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// Cooldown de 1 heure pour empêcher une réutilisation trop fréquente
-const COOLDOWN = 60 * 60 * 1000;
-// Délai pour confirmer la mission : 30 minutes
-const CHASE_TIMEOUT = 30 * 60 * 1000;
+// Définition du cooldown et du délai pour la confirmation de la mission
+const COOLDOWN = 60 * 60 * 1000; // 1 heure
+const CHASE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 // Liste des animaux avec leurs caractéristiques
 const animals = [
@@ -74,40 +74,31 @@ const animals = [
 const types = ["peau", "cadavre"];
 const states = ["état parfait", "état bon", "état médiocre"];
 
-// Exportation de la commande /chasse
-module.exports = (client) => {
-  // Création de la commande slash
-  const data = new SlashCommandBuilder()
+// Exportation de l'objet commande
+module.exports = {
+  data: new SlashCommandBuilder()
     .setName('chasse')
-    .setDescription('Lance une mission de chasse excitante.');
-
-  // Enregistrement dans la collection des commandes
-  client.commands = client.commands || new Map();
-  client.commands.set(data.name, { data, execute });
-
-  // Fonction d'exécution de la commande /chasse
-  async function execute(interaction) {
+    .setDescription('Lance une mission de chasse sur bateau.'),
+  
+  async execute(interaction) {
     const userId = interaction.user.id;
 
     // Vérification du cooldown
-    if (global.activeChaseMissions && global.activeChaseMissions.has(userId)) {
-      const mission = global.activeChaseMissions.get(userId);
-      if (Date.now() - mission.startTime < COOLDOWN) {
-        return interaction.reply({ content: "Tu dois attendre une heure avant de refaire une session de chasse.", ephemeral: true });
-      }
-    } else {
-      global.activeChaseMissions = new Map();
+    global.activeChaseMissions = global.activeChaseMissions || new Map();
+    const currentMission = global.activeChaseMissions.get(userId);
+    if (currentMission && (Date.now() - currentMission.startTime < COOLDOWN)) {
+      return interaction.reply({ content: "Tu dois attendre une heure avant de refaire une session de chasse.", ephemeral: true });
     }
 
     // Génération aléatoire des valeurs
-    const count = Math.floor(Math.random() * 3) + 1; // Entre 1 et 3
-    const chosenType = types[Math.floor(Math.random() * types.length)];
-    const animal = animals[Math.floor(Math.random() * animals.length)];
-    const chosenState = states[Math.floor(Math.random() * states.length)];
+    const count = Math.floor(Math.random() * 3) + 1; // Nombre entre 1 et 3
+    const chosenType = types[Math.floor(Math.random() * types.length)]; // "peau" ou "cadavre"
+    const animal = animals[Math.floor(Math.random() * animals.length)]; // Animal aléatoire
+    const chosenState = states[Math.floor(Math.random() * states.length)]; // État aléatoire
 
     const missionDescription = `Alors mon ami ? J’aimerai que tu me rapportes **${count} ${chosenType}${count > 1 ? 's' : ''}** de **${animal.name}** en **${chosenState}** venant de **${animal.habitat}**.\nTu as **30 minutes** !`;
 
-    // Calcul du prix unitaire en fonction de l'état de l'animal
+    // Calcul du prix unitaire en fonction de l'état
     const rewardUnit = animal.prices[chosenState];
 
     // Sauvegarder la mission pour cet utilisateur
@@ -168,38 +159,11 @@ module.exports = (client) => {
       const row = new ActionRowBuilder().addComponents(yesButton, noButton);
 
       try {
-        await chasseChannel.send({ content: `<@${userId}>`, embeds: [confirmEmbed], components: [row], ephemeral: true });
+        // Envoyer le message de confirmation dans le salon de chasse
+        await chasseChannel.send({ content: `<@${userId}>`, embeds: [confirmEmbed], components: [row] });
       } catch (err) {
         console.error("Erreur lors de l'envoi du prompt de confirmation pour la chasse :", err);
       }
     }, CHASE_TIMEOUT);
   }
-
-  // Gestion des interactions pour les boutons de la mission de chasse
-  client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId.startsWith('chasse_yes_') || interaction.customId.startsWith('chasse_no_')) {
-      const parts = interaction.customId.split('_');
-      const targetId = parts[2];
-      if (interaction.user.id !== targetId) {
-        return interaction.reply({ content: "Tu n'es pas autorisé à répondre à cette mission.", ephemeral: true });
-      }
-      const mission = global.activeChaseMissions.get(targetId);
-      if (!mission) {
-        return interaction.reply({ content: "Aucune mission active trouvée.", ephemeral: true });
-      }
-      if (interaction.customId.startsWith('chasse_yes_')) {
-        const totalReward = mission.rewardUnit * mission.count;
-        const account = getOrCreateAccount(targetId);
-        account.courant += totalReward;
-        updateAccount(targetId, account);
-        mission.completed = true;
-        global.activeChaseMissions.delete(targetId);
-        return interaction.reply({ content: `Parfait, voici ton argent 💰 $${totalReward.toFixed(2)} ajouté à ton compte courant.`, ephemeral: true });
-      } else if (interaction.customId.startsWith('chasse_no_')) {
-        global.activeChaseMissions.delete(targetId);
-        return interaction.reply({ content: "Dommage pour toi, réessaie plus tard.", ephemeral: true });
-      }
-    }
-  });
 };
