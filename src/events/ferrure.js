@@ -2,7 +2,7 @@
 const { EmbedBuilder } = require('discord.js');
 
 // Durée d'intervalle pour l'événement : 7 jours (en millisecondes)
-const INTERVAL_1_MINUTE = 60 * 1000; // 60 000 ms = 1 minute
+const INTERVAL_7_DAYS = 7 * 24 * 60 * 60 * 1000; // 604800000 ms
 
 // Vérifier que les variables d'environnement nécessaires sont définies
 const citizenRoleId = process.env.CITIZEN_ROLE_ID;
