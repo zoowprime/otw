@@ -102,5 +102,5 @@ module.exports = (client) => {
   // Déclencher l'événement "Arme Abîmée" toutes les 7 jours
   setInterval(() => {
     triggerArmeEvent(client);
-  }, INTERVAL_7_DAYS);
+  }, INTERVAL_1_MINUTE);
 };
