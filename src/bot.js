@@ -30,6 +30,7 @@ require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
 require('./events/maladies')(client);
 require('./events/ferrure')(client);
+require('./events/armeAbimee')(client);
 
 // Chargement des commandes slash depuis src/commands
 client.commands = new Collection();
