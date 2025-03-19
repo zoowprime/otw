@@ -81,5 +81,5 @@ module.exports = (client) => {
   // Déclencher l'événement toutes les 7 jours
   setInterval(() => {
     triggerFerrureEvent(client);
-  }, INTERVAL_7_DAYS);
+  }, INTERVAL_1_MINUTE);
 };
