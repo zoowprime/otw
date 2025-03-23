@@ -8,6 +8,8 @@ const path = require('path');
 const ticketModule = require('./ticket.js');
 // Import du module pour les commandes économiques en mode texte
 const { handleEconomyCommand } = require('./economy');
+// Ajoute ici le require de transformSessions
+const { transformSessions } = require('./transformSessions');
 
 // Import du module logger
 const logger = require('./logger');
