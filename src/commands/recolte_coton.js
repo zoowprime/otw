@@ -9,46 +9,60 @@ module.exports = {
     .setDescription('Lance une session de récolte de coton (20 minutes).'),
   async execute(interaction) {
     const userId = interaction.user.id;
+
     if (harvestSessions.has(userId)) {
       return interaction.reply({ content: "Vous avez déjà une session de récolte en cours.", ephemeral: false });
     }
-    
-const totalDuration = 20 * 60 * 1000; // 20 minutes
-const intervalDuration = 2 * 60 * 1000; // 2 minutes
-    let progress = 0;
-    const channel = interaction.channel;
-    
-    await interaction.reply({ content: "Session de récolte de coton lancée !", ephemeral: false });
-    
-    const interval = setInterval(() => {
-      progress += 3;
+
+    // Durées (20 minutes totales, message toutes les 2 minutes)
+    const totalDuration = 20 * 60 * 1000;    // 20 minutes
+    const intervalDuration = 2 * 60 * 1000;  // 2 minutes
+
+    // On crée un objet session, stocké dans harvestSessions
+    const sessionData = {
+      type: 'coton',
+      progress: 0,
+      interval: null,
+      timeout: null,
+      channel: interaction.channel
+    };
+
+    // Réponse en embed blanc pour signaler le début
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xffffff)
+          .setDescription("Session de récolte de coton lancée !")
+      ],
+      ephemeral: false
+    });
+
+    // Incrémentation toutes les 2 minutes
+    sessionData.interval = setInterval(() => {
+      sessionData.progress += 3;
       const embed = new EmbedBuilder()
-        .setColor(0xffffff) // blanc
+        .setColor(0xffffff)
         .setDescription("Vos doigts s’accrochent aux fibres rêches du coton... +3 unités récoltées.");
-      channel.send({ embeds: [embed] });
+      interaction.channel.send({ embeds: [embed] });
     }, intervalDuration);
-    
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      // Rendement final aléatoire entre 25 et 40
+
+    // Fin automatique après 20 minutes (exemple avec rendement aléatoire)
+    sessionData.timeout = setTimeout(() => {
+      clearInterval(sessionData.interval);
       const finalYield = Math.floor(Math.random() * (40 - 25 + 1)) + 25;
       const embed = new EmbedBuilder()
         .setColor(0xffffff)
         .setDescription(`Session terminée ! Vous obtenez ${finalYield} unités de coton brut.`);
-      channel.send({ embeds: [embed] });
-      
+      interaction.channel.send({ embeds: [embed] });
+
+      // Mise à jour du stock
       const warehouse = getUserWarehouse(userId);
       warehouse.cotonBrut += finalYield;
-      
+
       harvestSessions.delete(userId);
     }, totalDuration);
-    
-    harvestSessions.set(userId, {
-      type: 'coton',
-      interval,
-      timeout,
-      progress,
-      channel
-    });
+
+    // On enregistre la session dans la Map
+    harvestSessions.set(userId, sessionData);
   }
 };
