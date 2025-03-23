@@ -1,45 +1,94 @@
 // src/commands/transfo_mais.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { transformSessions } = require('../transformSessions');
 const { getUserWarehouse } = require('../warehouseData');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('transfo_mais')
-    .setDescription('Transforme le maïs brut en maïs transformé (10 minutes).'),
+    .setDescription('Transforme 40 unités de maïs brut en 20 unités de maïs transformé sur 10 minutes.'),
   async execute(interaction) {
-    // Vérifier que l'utilisateur est dans l'entrepôt (exemple avec le nom du canal)
+    const userId = interaction.user.id;
+
+    // Vérifier qu’il n’y a pas déjà une transformation en cours pour cet utilisateur
+    if (transformSessions.has(userId)) {
+      return interaction.reply({ content: "Vous avez déjà une session de transformation en cours.", ephemeral: false });
+    }
+
+    // Vérifier que l’utilisateur est dans le bon lieu (entrepôt, par exemple)
     if (!interaction.channel.name.toLowerCase().includes("entrepot")) {
       return interaction.reply({ content: "Vous devez être dans l'entrepôt pour transformer le maïs.", ephemeral: false });
     }
-    
-    const userId = interaction.user.id;
+
+    // Vérifier les ressources
     const warehouse = getUserWarehouse(userId);
-    
     if (warehouse.maisBrut < 40) {
-      return interaction.reply({ content: "Vous n'avez pas assez de maïs brut pour la transformation (40 requis).", ephemeral: false });
+      return interaction.reply({ content: "Vous n'avez pas assez de maïs brut (40 requis).", ephemeral: false });
     }
-    
-    await interaction.reply({ content: "Transformation du maïs lancée !", ephemeral: false });
-    const channel = interaction.channel;
-    const totalDuration = 10 * 60 * 1000; // 10 minutes
+
+    // Retirer immédiatement les 40 maïs brut pour éviter les incohérences
+    warehouse.maisBrut -= 40;
+
+    // Préparer la session
+    const totalIntervals = 5;           // 10 minutes / 2 minutes = 5 intervalles
+    let currentInterval = 0;           // Combien d'intervalles déjà effectués
     const intervalDuration = 2 * 60 * 1000; // 2 minutes
-    
-    const interval = setInterval(() => {
+    const channel = interaction.channel;
+
+    // On crée un objet de session
+    const sessionData = {
+      type: 'transfo_mais',
+      userId,
+      currentInterval,
+      totalIntervals,
+      interval: null,
+      timeout: null,
+      channel
+    };
+
+    // Premier message en embed jaune
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xffff00)
+          .setDescription("Transformation du maïs lancée ! (10 minutes)")
+      ],
+      ephemeral: false
+    });
+
+    // Déclenchement toutes les 2 minutes
+    sessionData.interval = setInterval(() => {
+      sessionData.currentInterval++;
+      // On ajoute +4 maïs transformés à chaque interval
+      warehouse.maisTrans += 4;
+
       const embed = new EmbedBuilder()
         .setColor(0xffff00)
-        .setDescription("Le maïs est broyé puis séché... Le produit devient utilisable.");
+        .setDescription(
+          `Le maïs est broyé puis séché... +4 unités de maïs transformé. ` +
+          `(${sessionData.currentInterval}/${totalIntervals} intervalle(s) complété(s))`
+        );
       channel.send({ embeds: [embed] });
+
+      // Si on a atteint le nombre total d'intervalles (5), on arrête
+      if (sessionData.currentInterval >= totalIntervals) {
+        clearInterval(sessionData.interval);
+        transformSessions.delete(userId);
+
+        const endEmbed = new EmbedBuilder()
+          .setColor(0xffff00)
+          .setDescription("Transformation terminée ! Vous avez obtenu 20 unités de maïs transformé au total.");
+        channel.send({ embeds: [endEmbed] });
+      }
     }, intervalDuration);
-    
-    setTimeout(() => {
-      clearInterval(interval);
-      // Transformation : 40 maïs brut → 20 maïs transformé
-      warehouse.maisBrut -= 40;
-      warehouse.maisTrans += 20;
-      const embed = new EmbedBuilder()
-        .setColor(0xffff00)
-        .setDescription("Transformation terminée ! 40 unités de maïs brut ont été transformées en 20 unités de maïs transformé.");
-      channel.send({ embeds: [embed] });
-    }, totalDuration);
+
+    // Sécurité : si jamais on veut forcer l'arrêt au bout de 10 minutes + 1 seconde
+    sessionData.timeout = setTimeout(() => {
+      clearInterval(sessionData.interval);
+      transformSessions.delete(userId);
+    }, (totalIntervals * intervalDuration) + 10000);
+
+    // Stocker la session
+    transformSessions.set(userId, sessionData);
   }
 };
