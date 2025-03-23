@@ -1,12 +1,12 @@
-// src/commands/stop_recolte.js
+// src/commands/arreter_recolte.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { harvestSessions } = require('../harvestSessions');
 const { getUserWarehouse } = require('../warehouseData');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('stop_recolte')
-    .setDescription('Stoppe votre session de récolte en cours.'),
+    .setName('arreter_recolte')
+    .setDescription('Arrête votre session de récolte en cours.'),
   async execute(interaction) {
     const userId = interaction.user.id;
     if (!harvestSessions.has(userId)) {
@@ -22,7 +22,7 @@ module.exports = {
       finalYield = session.progress;
       const embed = new EmbedBuilder()
         .setColor(0xffff00)
-        .setDescription(`Session de récolte de maïs stoppée. Vous obtenez ${finalYield} unités de maïs.`);
+        .setDescription(`Session de récolte de maïs arrêtée. Vous obtenez ${finalYield} unités de maïs.`);
       session.channel.send({ embeds: [embed] });
       
       const warehouse = getUserWarehouse(userId);
@@ -31,7 +31,7 @@ module.exports = {
       finalYield = session.progress;
       const embed = new EmbedBuilder()
         .setColor(0xffffff)
-        .setDescription(`Session de récolte de coton stoppée. Vous obtenez ${finalYield} unités de coton brut.`);
+        .setDescription(`Session de récolte de coton arrêtée. Vous obtenez ${finalYield} unités de coton brut.`);
       session.channel.send({ embeds: [embed] });
       
       const warehouse = getUserWarehouse(userId);
