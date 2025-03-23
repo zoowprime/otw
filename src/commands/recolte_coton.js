@@ -13,8 +13,8 @@ module.exports = {
       return interaction.reply({ content: "Vous avez déjà une session de récolte en cours.", ephemeral: false });
     }
     
-  const totalDuration = 20 * 1000; 
-  const intervalDuration = 5 * 1000;
+const totalDuration = 20 * 60 * 1000; // 20 minutes
+const intervalDuration = 2 * 60 * 1000; // 2 minutes
     let progress = 0;
     const channel = interaction.channel;
     
