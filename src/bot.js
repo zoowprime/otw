@@ -133,24 +133,4 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Gestion commandes session lancee
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  const role = interaction.guild.roles.cache.get('1378037596566978561');
-  const member = interaction.member;
-  if (!role || !member) return;
-  try {
-    if (interaction.customId === 'en_ville') {
-      await member.roles.add(role);
-      await interaction.reply({ content: `✅ ${member} est maintenant marqué comme en ville.`, ephemeral: true });
-    } else if (interaction.customId === 'deconnecte') {
-      await member.roles.remove(role);
-      await interaction.reply({ content: `❌ ${member} a été marqué comme déconnecté.`, ephemeral: true });
-    }
-  } catch (err) {
-    console.error('Erreur lors de l’attribution du rôle :', err);
-    await interaction.reply({ content: '❗ Une erreur est survenue.', ephemeral: true });
-  }
-});
-
 client.login(process.env.BOT_TOKEN);
