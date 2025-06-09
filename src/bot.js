@@ -45,14 +45,14 @@ const processedMessageIds = new Set();
 
 // Événement : démarrage du bot
 client.once('ready', async () => {
-  console.log(✅ Connecté en tant que ${client.user.tag});
-  logger.sendLog(✅ Connecté en tant que ${client.user.tag});
+  console.log(`✅ Connecté en tant que ${client.user.tag}`);
+  logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
 
   // Vérifie le contenu du dossier /data (pour debug si besoin)
   try {
     const files = fs.readdirSync('/data');
     console.log('Contenu de /data :', files);
-    logger.sendLog(Contenu de /data : ${files.join(', ')});
+    logger.sendLog(`Contenu de /data : ${files.join(', ')}`);
   } catch (err) {
     console.error('Erreur en listant /data :', err);
     logger.sendError(err);
@@ -79,7 +79,7 @@ client.once('ready', async () => {
 // Interaction handler (slash, boutons, menus)
 client.on('interactionCreate', async (interaction) => {
   console.log("Interaction reçue:", interaction.customId || interaction.commandName);
-  logger.sendLog(Interaction reçue: ${interaction.customId || interaction.commandName});
+  logger.sendLog(`Interaction reçue: ${interaction.customId || interaction.commandName}`);
 
   // Slash commands
   if (interaction.isChatInputCommand()) {
@@ -127,13 +127,13 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'en_ville') {
         await member.roles.add(role);
         await interaction.reply({
-          content: ✅ ${member} est maintenant marqué comme en ville.,
+          content: `✅ ${member} est maintenant marqué comme en ville.`,
           ephemeral: true
         });
       } else if (interaction.customId === 'deconnecte') {
         await member.roles.remove(role);
         await interaction.reply({
-          content: ❌ ${member} a été marqué comme déconnecté.,
+          content: `❌ ${member} a été marqué comme déconnecté.`,
           ephemeral: true
         });
       }
@@ -176,8 +176,8 @@ client.on('messageCreate', async (message) => {
 
   processedMessageIds.add(message.id);
 
-  console.log(📩 Message texte reçu: ${message.id} - contenu: "${message.content}");
-  logger.sendLog(📩 Message texte reçu: ${message.id} - contenu: "${message.content}");
+  console.log(`📩 Message texte reçu: ${message.id} - contenu: "${message.content}"`);
+  logger.sendLog(`📩 Message texte reçu: ${message.id} - contenu: "${message.content}"`);
 
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
