@@ -136,12 +136,9 @@ client.on('messageCreate', async (message) => {
 // Gestion commandes session lancee
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
-
   const role = interaction.guild.roles.cache.get('1378037596566978561');
   const member = interaction.member;
-
   if (!role || !member) return;
-
   try {
     if (interaction.customId === 'en_ville') {
       await member.roles.add(role);
