@@ -112,13 +112,35 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
   // Gestion des interactions pour le stock ou autres
-  else {
-    const { handleStockInteractions } = require('./interaction/stockInteraction');
-    if (handleStockInteractions) {
-      await handleStockInteractions(interaction);
+ else if (interaction.isButton()) {
+  // Gestion des boutons en ville / déconnecté
+  const role = interaction.guild.roles.cache.get('1378037596566978561');
+  const member = interaction.member;
+
+  if (!role || !member) return;
+
+  try {
+    if (interaction.customId === 'en_ville') {
+      await member.roles.add(role);
+      await interaction.reply({ content: `✅ ${member} est maintenant marqué comme en ville.`, ephemeral: true });
+    } else if (interaction.customId === 'deconnecte') {
+      await member.roles.remove(role);
+      await interaction.reply({ content: `❌ ${member} a été marqué comme déconnecté.`, ephemeral: true });
+    } else {
+      // Appel du module stock si ce n'était pas un bouton prévu
+      const { handleStockInteractions } = require('./interaction/stockInteraction');
+      if (handleStockInteractions) {
+        await handleStockInteractions(interaction);
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lors de l’attribution du rôle :', err);
+    logger.sendError(err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: '❗ Une erreur est survenue.', ephemeral: true });
     }
   }
-});
+}
 
 // Gestion des commandes texte pour l'économie (préf. "!")
 client.on('messageCreate', async (message) => {
