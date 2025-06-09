@@ -129,7 +129,6 @@ client.on('messageCreate', async (message) => {
   logger.sendLog(`Traitement du message texte: ${message.id} - contenu: "${message.content}"`);
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
-    }
   }
 });
 
