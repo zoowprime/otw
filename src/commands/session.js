@@ -1,80 +1,93 @@
-// src/commands/session.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// Stockage temporaire en mémoire pour les votes
-const presenceData = new Map();
+// Dictionnaire des emojis et de leurs catégories
+const STATUS = {
+  '✅': 'présents',
+  '🕦': 'en retard',
+  '🤷': 'indécis',
+  '❌': 'absents'
+};
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('session')
     .setDescription('Crée une session de RP avec les informations de date, horaire et psn du lanceur.')
     .addStringOption(option =>
-      option.setName('date').setDescription('La date de la session (ex. vendredi 07 mars 2025)').setRequired(true))
+      option
+        .setName('date')
+        .setDescription('La date de la session (ex. vendredi 07 mars 2025)')
+        .setRequired(true)
+    )
     .addStringOption(option =>
-      option.setName('horaire').setDescription('L\'horaire de la session (ex. 19h30)').setRequired(true))
+      option
+        .setName('horaire')
+        .setDescription("L'horaire de la session (ex. 19h30)")
+        .setRequired(true)
+    )
     .addStringOption(option =>
-      option.setName('psn').setDescription('Le PSN du lanceur').setRequired(true)),
-
+      option
+        .setName('psn')
+        .setDescription('Le PSN du lanceur')
+        .setRequired(true)
+    ),
   async execute(interaction) {
     const sessionDate = interaction.options.getString('date');
     const sessionHoraire = interaction.options.getString('horaire');
     const sessionPsn = interaction.options.getString('psn');
 
     const citizenRoleId = '1308118795285565530';
-    const sessionId = `${interaction.channelId}-${Date.now()}`;
-
-    // Structure des présences
-    presenceData.set(sessionId, {
-      present: new Set(),
-      late: new Set(),
-      unsure: new Set(),
-      absent: new Set()
-    });
+    const mention = `<@&${citizenRoleId}>`;
 
     const embed = new EmbedBuilder()
       .setColor(0xff0000)
       .setTitle('Session Roleplay Old Town Western')
-      .setDescription(`**${sessionDate}**\n\n**Horaire :** ${sessionHoraire}\n**Psn du lanceur :** ${sessionPsn}\n\n✅ = oui\n🕦 = en retard\n🤷 = je ne sais pas\n❌ = non plus\n\nMerci de voter afin de nous indiquer votre présence, l’abstention est autorisée mais a une limite, si elle n’est pas respectée vous redevrez passer votre candidature.`);
+      .setDescription(
+        `${sessionDate}\n\n**Horaire :** ${sessionHoraire}\n**Psn du lanceur :** ${sessionPsn}\n\n✅ = oui\n🕦 = en retard\n🤷 = je ne sais pas\n❌ = non plus\n\nMerci de voter afin de nous indiquer votre présence, l’abstention est autorisée mais a une limite, si elle n’est pas respectée vous redevrez passer votre candidature.`
+      )
+      .addFields(
+        { name: 'Membres présents (0) :', value: 'Aucun', inline: false },
+        { name: 'Membres en retard (0) :', value: 'Aucun', inline: false },
+        { name: 'Membres indécis (0) :', value: 'Aucun', inline: false },
+        { name: 'Membres absents (0) :', value: 'Aucun', inline: false }
+      );
 
-    const buttons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`present_${sessionId}`).setLabel('✅').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`late_${sessionId}`).setLabel('🕦').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`unsure_${sessionId}`).setLabel('🤷').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`absent_${sessionId}`).setLabel('❌').setStyle(ButtonStyle.Danger)
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('✅').setLabel('Oui').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('🕦').setLabel('En retard').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('🤷').setLabel('Je ne sais pas').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('❌').setLabel('Absent').setStyle(ButtonStyle.Danger)
     );
 
-    const mention = `<@&${citizenRoleId}>`;
-    const message = await interaction.reply({ content: mention, embeds: [embed], components: [buttons], fetchReply: true });
+    const message = await interaction.reply({ content: mention, embeds: [embed], components: [row], fetchReply: true });
 
-    const collector = message.createMessageComponentCollector({ time: 86400000 }); // 24h
+    const collector = message.createMessageComponentCollector({ time: 3600000 }); // 1h
+
+    const votes = {
+      '✅': new Set(),
+      '🕦': new Set(),
+      '🤷': new Set(),
+      '❌': new Set()
+    };
 
     collector.on('collect', async i => {
-      const userId = i.user.id;
-      const username = `<@${userId}>`;
-      const data = presenceData.get(sessionId);
-
-      // Supprimer l'utilisateur de tous les ensembles
-      for (const key of ['present', 'late', 'unsure', 'absent']) {
-        data[key].delete(username);
+      for (const key of Object.keys(votes)) {
+        votes[key].delete(i.user);
       }
+      votes[i.customId].add(i.user);
 
-      // Ajouter à la bonne catégorie
-      if (i.customId.startsWith('present_')) data.present.add(username);
-      if (i.customId.startsWith('late_')) data.late.add(username);
-      if (i.customId.startsWith('unsure_')) data.unsure.add(username);
-      if (i.customId.startsWith('absent_')) data.absent.add(username);
+      const fields = Object.entries(STATUS).map(([emoji, label]) => {
+        const users = Array.from(votes[emoji]);
+        const mentions = users.map(u => `<@${u.id}>`).join(' ');
+        return {
+          name: `Membres ${label} (${users.length}) :`,
+          value: users.length ? mentions : 'Aucun',
+          inline: false
+        };
+      });
 
-      // Création du texte de présence
-      const formatList = (set) => set.size > 0 ? Array.from(set).join(' ') : 'Aucun';
-      const newDescription = `**${sessionDate}**\n\n**Horaire :** ${sessionHoraire}\n**Psn du lanceur :** ${sessionPsn}\n\n✅ = oui\n🕦 = en retard\n🤷 = je ne sais pas\n❌ = non plus\n\nMerci de voter afin de nous indiquer votre présence, l’abstention est autorisée mais a une limite, si elle n’est pas respectée vous redevrez passer votre candidature.\n\n` +
-        `**Membres présents (${data.present.size}) :**\n${formatList(data.present)}\n\n` +
-        `**Membres en retard (${data.late.size}) :**\n${formatList(data.late)}\n\n` +
-        `**Membres indécis (${data.unsure.size}) :**\n${formatList(data.unsure)}\n\n` +
-        `**Membres absents (${data.absent.size}) :**\n${formatList(data.absent)}`;
+      const updatedEmbed = EmbedBuilder.from(embed).setFields(fields);
 
-      const updatedEmbed = EmbedBuilder.from(embed).setDescription(newDescription);
-
-      await i.update({ embeds: [updatedEmbed], components: [buttons] });
+      await i.update({ embeds: [updatedEmbed], components: [row] });
     });
   }
 };
