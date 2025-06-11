@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-const roleIDEnVille = '1378037596566978561';
+const ROLE_EN_VILLE = '1378037596566978561';
 
 module.exports = {
   data: new SlashCommandBuilder()
