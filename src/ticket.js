@@ -15,7 +15,12 @@ require('dotenv').config({ path: './id.env' });
 async function sendTicketPanel(channel) {
   const embed = new EmbedBuilder()
     .setTitle("Ouvrir un Ticket")
-    .setDescription("Cliquez sur le bouton ci-dessous pour ouvrir un ticket.")
+    .setDescription("👋 BONJOUR À TOUS 👋
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+
+MERCI DE SÉLECTIONNER UNE RAISON EN RAPPORT AVEC VOTRE SOUCI OU VOTRE DEMANDE. TOUT TICKET INACTIF SERA FERMÉ !
+︎
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬.")
     .setColor(0xff0000);
 
   const row = new ActionRowBuilder().addComponents(
