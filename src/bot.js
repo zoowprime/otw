@@ -28,6 +28,7 @@ require('./events/missionSystem')(client);
 require('./events/maladies')(client);
 require('./events/ferrure')(client);
 require('./events/armeAbimee')(client);
+require('./events/faimSoifSystem')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
