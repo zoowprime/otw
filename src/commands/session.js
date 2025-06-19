@@ -60,7 +60,7 @@ module.exports = {
 
     const message = await interaction.reply({ content: mention, embeds: [embed], components: [row], fetchReply: true });
 
-    const collector = message.createMessageComponentCollector({ time: 3600000 }); // 1h
+    const collector = message.createMessageComponentCollector({ time: 86400000 }); // 24h
 
     const votes = {
       '✅': new Set(),
