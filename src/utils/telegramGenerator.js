@@ -1,31 +1,34 @@
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
 
-// (Optionnel) Charge une police style manuscrite ou machine à écrire
-// registerFont(path.join(__dirname, '../assets/YourFont.ttf'), { family: 'YourFont' });
+// (Optionnel) charge ta police RP
+// registerFont(path.join(__dirname, '../assets/ta-police.ttf'), { family: 'TA_POLICE' });
 
-const TEMPLATE = path.join(__dirname, '../assets/telegram_template.png');
+const TEMPLATE_PATH = path.join(__dirname, '../assets/telegram_template.png');
 
-async function generateTelegramImage(messageText, authorName) {
-  // Charge le fond
-  const img = await loadImage(TEMPLATE);
+async function generateTelegramImage(from, to, messageText, signature) {
+  const img = await loadImage(TEMPLATE_PATH);
   const canvas = createCanvas(img.width, img.height);
   const ctx = canvas.getContext('2d');
 
-  // Dessine le fond
+  // Fond
   ctx.drawImage(img, 0, 0);
 
-  // Paramètres de style
-  ctx.fillStyle = '#3a2c1e';       // brun foncé
+  // Couleur du texte
+  ctx.fillStyle = '#3a2c1e';
   ctx.textAlign = 'left';
 
-  // Texte principal
-  ctx.font = '24px serif';         // ou 'YourFont'
-  const x = 60, y = 160;
-  const maxWidth = img.width - 120;
-  const lineHeight = 32;
+  // 1) Émetteur et destinataire
+  ctx.font = '28px serif'; // ou 'TA_POLICE'
+  ctx.fillText(`De : ${from}`, 60, 120);
+  ctx.fillText(`À : ${to}`,   60, 160);
 
-  // Découpe automatique en lignes
+  // 2) Corps du message
+  ctx.font = '30px serif';
+  const x = 60, y = 220;
+  const maxWidth = img.width - 120;
+  const lineHeight = 38;
+
   const words = messageText.split(' ');
   let line = '', offsetY = y, lines = [];
   for (let w of words) {
@@ -38,15 +41,15 @@ async function generateTelegramImage(messageText, authorName) {
     }
   }
   lines.push(line.trim());
-  // Dessine chaque ligne
+
   for (let i = 0; i < lines.length; i++) {
     ctx.fillText(lines[i], x, offsetY + i * lineHeight);
   }
 
-  // Signature en bas à droite
-  ctx.font = '20px serif';
+  // 3) Signature
+  ctx.font = '26px serif';
   ctx.textAlign = 'right';
-  ctx.fillText(`— ${authorName}`, img.width - 60, img.height - 60);
+  ctx.fillText(`— ${signature}`, img.width - 60, img.height - 60);
 
   return canvas.toBuffer('image/png');
 }
