@@ -1,37 +1,37 @@
+// src/utils/telegramGenerator.js
 const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
 
 const TEMPLATE_PATH = path.join(__dirname, '../assets/telegram_template.png');
 
 async function generateTelegramImage(from, to, messageText, signature) {
-  // 1) Charge le fond
   const img = await loadImage(TEMPLATE_PATH);
   const canvas = createCanvas(img.width, img.height);
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0);
 
-  // 2) Styles communs
-  ctx.fillStyle = '#3a2c1e';     // brun foncé
-  ctx.textBaseline = 'top';      // simplifie le positionnement Y
+  // couleur et alignement
+  ctx.fillStyle = '#3a2c1e';
+  ctx.textBaseline = 'top';
 
-  // 3) "De :"  (zone verte)
-  ctx.font = '36px serif';
+  // 1) "De :" — plus gros, plus bas
+  ctx.font = '48px serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`De : ${from}`, 60, 140);
+  ctx.fillText(`De : ${from}`, 60, 180);
 
-  // 4) "À :"  (zone bleue)
-  ctx.font = '36px serif';
-  ctx.fillText(`À : ${to}`, 60, 200);
+  // 2) "À :" — plus gros, plus bas
+  ctx.font = '48px serif';
+  ctx.fillText(`À : ${to}`, 60, 260);
 
-  // 5) Message  (zone rose)
-  ctx.font = '34px serif';
-  const x       = 60;
-  const y       = 260;
-  const maxW    = img.width - 120;
-  const lineH   = 44;
-  const words   = messageText.split(' ');
-  let   line    = '';
-  let   offsetY = y;
+  // 3) Message — plus gros, zone plus basse
+  ctx.font = '44px serif';
+  const x      = 60;
+  const y      = 340;
+  const maxW   = img.width - 120;
+  const lineH  = 52;
+  const words  = messageText.split(' ');
+  let   line   = '';
+  let   offsetY= y;
 
   for (const w of words) {
     const test = line + w + ' ';
@@ -43,13 +43,12 @@ async function generateTelegramImage(from, to, messageText, signature) {
       line = test;
     }
   }
-  // dernière ligne
   ctx.fillText(line.trim(), x, offsetY);
 
-  // 6) Signature  (zone rouge)
-  ctx.font = '32px serif';
+  // 4) Signature — un peu plus grand et bas
+  ctx.font = '40px serif';
   ctx.textAlign = 'right';
-  ctx.fillText(`— ${signature}`, img.width - 60, img.height - 60);
+  ctx.fillText(`— ${signature}`, img.width - 60, img.height - 80);
 
   return canvas.toBuffer('image/png');
 }
