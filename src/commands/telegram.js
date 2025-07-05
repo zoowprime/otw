@@ -4,7 +4,7 @@ require('dotenv').config({ path: './id.env' });
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('telegramme')
+    .setName('telegram')
     .setDescription('Envoie un télégramme RP en image')
     .addUserOption(opt =>
       opt.setName('destinataire')
