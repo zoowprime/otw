@@ -1,3 +1,4 @@
+// src/commands/coma.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
@@ -24,12 +25,17 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // 1️⃣ Ack immédiat pour éviter le timeout
+    await interaction.deferReply({ ephemeral: false });
+
+    // 2️⃣ Récupération des options
     const cible  = interaction.options.getUser('cible');
     const duree  = interaction.options.getString('durée');
     const raison = interaction.options.getString('raison');
 
+    // 3️⃣ Construction de l’embed
     const embed = new EmbedBuilder()
-      .setColor(0xFFFFFF)                         // blanc
+      .setColor(0xFFFFFF)                         // fond blanc
       .setTitle('💤 État de coma déclenché')
       .setDescription(`${cible} est maintenant en coma RP… Zzz`)
       .addFields(
@@ -39,6 +45,7 @@ module.exports = {
       )
       .setFooter({ text: 'Ils se réveilleront quand leur temps sera écoulé !' });
 
-    await interaction.reply({ embeds: [embed] });
+    // 4️⃣ Envoi de l’embed (édit de la réponse différée)
+    await interaction.editReply({ embeds: [embed] });
   }
 };
