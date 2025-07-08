@@ -1,3 +1,4 @@
+
 // src/ticket.js
 const {
   EmbedBuilder,
@@ -46,7 +47,7 @@ async function handleTicketInteraction(interaction) {
     if (!openCategoryId) {
       return interaction.editReply({ content: "La catégorie pour les tickets ouverts n'est pas configurée." });
     }
-    const ticketChannelName = `ticket-${interaction.user.username}-${Date.now()}`;
+    const ticketChannelName = ticket-${interaction.user.username}-${Date.now()};
     try {
       const ticketChannel = await interaction.guild.channels.create({
         name: ticketChannelName,
