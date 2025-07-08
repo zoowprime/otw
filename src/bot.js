@@ -62,6 +62,7 @@ require('./events/maladies')(client);
 require('./events/ferrure')(client);
 require('./events/armeAbimee')(client);
 require('./events/faimSoifSystem')(client);
+require('./events/raidProtect')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
