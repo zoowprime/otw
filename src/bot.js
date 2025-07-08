@@ -134,8 +134,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // 2️⃣ Boutique – menu déroulant d’achat (légale)
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_buy') {
-    await interaction.deferReply({ ephemeral: true });
-    const choice = interaction.values[0];
+await interaction.reply({ content: '🛒 Achat en cours…', ephemeral: true });    const choice = interaction.values[0];
     const it     = items[choice];
     if (!it) return interaction.editReply('❌ Article introuvable.');
 
