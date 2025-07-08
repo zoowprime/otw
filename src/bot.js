@@ -29,17 +29,17 @@ const legalItems = {
 
 // Articles boutique illégale
 const illegalItems = {
-  fusil_semi_auto:       { name: 'Fusil Semi-Automatique',    price: 650 },
-  mauser:                { name: 'Mauser',                    price: 750 },
-  fusil_double_canon:    { name: 'Fusil à Double Canon',       price: 750 },
-  fusil_pompe:           { name: 'Fusil à Pompe',              price: 550 },
-  fusil_canon_scie:      { name: 'Fusil à Canon Scié',         price: 550 },
-  fusil_semi_auto2:      { name: 'Fusil Semi-Automatique II',  price: 450 },
-  fusil_repetition:      { name: 'Fusil à Répétition',         price: 350 },
-  fusil_carcano:         { name: 'Fusil Carcano',              price: 425 },
-  dynamites:             { name: 'Dynamites',                  price: 250 },
-  bouteilles_incendie:   { name: 'Bouteilles Incendiaires',    price: 50  },
-  tomahawk:              { name: 'Tomahawk',                   price: 150 }
+  fusil_semi_auto:     { name: 'Fusil Semi-Automatique',    price: 650 },
+  mauser:              { name: 'Mauser',                    price: 750 },
+  fusil_double_canon:  { name: 'Fusil à Double Canon',       price: 750 },
+  fusil_pompe:         { name: 'Fusil à Pompe',              price: 550 },
+  fusil_canon_scie:    { name: 'Fusil à Canon Scié',         price: 550 },
+  fusil_semi_auto2:    { name: 'Fusil Semi-Automatique II',  price: 450 },
+  fusil_repetition:    { name: 'Fusil à Répétition',         price: 350 },
+  fusil_carcano:       { name: 'Fusil Carcano',              price: 425 },
+  dynamites:           { name: 'Dynamites',                  price: 250 },
+  bouteilles_incendie: { name: 'Bouteilles Incendiaires',    price: 50  },
+  tomahawk:            { name: 'Tomahawk',                   price: 150 }
 };
 
 const client = new Client({
@@ -129,7 +129,7 @@ client.on('interactionCreate', async interaction => {
 
   // 2️⃣ Boutique légale
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_buy') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const key = interaction.values[0], it = legalItems[key];
     if (!it) return interaction.editReply('❌ Article introuvable.');
     const buyerId = interaction.user.id;
@@ -137,7 +137,6 @@ client.on('interactionCreate', async interaction => {
     if (buyer.courant.banque < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
-    // débit/crédit
     buyer.courant.banque -= it.price;
     updateAccount(buyerId, buyer);
     if (SHOP_OWNER_ID) {
@@ -148,10 +147,9 @@ client.on('interactionCreate', async interaction => {
     return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`);
   }
 
-  // 3️⃣ Boutique illégale
-  if (interaction.isStringSelectMenu() && interaction.customId === 'illegal_shop_buy') {
-    await interaction.deferReply({ ephemeral: true });
-    // rôle contact illégal ?
+  // 3️⃣ Boutique illégale (customId corrigé)
+  if (interaction.isStringSelectMenu() && interaction.customId === 'shop_illegal_buy') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (!interaction.member.roles.cache.has(ILLEGAL_CONTACT_ROLE_ID)) {
       return interaction.editReply('❌ Vous n’êtes pas contact illégal.');
     }
@@ -162,7 +160,6 @@ client.on('interactionCreate', async interaction => {
     if (buyer.courant.banque < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
-    // débit/crédit
     buyer.courant.banque -= it.price;
     updateAccount(buyerId, buyer);
     if (ILLEGAL_SHOP_OWNER_ID) {
@@ -174,14 +171,14 @@ client.on('interactionCreate', async interaction => {
     await interaction.editReply(`🤝 ${interaction.user} a acheté **${it.name}** pour **$${it.price}**.`);
     await interaction.followUp({
       content: `💵 Transféré à <@${ILLEGAL_SHOP_OWNER_ID}>.`,
-      allowedMentions: { users: [] }  // pas de ping
+      allowedMentions: { users: [] }
     });
     return;
   }
 
   // 4️⃣ Tickets
   if (
-    (interaction.isSelectMenu() && interaction.customId === "ticket_reason_select") ||
+    (interaction.isStringSelectMenu() && interaction.customId === "ticket_reason_select") ||
     (interaction.isButton()     && ["close_ticket","reopen_ticket","delete_ticket"]
       .includes(interaction.customId))
   ) {
@@ -231,7 +228,7 @@ client.on('interactionCreate', async interaction => {
   // 6️⃣ Autres interactions (stock, etc.)
   {
     const { handleStockInteractions } = require('./interaction/stockInteraction');
-    if (interaction.isButton() || interaction.isSelectMenu()) {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
       try {
         await handleStockInteractions(interaction);
       } catch (err) {
