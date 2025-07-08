@@ -1,46 +1,116 @@
+zow
+nxzow
+zowgoat
+
+C'est le début du salon #bot-otw-2. 
+zow — 09/06/2025 17:40
+// Gestion commandes session lancee
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  const role = interaction.guild.roles.cache.get('1378037596566978561');
+  const member = interaction.member;
+  if (!role || !member) return;
+  try {
+    if (interaction.customId === 'en_ville') {
+      await member.roles.add(role);
+      await interaction.reply({ content: ✅ ${member} est maintenant marqué comme en ville., ephemeral: true });
+    } else if (interaction.customId === 'deconnecte') {
+      await member.roles.remove(role);
+      await interaction.reply({ content: ❌ ${member} a été marqué comme déconnecté., ephemeral: true });
+    }
+  } catch (err) {
+    console.error('Erreur lors de l’attribution du rôle :', err);
+    await interaction.reply({ content: '❗ Une erreur est survenue.', ephemeral: true });
+  }
+});
+zow — Hier à 22:43
 require('dotenv').config({ path: './id.env' });
 const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
 // Modules internes
-const ticketModule             = require('./ticket.js');
+Afficher plus
+message.txt
+7 Ko
+zow — 02:20
+require('dotenv').config({ path: './id.env' });
+const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+
+// Modules internes
+Afficher plus
+message.txt
+9 Ko
+zow — 02:52
+
+// src/ticket.js
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+Afficher plus
+message.txt
+8 Ko
+﻿
+require('dotenv').config({ path: './id.env' });
+const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+
+// Modules internes
+const ticketModule          = require('./ticket.js');
 const { handleEconomyCommand } = require('./economy');
-const { transformSessions }    = require('./transformSessions');
-const logger                   = require('./logger');
+const { transformSessions } = require('./transformSessions');
+const logger                = require('./logger');
+
+// Pour la boutique
 const { getOrCreateAccount, updateAccount } = require('./economyData');
-
-// Pour la boutique légale
 const SHOP_OWNER_ID = process.env.SHOP_OWNER_ID;
-// Nouveautés : boutique illégale
-const ILLEGAL_SHOP_OWNER_ID   = process.env.ILLEGAL_SHOP_OWNER_ID;
-const ILLEGAL_CONTACT_ROLE_ID = process.env.ILLEGAL_CONTACT_ROLE_ID;
 
-// Définition des articles de la boutique légale
+// Définition des articles de la boutique
 const items = {
-  tente_amelioree: { name: 'Tente améliorée', desc: 'Tente plus grande et plus résistante contre les intempéries', price: 45 },
-  tente_luxe:      { name: 'Tente de luxe (voyageur)', desc: 'Confort supérieur pour un repos optimal', price: 80 },
-  feu_camp:        { name: 'Feu de camp renforcé', desc: 'Plus grand foyer permettant de cuisiner plus rapidement', price: 18 },
-  tapis_sol:       { name: 'Tapis de sol', desc: 'Tapis pour plus de confort et d’esthétique', price: 10 },
-  chaises:         { name: 'Chaises et tabourets', desc: 'Permet aux membres du camp de s’asseoir RP', price: 12 },
-  table_camp:      { name: 'Table de camp', desc: 'Permet les repas communs ou réunions RP', price: 20 },
-  drapeaux:        { name: 'Drapeaux personnalisés', desc: 'Bannières RP indiquant l’identité du groupe', price: 15 },
-  eclairage:       { name: 'Éclairage (lanternes)', desc: 'Ajoute des lanternes suspendues et fixes', price: 8 }
-};
-
-// Nouveaux articles de la boutique illégale
-const itemsIllegal = {
-  semi_auto_650:              { name: 'Fusil Semi-Automatique',       price: 650 },
-  mauser_750:                 { name: 'Mauser',                        price: 750 },
-  double_canon_750:           { name: 'Fusil à Double Canon',          price: 750 },
-  pompe_550:                  { name: 'Fusil à Pompe',                 price: 550 },
-  canon_scie_550:             { name: 'Fusil à Canon Scié',             price: 550 },
-  semi_auto_450:              { name: 'Fusil Semi-Automatique',       price: 450 },
-  repetition_350:             { name: 'Fusil à Répétition',           price: 350 },
-  carcano_425:                { name: 'Fusil Carcano',                price: 425 },
-  dynamites_250:              { name: 'Dynamites',                    price: 250 },
-  bouteilles_incendiaires_50: { name: 'Bouteilles Incendiaires',      price: 50  },
-  tomahawk_150:               { name: 'Tomahawk',                     price: 150 }
+  tente_amelioree: {
+    name: 'Tente améliorée',
+    desc: 'Tente plus grande et plus résistante contre les intempéries',
+    price: 45
+  },
+  tente_luxe: {
+    name: 'Tente de luxe (voyageur)',
+    desc: 'Confort supérieur pour un repos optimal',
+    price: 80
+  },
+  feu_camp: {
+    name: 'Feu de camp renforcé',
+    desc: 'Plus grand foyer permettant de cuisiner plus rapidement',
+    price: 18
+  },
+  tapis_sol: {
+    name: 'Tapis de sol',
+    desc: 'Tapis pour plus de confort et d’esthétique',
+    price: 10
+  },
+  chaises: {
+    name: 'Chaises et tabourets',
+    desc: 'Permet aux membres du camp de s’asseoir RP',
+    price: 12
+  },
+  table_camp: {
+    name: 'Table de camp',
+    desc: 'Permet les repas communs ou réunions RP',
+    price: 20
+  },
+  drapeaux: {
+    name: 'Drapeaux personnalisés',
+    desc: 'Bannières RP indiquant l’identité du groupe',
+    price: 15
+  },
+  eclairage: {
+    name: 'Éclairage (lanternes)',
+    desc: 'Ajoute des lanternes suspendues et fixes',
+    price: 8
+  }
 };
 
 const client = new Client({
@@ -132,64 +202,39 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // 2️⃣ Boutique – menu déroulant d’achat (légale)
+  // 2️⃣ Boutique – menu déroulant d’achat
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_buy') {
-await interaction.reply({ content: '🛒 Achat en cours…', ephemeral: true });    const choice = interaction.values[0];
-    const it     = items[choice];
-    if (!it) return interaction.editReply('❌ Article introuvable.');
+    await interaction.deferReply({ ephemeral: true });
 
-    const buyerAcc = getOrCreateAccount(interaction.user.id);
-    if (buyerAcc.courant.banque < it.price) {
-      return interaction.editReply('❌ Fonds insuffisants.');
-    }
-    buyerAcc.courant.banque -= it.price;
-    updateAccount(interaction.user.id, buyerAcc);
-
-    if (SHOP_OWNER_ID) {
-      const sellAcc = getOrCreateAccount(SHOP_OWNER_ID);
-      sellAcc.courant.banque += it.price;
-      updateAccount(SHOP_OWNER_ID, sellAcc);
-    }
-
-    return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`);
-  }
-
-  // 3️⃣ Boutique illégale – menu déroulant d’achat (nouveauté)
-  if (interaction.isStringSelectMenu() && interaction.customId === 'shop_illegal_buy') {
-    // Vérifie le rôle contact illégal
-    if (!interaction.member.roles.cache.has(ILLEGAL_CONTACT_ROLE_ID)) {
-      return interaction.reply({
-        content: '❌ Vous n’avez pas le rôle **contact illégal**.',
-        ephemeral: true
-      });
-    }
-    await interaction.deferReply({ ephemeral: false });
     const choice = interaction.values[0];
-    const it     = itemsIllegal[choice];
+    const it = items[choice];
     if (!it) {
       return interaction.editReply('❌ Article introuvable.');
     }
 
-    const buyerAcc = getOrCreateAccount(interaction.user.id);
+    const buyerId = interaction.user.id;
+    const buyerAcc = getOrCreateAccount(buyerId);
     if (buyerAcc.courant.banque < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
-    buyerAcc.courant.banque -= it.price;
-    updateAccount(interaction.user.id, buyerAcc);
 
-    if (ILLEGAL_SHOP_OWNER_ID) {
-      const sellAcc = getOrCreateAccount(ILLEGAL_SHOP_OWNER_ID);
-      sellAcc.courant.banque += it.price;
-      updateAccount(ILLEGAL_SHOP_OWNER_ID, sellAcc);
+    // Débit acheteur
+    buyerAcc.courant.banque -= it.price;
+    updateAccount(buyerId, buyerAcc);
+
+    // Crédit vendeur
+    if (SHOP_OWNER_ID) {
+      const sellerAcc = getOrCreateAccount(SHOP_OWNER_ID);
+      sellerAcc.courant.banque += it.price;
+      updateAccount(SHOP_OWNER_ID, sellerAcc);
     }
 
-    // Message PUBLIC pour preuve d’achat
     return interaction.editReply(
-      `💰 **${interaction.user.tag}** a acheté **${it.name}** pour **$${it.price}**.`
+      `✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`
     );
   }
 
-  // 4️⃣ Interactions Ticket
+  // 3️⃣ Interactions Ticket
   if (
     (interaction.isButton() && ["open_ticket","close_ticket","delete_ticket"].includes(interaction.customId)) ||
     (interaction.isSelectMenu() && interaction.customId === "ticket_type_select")
@@ -206,9 +251,9 @@ await interaction.reply({ content: '🛒 Achat en cours…', ephemeral: true });
     return;
   }
 
-  // 5️⃣ Boutons "en ville" / "déconnecté"
+  // 4️⃣ Boutons "en ville" / "déconnecté"
   if (interaction.isButton() && ["en_ville","deconnecte"].includes(interaction.customId)) {
-    const role   = interaction.guild.roles.cache.get('1378037596566978561');
+    const role = interaction.guild.roles.cache.get('1378037596566978561');
     const member = interaction.member;
     if (!role || !member) return;
     try {
@@ -229,7 +274,7 @@ await interaction.reply({ content: '🛒 Achat en cours…', ephemeral: true });
     return;
   }
 
-  // 6️⃣ Stock / autres interactions
+  // 5️⃣ Stock / autres interactions
   const { handleStockInteractions } = require('./interaction/stockInteraction');
   if (interaction.isButton() || interaction.isSelectMenu()) {
     if (handleStockInteractions) {
