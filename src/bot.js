@@ -1,9 +1,3 @@
-zow
-nxzow
-zowgoat
-
-C'est le début du salon #bot-otw-2. 
-zow — 09/06/2025 17:40
 // Gestion commandes session lancee
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
