@@ -38,7 +38,7 @@ async function sendTicketPanel(channel) {
 async function handleTicketInteraction(interaction) {
   // Gestion du bouton "Ouvrir un ticket"
   if (interaction.isButton() && interaction.customId === "open_ticket") {
-    await interaction.deferReply({ flags: 64 }); // Accuser réception de manière éphémère
+    await interaction.deferReply({ ephemeral: true }); // Accuser réception de manière éphémère
     if (!interaction.guild) {
       return interaction.editReply({ content: "Cette action ne peut être utilisée que dans un serveur." });
     }
@@ -120,7 +120,7 @@ async function handleTicketInteraction(interaction) {
     if (!interaction.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
       return interaction.reply({ content: "Vous n'avez pas la permission de fermer ce ticket.", flags: 64 });
     }
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
     const closedCategory = process.env.CLOSED_TICKET_CATEGORY_ID;
     if (!closedCategory) return interaction.editReply({ content: "La catégorie des tickets fermés n'est pas configurée." });
     await interaction.channel.setParent(closedCategory);
@@ -140,7 +140,7 @@ async function handleTicketInteraction(interaction) {
     if (!interaction.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
       return interaction.reply({ content: "Vous n'avez pas la permission de supprimer ce ticket.", flags: 64 });
     }
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
     await interaction.editReply({ content: "Suppression du ticket..." });
     setTimeout(() => {
       interaction.channel.delete().catch(console.error);
