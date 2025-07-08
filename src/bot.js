@@ -1,13 +1,13 @@
 require('dotenv').config({ path: './id.env' });
 const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 
 // Modules internes
-const ticketModule = require('./ticket.js');
+const ticketModule          = require('./ticket.js');
 const { handleEconomyCommand } = require('./economy');
-const { transformSessions } = require('./transformSessions');
-const logger = require('./logger');
+const { transformSessions }    = require('./transformSessions');
+const logger                   = require('./logger');
 
 const client = new Client({
   intents: [
@@ -82,7 +82,7 @@ client.on('interactionCreate', async (interaction) => {
   console.log("Interaction reçue:", interaction.customId || interaction.commandName);
   logger.sendLog(`Interaction reçue: ${interaction.customId || interaction.commandName}`);
 
-  // Slash commands
+  // 1️⃣ Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -96,12 +96,13 @@ client.on('interactionCreate', async (interaction) => {
         flags: MessageFlags.Ephemeral
       });
     }
+    return;
   }
 
-  // Interactions Ticket (boutons et menu déroulant)
+  // 2️⃣ Ticket interactions : raison, fermer, réouvrir, supprimer
   else if (
-    (interaction.isButton() && ["open_ticket", "close_ticket", "delete_ticket"].includes(interaction.customId)) ||
-    (interaction.isSelectMenu() && interaction.customId === "ticket_type_select")
+    (interaction.isSelectMenu() && interaction.customId === "ticket_reason_select") ||
+    (interaction.isButton()     && ["close_ticket","reopen_ticket","delete_ticket"].includes(interaction.customId))
   ) {
     try {
       await ticketModule.handleTicketInteraction(interaction);
@@ -115,45 +116,42 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
     }
+    return;
   }
 
-  // Boutons "en ville" / "déconnecté"
+  // 3️⃣ Boutons "en ville" / "déconnecté"
   else if (interaction.isButton() && ["en_ville", "deconnecte"].includes(interaction.customId)) {
-    const role = interaction.guild.roles.cache.get('1378037596566978561');
+    const role   = interaction.guild.roles.cache.get('1378037596566978561');
     const member = interaction.member;
-
     if (!role || !member) return;
 
     try {
       if (interaction.customId === 'en_ville') {
         await member.roles.add(role);
-        await interaction.reply({
-          content: `✅ ${member} est maintenant marqué comme en ville.`,
-          ephemeral: true
-        });
-      } else if (interaction.customId === 'deconnecte') {
+      } else {
         await member.roles.remove(role);
-        await interaction.reply({
-          content: `❌ ${member} a été marqué comme déconnecté.`,
-          ephemeral: true
-        });
       }
+      await interaction.reply({
+        content: `✅ Statut mis à jour.`,
+        flags: MessageFlags.Ephemeral
+      });
     } catch (err) {
-      console.error('Erreur lors de l’attribution du rôle :', err);
+      console.error('Erreur rôle ville :', err);
       logger.sendError(err);
       if (!interaction.replied) {
         await interaction.reply({
           content: '❗ Une erreur est survenue.',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
     }
+    return;
   }
 
-  // Autres interactions (ex : stock)
+  // 4️⃣ Autres interactions (ex : stock)
   else {
     const { handleStockInteractions } = require('./interaction/stockInteraction');
-    if (handleStockInteractions) {
+    if (interaction.isButton() || interaction.isSelectMenu()) {
       try {
         await handleStockInteractions(interaction);
       } catch (error) {
@@ -162,7 +160,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!interaction.replied) {
           await interaction.reply({
             content: '❗ Une erreur est survenue.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
