@@ -7,7 +7,7 @@ async function generateCard({
   memberCount, 
   isWelcome = true 
 }) {
-  // 1) Charge le background à sa taille native
+  // Charge le fond à sa taille native
   const bgPath = path.join(__dirname, '../assets/welcome_bg.png');
   const bg    = await loadImage(bgPath);
   const width = bg.width;
@@ -16,24 +16,24 @@ async function generateCard({
   const canvas = createCanvas(width, height);
   const ctx    = canvas.getContext('2d');
 
-  // 2) Fond
+  // 1) Fond
   ctx.drawImage(bg, 0, 0);
 
-  // 3) Texte du haut (centré)
+  // 2) Titre en haut — police agrandie
   ctx.fillStyle    = '#FFFFFF';
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  ctx.font         = 'bold 36px sans-serif';
+  ctx.font         = 'bold 60px sans-serif';   // ↑ passé de 36px à 60px
   const title      = isWelcome 
                       ? 'Bienvenue sur OTW RP !' 
                       : 'Au revoir...';
   ctx.fillText(title, width / 2, 20);
 
-  // 4) Avatar centré
-  const avatarSize = 128;
+  // 3) Avatar centré — taille agrandie
+  const avatarSize = 200;                        // ↑ passé de 128px à 200px
   const avatarImg  = await loadImage(avatarURL);
   const ax = (width  - avatarSize) / 2;
-  const ay = (height - avatarSize) / 2 - 10;  // légèrement vers le haut
+  const ay = (height - avatarSize) / 2 - 10;
 
   ctx.save();
   ctx.beginPath();
@@ -43,11 +43,11 @@ async function generateCard({
   ctx.drawImage(avatarImg, ax, ay, avatarSize, avatarSize);
   ctx.restore();
 
-  // 5) Texte du bas (centré)
+  // 4) Texte du bas — police agrandie
   ctx.fillStyle    = '#FFCC00';
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.font         = '28px sans-serif';
+  ctx.font         = 'bold 36px sans-serif';    // ↑ passé de 28px à 36px
   const bottomText = `Vous êtes le membre n°${memberCount}`;
   ctx.fillText(bottomText, width / 2, height - 20);
 
