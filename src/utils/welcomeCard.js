@@ -1,49 +1,55 @@
-const { createCanvas, loadImage, registerFont } = require('canvas');
+const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
 
-// (Optionnel) chargez une police qui colle à l'ambiance Western
-// registerFont(path.join(__dirname, '../assets/your-western-font.ttf'), { family: 'Western' });
+async function generateCard({ 
+  username, 
+  avatarURL, 
+  memberCount, 
+  isWelcome = true 
+}) {
+  // 1) Charge le background à sa taille native
+  const bgPath = path.join(__dirname, '../assets/welcome_bg.png');
+  const bg    = await loadImage(bgPath);
+  const width = bg.width;
+  const height= bg.height;
 
-async function generateCard({ username, discriminator, avatarURL, memberCount, isWelcome = true }) {
-  // 800×250 px par exemple
-  const width  = 800;
-  const height = 250;
   const canvas = createCanvas(width, height);
   const ctx    = canvas.getContext('2d');
 
-  // fond
-  const bg = await loadImage(path.join(__dirname, '../assets/welcome_bg.png'));
-  ctx.drawImage(bg, 0, 0, width, height);
+  // 2) Fond
+  ctx.drawImage(bg, 0, 0);
 
-  // vignette avatar ronde
-  const avatar = await loadImage(avatarURL);
-  const size   = 128;
-  const x      = 30, y = (height - size) / 2;
+  // 3) Texte du haut (centré)
+  ctx.fillStyle    = '#FFFFFF';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font         = 'bold 36px sans-serif';
+  const title      = isWelcome 
+                      ? 'Bienvenue sur OTW RP !' 
+                      : 'Au revoir...';
+  ctx.fillText(title, width / 2, 20);
+
+  // 4) Avatar centré
+  const avatarSize = 128;
+  const avatarImg  = await loadImage(avatarURL);
+  const ax = (width  - avatarSize) / 2;
+  const ay = (height - avatarSize) / 2 - 10;  // légèrement vers le haut
+
   ctx.save();
   ctx.beginPath();
-  ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI*2);
+  ctx.arc(ax + avatarSize/2, ay + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
   ctx.closePath();
   ctx.clip();
-  ctx.drawImage(avatar, x, y, size, size);
+  ctx.drawImage(avatarImg, ax, ay, avatarSize, avatarSize);
   ctx.restore();
 
-  // texte principal
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.font = 'bold 32px sans-serif'; 
-
-  const title = isWelcome ? 'Bienvenue sur OTW !' : 'Au revoir...';
-  ctx.fillText(title, x + size + 30, y);
-
-  // pseudo & discrim
-  ctx.font = '24px sans-serif';
-  ctx.fillText(`${username}#${discriminator}`, x + size + 30, y + 40);
-
-  // compteurs
-  ctx.fillStyle = '#ffcc00';
-  ctx.font = '20px sans-serif';
-  ctx.fillText(`Vous êtes le membre n°${memberCount}`, x + size + 30, y + 80);
+  // 5) Texte du bas (centré)
+  ctx.fillStyle    = '#FFCC00';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.font         = '28px sans-serif';
+  const bottomText = `Vous êtes le membre n°${memberCount}`;
+  ctx.fillText(bottomText, width / 2, height - 20);
 
   return canvas.toBuffer();
 }
