@@ -1,71 +1,64 @@
 const { AttachmentBuilder } = require('discord.js');
-const { generateCard } = require('../utils/welcomeCard');
+const { generateCard }      = require('../utils/welcomeCard');
 require('dotenv').config({ path: './id.env' });
 
 module.exports = (client) => {
-  const channelId    = process.env.WELCOME_CHANNEL_ID;
-  const roleId       = process.env.WELCOME_ROLE_ID;
-  const leaveChannel = process.env.FAREWELL_CHANNEL_ID || channelId;
+  const WELCOME_CHAN = process.env.WELCOME_CHANNEL_ID;
+  const FAREWELL_CHAN = process.env.FAREWELL_CHANNEL_ID || WELCOME_CHAN;
+  const ROLE_ON_JOIN  = process.env.WELCOME_ROLE_ID;
 
   client.on('guildMemberAdd', async member => {
     try {
-      // 1) Give role
-      if (roleId) {
-        const role = member.guild.roles.cache.get(roleId);
-        if (role) await member.roles.add(role);
+      // 1) Rôle d’accueil
+      if (ROLE_ON_JOIN) {
+        const r = member.guild.roles.cache.get(ROLE_ON_JOIN);
+        if (r) await member.roles.add(r);
       }
 
-      // 2) Génère la carte
+      // 2) Message Discord avant l’image
+      const welcomeMsg = 
+        `Bienvenue sur **Holloway - OTW RP**, ${member} ! ` +
+        `N'hésite pas à prendre connaissance des différents salons à ta disposition !`;
+      const channel = member.guild.channels.cache.get(WELCOME_CHAN);
+      if (!channel?.isTextBased()) return;
+      await channel.send({ content: welcomeMsg });
+
+      // 3) Génération + envoi de la carte
       const buffer = await generateCard({
-        username:      member.user.username,
-        discriminator: member.user.discriminator,
-        avatarURL:     member.user.displayAvatarURL({ extension: 'png' }),
-        memberCount:   member.guild.memberCount,
-        isWelcome:     true
+        username:    member.user.username,
+        avatarURL:   member.user.displayAvatarURL({ extension: 'png', size: 256 }),
+        memberCount: member.guild.memberCount,
+        isWelcome:   true
       });
-
       const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' });
-
-      // 3) Embed d’accompagnement + envoi
-      const embed = {
-        color: 0xff0000,
-        description: `Salut ${member}, bienvenue chez **OTW** !\n` +
-                     `Passe un bon RP, et n’hésite pas à cliquer sur :\n` +
-                     `> 🔔 pour activer les notifications`,
-      };
-
-      const channel = member.guild.channels.cache.get(channelId);
-      if (channel?.isTextBased()) {
-        await channel.send({ embeds: [embed], files: [attachment] });
-      }
+      await channel.send({ files: [attachment] });
     } catch (err) {
-      console.error('Erreur welcome:', err);
+      console.error('Erreur guildMemberAdd:', err);
     }
   });
 
   client.on('guildMemberRemove', async member => {
     try {
+      // 1) Message Discord avant l’image
+      const byeMsg = 
+        `**Au revoir…**\n` +
+        `${member.user.username} nous a quittés. ` +
+        `On espère te revoir bientôt !`;
+      const channel = member.guild.channels.cache.get(FAREWELL_CHAN);
+      if (!channel?.isTextBased()) return;
+      await channel.send({ content: byeMsg });
+
+      // 2) Génération + envoi de la carte
       const buffer = await generateCard({
-        username:      member.user.username,
-        discriminator: member.user.discriminator,
-        avatarURL:     member.user.displayAvatarURL({ extension: 'png' }),
-        memberCount:   member.guild.memberCount - 1,
-        isWelcome:     false
+        username:    member.user.username,
+        avatarURL:   member.user.displayAvatarURL({ extension: 'png', size: 256 }),
+        memberCount: member.guild.memberCount - 1,
+        isWelcome:   false
       });
       const attachment = new AttachmentBuilder(buffer, { name: 'farewell.png' });
-
-      const embed = {
-        color: 0xff0000,
-        description: `**${member.user.username}** nous a quittés…\n` +
-                     `On espère te revoir bientôt !`
-      };
-
-      const channel = member.guild.channels.cache.get(leaveChannel);
-      if (channel?.isTextBased()) {
-        await channel.send({ embeds: [embed], files: [attachment] });
-      }
+      await channel.send({ files: [attachment] });
     } catch (err) {
-      console.error('Erreur farewell:', err);
+      console.error('Erreur guildMemberRemove:', err);
     }
   });
 };
