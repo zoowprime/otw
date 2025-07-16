@@ -63,6 +63,8 @@ require('./events/ferrure')(client);
 require('./events/armeAbimee')(client);
 require('./events/faimSoifSystem')(client);
 require('./events/raidProtect')(client);
+require('./events/qcmLauncher')(client);
+require('./events/qcmSession')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
