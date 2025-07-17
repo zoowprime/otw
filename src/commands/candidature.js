@@ -29,7 +29,10 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
+    const STAFF_ROLE_ID    = process.env.STAFF_ROLE_ID;
+    const ORAL_A_FAIRE     = process.env.ORAL_A_FAIRE;
+    const WELCOME_ROLE_ID  = process.env.WELCOME_ROLE_ID;
+
     // Vérification permission staff
     if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
       return interaction.reply({
@@ -49,20 +52,23 @@ module.exports = {
       .setDescription(`La candidature de ${user} a été **${resultat}**.`)
       .addFields({ name: 'Raison', value: reason });
 
-    // Si Validé, ajouter le rôle ORAL_A_FAIRE
-    if (resultat === 'validé') {
-      const roleId = process.env.ORAL_A_FAIRE;
-      if (roleId && interaction.guild) {
-        try {
-          const member = await interaction.guild.members.fetch(user.id);
-          await member.roles.add(roleId);
-        } catch (err) {
-          console.error('Impossible d\'ajouter le rôle ORAL_A_FAIRE :', err);
-          // on continue quand même
+    // Si Validé, ajouter le rôle ORAL_A_FAIRE et retirer le rôle de bienvenue
+    if (resultat === 'validé' && interaction.guild) {
+      try {
+        const member = await interaction.guild.members.fetch(user.id);
+        if (ORAL_A_FAIRE) {
+          await member.roles.add(ORAL_A_FAIRE);
         }
+        if (WELCOME_ROLE_ID) {
+          await member.roles.remove(WELCOME_ROLE_ID);
+        }
+      } catch (err) {
+        console.error('Erreur lors de la modification des rôles :', err);
+        // On continue malgré l’erreur
       }
     }
 
+    // Envoi de l’embed visible par tous
     await interaction.reply({ embeds: [embed] });
   }
 };
