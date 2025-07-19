@@ -4,15 +4,16 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  ComponentType
 } = require('discord.js');
 
 // Configuration des options de vote
 const VOTE_OPTIONS = [
-  { id: 'present', label: 'Oui',       emoji: '✅', category: 'présents'   },
-  { id: 'late',    label: 'En retard', emoji: '🕦', category: 'en retard'   },
-  { id: 'maybe',   label: 'Je ne sais pas', emoji: '🤷', category: 'indécis' },
-  { id: 'absent',  label: 'Absent',    emoji: '❌', category: 'absents'    }
+  { id: 'present', label: 'Oui',           emoji: '✅', category: 'présents' },
+  { id: 'late',    label: 'En retard',     emoji: '🕦', category: 'en retard' },
+  { id: 'maybe',   label: 'Je ne sais pas',emoji: '🤷', category: 'indécis'  },
+  { id: 'absent',  label: 'Absent',        emoji: '❌', category: 'absents'   }
 ];
 
 module.exports = {
@@ -36,7 +37,6 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // Récup des options
     const date    = interaction.options.getString('date');
     const horaire = interaction.options.getString('horaire');
     const psn     = interaction.options.getString('psn');
@@ -45,7 +45,7 @@ module.exports = {
     const CITIZEN_ROLE_ID = '1308118795285565530';
     const mention = `<@&${CITIZEN_ROLE_ID}>`;
 
-    // Embed initial
+    // Construction de l'embed
     const embed = new EmbedBuilder()
       .setColor(0xFF0000)
       .setTitle('📅 Session RP Old Town Western')
@@ -53,8 +53,8 @@ module.exports = {
         `**Date :** ${date}\n` +
         `**Horaire :** ${horaire}\n` +
         `**PSN du lanceur :** ${psn}\n\n` +
-        VOTE_OPTIONS.map(o => `${o.emoji} = ${o.label}`).join('\n') + '\n\n' +
-        `Merci de cliquer pour indiquer votre présence.`
+        VOTE_OPTIONS.map(o => `${o.emoji} = ${o.label}`).join('\n') +
+        `\n\nMerci de cliquer pour indiquer votre présence.`
       )
       .addFields(
         VOTE_OPTIONS.map(o => ({
@@ -63,7 +63,7 @@ module.exports = {
         }))
       );
 
-    // Boutons de vote
+    // Les boutons de vote
     const row = new ActionRowBuilder().addComponents(
       VOTE_OPTIONS.map(o =>
         new ButtonBuilder()
@@ -79,7 +79,7 @@ module.exports = {
       )
     );
 
-    // Envoi du message et création du collector
+    // Envoi du message et récupération
     const message = await interaction.reply({
       content: mention,
       embeds: [embed],
@@ -87,36 +87,45 @@ module.exports = {
       fetchReply: true
     });
 
-    // Collector sans limite de temps
-    const collector = message.createMessageComponentCollector();
+    // Chaque message a SON collector SUR SES BOUTONS (jamais expiré)
+    const collector = message.createMessageComponentCollector({
+      componentType: ComponentType.Button
+      // PAS de time => ne périme jamais
+    });
 
-    // Structure pour stocker les votes
+    // Structure pour suivre les votes par message
     const votes = {};
     for (const o of VOTE_OPTIONS) votes[o.id] = new Set();
 
     collector.on('collect', async btnInt => {
+      // Garde l'interaction publique (update) et unique par utilisateur/message
       const uid = btnInt.user.id;
-      // On retire l'utilisateur de toutes les catégories
+
+      // Retirer l'utilisateur de toutes les catégories
       for (const key of Object.keys(votes)) {
         votes[key].delete(uid);
       }
-      // On ajoute dans sa nouvelle catégorie
+
+      // Ajouter l'utilisateur dans la catégorie cliquée
       votes[btnInt.customId].add(uid);
 
-      // Recréer les champs mis à jour
-      const fields = VOTE_OPTIONS.map(o => {
-        const users = Array.from(votes[o.id]);
+      // Regénère les champs FIELDS
+      const updatedFields = VOTE_OPTIONS.map(o => {
+        const ids = Array.from(votes[o.id]);
         return {
-          name: `Membres ${o.category} (${users.length}) :`,
-          value: users.length ? users.map(id => `<@${id}>`).join(' ') : 'Aucun'
+          name: `Membres ${o.category} (${ids.length}) :`,
+          value: ids.length ? ids.map(id => `<@${id}>`).join(' ') : 'Aucun'
         };
       });
 
-      // Mettre à jour l'embed
-      const updated = EmbedBuilder.from(embed).setFields(fields);
+      // Met à jour l'embed
+      const updatedEmbed = EmbedBuilder.from(embed).setFields(updatedFields);
 
-      // Répondre et mettre à jour le message
-      await btnInt.update({ embeds: [updated], components: [row] });
+      // Met à jour le message où le bouton a été cliqué
+      await btnInt.update({
+        embeds: [updatedEmbed],
+        components: [row]
+      });
     });
   }
 };
