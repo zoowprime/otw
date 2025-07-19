@@ -24,8 +24,8 @@ module.exports = (client) => {
         `<#${process.env.SALON_2}>\n` +
         `<#${process.env.SALON_3}>\n` +
         `<#${process.env.SALON_4}>\n\n` +
-        `Une fois cela fait, cliquez sur le bouton ci-dessous pour obtenir le rôle **QCM EN COURS** !`
-        `Lorsque tout sera fait veuillez utiliser la commande "/qcm" pour démarrer votre QCM qui apparaîtra dans un autre salon et suivre les instructions !`
+        `Une fois cela fait, cliquez sur le bouton **QCM EN COURS** !\n` +
+        `Lorsque tout sera fait, utilisez la commande **/qcm** pour démarrer votre QCM dans un nouveau salon et suivre les instructions !`
       )
       .setColor(0xff0000);
 
@@ -42,18 +42,12 @@ module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton() || interaction.customId !== 'qcm_get_role') return;
 
-    // Vérifier que le membre existe et que l'on est en guild
-    const member = interaction.member;
-    if (!member || !interaction.guild) {
-      return interaction.reply({ content: '❌ Impossible de vous attribuer ce rôle.', ephemeral: true });
-    }
-
     try {
-      // Ajoute le rôle QCM_EN_COURS
-      await member.roles.add(process.env.QCM_EN_COURS);
+      // Ajoute le rôle QCM EN COURS
+      await interaction.member.roles.add(process.env.QCM_EN_COURS);
       // Retire le rôle ORAL_A_FAIRE s’il est présent
-      if (member.roles.cache.has(process.env.ORAL_A_FAIRE)) {
-        await member.roles.remove(process.env.ORAL_A_FAIRE);
+      if (interaction.member.roles.cache.has(process.env.ORAL_A_FAIRE)) {
+        await interaction.member.roles.remove(process.env.ORAL_A_FAIRE);
       }
       await interaction.reply({
         content: '✅ Vous avez reçu le rôle **QCM EN COURS** et le rôle **ORAL À FAIRE** a été retiré.',
@@ -61,7 +55,10 @@ module.exports = (client) => {
       });
     } catch (err) {
       console.error('Erreur lors de l’attribution/retrait des rôles QCM :', err);
-      await interaction.reply({ content: '❌ Impossible de gérer vos rôles pour le QCM.', ephemeral: true });
+      await interaction.reply({
+        content: '❌ Impossible de gérer vos rôles pour le QCM.',
+        ephemeral: true
+      });
     }
   });
 };
