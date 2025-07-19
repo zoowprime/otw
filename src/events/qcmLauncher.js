@@ -1,9 +1,10 @@
+// src/events/qcmLauncher.js
+require('dotenv').config({ path: './id.env' });
 const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  ComponentType
+  ButtonStyle
 } = require('discord.js');
 
 module.exports = (client) => {
@@ -11,7 +12,7 @@ module.exports = (client) => {
     const ch = await client.channels.fetch(process.env.QCM_LANCEMENT_CHANNEL);
     if (!ch) return console.error('Salon QCM non trouvé');
 
-    // Ne pas renvoyer si déjà posté
+    // Ne renvoie pas l'annonce si elle existe déjà
     const fetched = await ch.messages.fetch({ limit: 50 });
     if (fetched.some(m => m.embeds[0]?.title === 'Bonjour !')) return;
 
@@ -37,14 +38,29 @@ module.exports = (client) => {
     await ch.send({ embeds: [embed], components: [row] });
   });
 
-  client.on('interactionCreate', async (i) => {
-    if (!i.isButton() || i.customId !== 'qcm_get_role') return;
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton() || interaction.customId !== 'qcm_get_role') return;
+
+    // Vérifier que le membre existe et que l'on est en guild
+    const member = interaction.member;
+    if (!member || !interaction.guild) {
+      return interaction.reply({ content: '❌ Impossible de vous attribuer ce rôle.', ephemeral: true });
+    }
+
     try {
-      await i.member.roles.add(process.env.QCM_EN_COURS);
-      await i.reply({ content: '✅ Vous avez reçu le rôle **QCM EN COURS** !', ephemeral: true });
+      // Ajoute le rôle QCM_EN_COURS
+      await member.roles.add(process.env.QCM_EN_COURS);
+      // Retire le rôle ORAL_A_FAIRE s’il est présent
+      if (member.roles.cache.has(process.env.ORAL_A_FAIRE)) {
+        await member.roles.remove(process.env.ORAL_A_FAIRE);
+      }
+      await interaction.reply({
+        content: '✅ Vous avez reçu le rôle **QCM EN COURS** et le rôle **ORAL À FAIRE** a été retiré.',
+        ephemeral: true
+      });
     } catch (err) {
-      console.error(err);
-      await i.reply({ content: '❌ Impossible d’attribuer le rôle.', ephemeral: true });
+      console.error('Erreur lors de l’attribution/retrait des rôles QCM :', err);
+      await interaction.reply({ content: '❌ Impossible de gérer vos rôles pour le QCM.', ephemeral: true });
     }
   });
 };
