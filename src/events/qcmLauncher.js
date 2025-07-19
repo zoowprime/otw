@@ -25,6 +25,7 @@ module.exports = (client) => {
         `<#${process.env.SALON_3}>\n` +
         `<#${process.env.SALON_4}>\n\n` +
         `Une fois cela fait, cliquez sur le bouton ci-dessous pour obtenir le rôle **QCM EN COURS** !`
+        `Lorsque tout sera fait veuillez utiliser la commande "/qcm" pour démarrer votre QCM qui apparaîtra dans un autre salon et suivre les instructions !`
       )
       .setColor(0xff0000);
 
