@@ -183,24 +183,31 @@ module.exports = {
         time: 86_400_000 // 24h
       });
 
-      finishColl.on('collect', async btn => {
+            finishColl.on('collect', async btn => {
         if (btn.user.id !== userId) {
           return btn.reply({ content: '❌ Ce n’est pas pour vous.', ephemeral: true });
         }
-        // rôles
+        // Retrait / ajout des rôles
         await interaction.member.roles.remove(process.env.QCM_EN_COURS);
         if (passed) {
           await interaction.member.roles.add(process.env.CITIZEN_ROLE_ID);
         } else {
           await interaction.member.roles.add(process.env.ORAL_A_FAIRE);
-          // ici, on pourrait enregistrer un timestamp pour le cooldown
+          // Ici, on peut enregistrer le timestamp pour le cooldown de 24h
         }
+        // Déplace le salon en catégorie QCM_END
         await channel.setParent(process.env.QCM_END_CATEGORY);
-        await btn.update({
-          content: '✅ QCM terminé, salon archivé.',
-          embeds: [],
-          components: []
-        });
+
+-       await btn.update({
+-         content: '✅ QCM terminé, salon archivé.',
+-         embeds: [],
+-         components: []
+-       });
++       await btn.update({
++         content: `✅ QCM terminé (score : **${score} / 30**) – salon archivé.`,
++         embeds: [],
++         components: []
++       });
       });
     });
   }
