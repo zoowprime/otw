@@ -73,7 +73,7 @@ module.exports = {
           '**Paiement :** selon le contrat ou jour de service\n' +
           '**Salaire :** 10 à 20 $ / session\n' +
           'Peut varier selon la notoriété du client.'
-      });
+         });
 
     await interaction.reply({ embeds: [embed] });
   }
