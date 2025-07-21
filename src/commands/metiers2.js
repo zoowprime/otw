@@ -49,7 +49,7 @@ module.exports = {
           '**Paiement :** selon implication\n' +
           '**Salaire :** 8 à 12 $ / session\n' +
           'Statut plus flexible, souvent temporaire.\n\n' +
-         });
+                });
 
     await interaction.reply({ embeds: [embed] });
   }
