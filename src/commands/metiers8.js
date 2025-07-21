@@ -9,3 +9,8 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle('📜 Liste des métiers')
       .setColor(0xFFFFFF)
+
+    // 🍻 Commerce et presse
+      .addFields({
+        name: '🍻 **COMMERCE ET PRESSE²**',
+        value:
