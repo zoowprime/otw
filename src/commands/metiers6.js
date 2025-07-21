@@ -12,7 +12,7 @@ module.exports = {
     
 // 🏘️ Institutions et économie
       .addFields({
-        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE 3**',
+        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE 4**',
         value:
           '**_Agent de transport_**\n' +
           '**Rémunération :** par le directeur\n' +
