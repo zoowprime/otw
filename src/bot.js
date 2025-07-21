@@ -51,6 +51,9 @@ const client = new Client({
   ]
 });
 
+// ←── Initialisation de la Map pour gérer les votes de chaque session (permanente)
+client.sessionVotes = new Map();
+
 // Initialise le logger
 logger.setClient(client);
 
@@ -66,6 +69,7 @@ require('./events/raidProtect')(client);
 require('./events/qcmLauncher')(client);
 require('./events/qcmSession')(client);
 require('./events/heistSessions')(client);
+require('./events/sessionHandler')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
