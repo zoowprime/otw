@@ -5,113 +5,127 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  MessageFlags
+  ComponentType
 } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 
-const DATA_PATH = path.join(__dirname, '../data/sessions.json');
-
-function saveSessions(map) {
-  const out = {};
-  for (const [msgId, sess] of map.entries()) {
-    out[msgId] = {
-      meta: sess.meta,
-      votes: Object.fromEntries(
-        Object.entries(sess.votes).map(([k, s]) => [k, Array.from(s)])
-      )
-    };
-  }
-  fs.writeFileSync(DATA_PATH, JSON.stringify(out, null, 2), 'utf-8');
-}
+// Configuration des options de vote
+const VOTE_OPTIONS = [
+  { id: 'present', label: 'Oui',           emoji: '✅', category: 'présents' },
+  { id: 'late',    label: 'En retard',     emoji: '🕦', category: 'en retard' },
+  { id: 'maybe',   label: 'Je ne sais pas',emoji: '🤷', category: 'indécis'  },
+  { id: 'absent',  label: 'Absent',        emoji: '❌', category: 'absents'   }
+];
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('session')
     .setDescription('Crée une session de RP et collecte les présences.')
-    .addStringOption(o => o
-      .setName('date')
-      .setDescription('Date (ex : vendredi 07 mars 2025)')
-      .setRequired(true))
-    .addStringOption(o => o
-      .setName('horaire')
-      .setDescription('Horaire (ex : 19h30)')
-      .setRequired(true))
-    .addStringOption(o => o
-      .setName('psn')
-      .setDescription('PSN du lanceur')
-      .setRequired(true)),
+    .addStringOption(opt =>
+      opt.setName('date')
+         .setDescription('Date (ex: vendredi 07 mars 2025)')
+         .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('horaire')
+         .setDescription('Horaire (ex: 19h30)')
+         .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('psn')
+         .setDescription('PSN du lanceur')
+         .setRequired(true)
+    ),
 
   async execute(interaction) {
     const date    = interaction.options.getString('date');
     const horaire = interaction.options.getString('horaire');
     const psn     = interaction.options.getString('psn');
-    const CITIZEN = '1308118795285565530';
 
-    // construit l'embed
+    // Mention du rôle Citoyen
+    const CITIZEN_ROLE_ID = '1308118795285565530';
+    const mention = `<@&${CITIZEN_ROLE_ID}>`;
+
+    // Construction de l'embed
     const embed = new EmbedBuilder()
       .setColor(0xFF0000)
       .setTitle('📅 Session RP Old Town Western')
       .setDescription(
         `**Date :** ${date}\n` +
         `**Horaire :** ${horaire}\n` +
-        `**PSN :** ${psn}\n\n` +
-        `✅ = Présents\n🕦 = En retard\n🤷 = Indécis\n❌ = Absents\n\n` +
-        `Merci de cliquer pour indiquer votre présence.`
+        `**PSN du lanceur :** ${psn}\n\n` +
+        VOTE_OPTIONS.map(o => `${o.emoji} = ${o.label}`).join('\n') +
+        `\n\nMerci de cliquer pour indiquer votre présence.`
       )
       .addFields(
-        { name: 'Membres présents (0) :',  value: 'Aucun' },
-        { name: 'Membres en retard (0) :', value: 'Aucun' },
-        { name: 'Membres indécis (0) :',   value: 'Aucun' },
-        { name: 'Membres absents (0) :',  value: 'Aucun' }
+        VOTE_OPTIONS.map(o => ({
+          name: `Membres ${o.category} (0) :`,
+          value: 'Aucun'
+        }))
       );
 
-    // crée les boutons
+    // Les boutons de vote
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('present')
-        .setLabel('Oui')
-        .setEmoji('✅')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('late')
-        .setLabel('En retard')
-        .setEmoji('🕦')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('maybe')
-        .setLabel('Indécis')
-        .setEmoji('🤷')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('absent')
-        .setLabel('Absent')
-        .setEmoji('❌')
-        .setStyle(ButtonStyle.Danger)
+      VOTE_OPTIONS.map(o =>
+        new ButtonBuilder()
+          .setCustomId(o.id)
+          .setLabel(o.label)
+          .setEmoji(o.emoji)
+          .setStyle(
+            o.id === 'present' ? ButtonStyle.Success :
+            o.id === 'late'    ? ButtonStyle.Secondary :
+            o.id === 'maybe'   ? ButtonStyle.Primary :
+                                 ButtonStyle.Danger
+          )
+      )
     );
 
-    // envoie la réponse et récupère le message avec withResponse + fetchReply
-    await interaction.reply({
-      content: `<@&${CITIZEN}>`,
+    // Envoi du message et récupération
+    const message = await interaction.reply({
+      content: mention,
       embeds: [embed],
       components: [row],
-      withResponse: true
+      fetchReply: true
     });
-    const msg = await interaction.fetchReply();
 
-    // initialise la map en mémoire
-    const sessions = interaction.client.sessionVotes;
-    sessions.set(msg.id, {
-      meta: { date, horaire, psn },
-      votes: {
-        present: new Set(),
-        late:    new Set(),
-        maybe:   new Set(),
-        absent:  new Set()
+    // Chaque message a SON collector SUR SES BOUTONS (jamais expiré)
+    const collector = message.createMessageComponentCollector({
+      componentType: ComponentType.Button
+      // PAS de time => ne périme jamais
+    });
+
+    // Structure pour suivre les votes par message
+    const votes = {};
+    for (const o of VOTE_OPTIONS) votes[o.id] = new Set();
+
+    collector.on('collect', async btnInt => {
+      // Garde l'interaction publique (update) et unique par utilisateur/message
+      const uid = btnInt.user.id;
+
+      // Retirer l'utilisateur de toutes les catégories
+      for (const key of Object.keys(votes)) {
+        votes[key].delete(uid);
       }
-    });
 
-    // sauve en JSON
-    saveSessions(sessions);
+      // Ajouter l'utilisateur dans la catégorie cliquée
+      votes[btnInt.customId].add(uid);
+
+      // Regénère les champs FIELDS
+      const updatedFields = VOTE_OPTIONS.map(o => {
+        const ids = Array.from(votes[o.id]);
+        return {
+          name: `Membres ${o.category} (${ids.length}) :`,
+          value: ids.length ? ids.map(id => `<@${id}>`).join(' ') : 'Aucun'
+        };
+      });
+
+      // Met à jour l'embed
+      const updatedEmbed = EmbedBuilder.from(embed).setFields(updatedFields);
+
+      // Met à jour le message où le bouton a été cliqué
+      await btnInt.update({
+        embeds: [updatedEmbed],
+        components: [row]
+      });
+    });
   }
 };
