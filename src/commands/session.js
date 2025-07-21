@@ -1,3 +1,4 @@
+// src/commands/session.js
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -5,92 +6,108 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 
-const SESSIONS_FILE = path.join(__dirname, '../data/sessions.json');
-const CITIZEN_ROLE_ID = process.env.CITIZEN_ROLE_ID || '1308118795285565530';
+const DATA_PATH = path.join(__dirname, '../data/sessions.json');
 
-// Options de vote
-const OPTIONS = [
-  { id: 'present', label: 'Oui',          emoji: '✅', category: 'présents' },
-  { id: 'late',    label: 'En retard',    emoji: '🕦', category: 'en retard' },
-  { id: 'maybe',   label: 'Je ne sais pas', emoji: '🤷', category: 'indécis' },
-  { id: 'absent',  label: 'Absent',       emoji: '❌', category: 'absents' }
-];
-
-// Charge ou initialise le JSON
-function loadSessions() {
-  if (!fs.existsSync(SESSIONS_FILE)) fs.writeFileSync(SESSIONS_FILE,'[]');
-  return JSON.parse(fs.readFileSync(SESSIONS_FILE,'utf-8'));
-}
-function saveSessions(sessions) {
-  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2));
+function saveSessions(map) {
+  const obj = Object.fromEntries(
+    Array.from(map.entries()).map(([msgId, sess]) => ([
+      msgId,
+      {
+        votes: Object.fromEntries(
+          Object.entries(sess.votes)
+                .map(([k, s]) => [k, Array.from(s)])
+        ),
+        meta: sess.meta
+      }
+    ]))
+  );
+  fs.writeFileSync(DATA_PATH, JSON.stringify(obj, null, 2), 'utf-8');
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('session')
     .setDescription('Crée une session de RP et collecte les présences.')
-    .addStringOption(o => o.setName('date').setDescription('Date (ex: vendredi 07 mars)').setRequired(true))
-    .addStringOption(o => o.setName('horaire').setDescription('Horaire (ex: 19h30)').setRequired(true))
-    .addStringOption(o => o.setName('psn').setDescription('PSN du lanceur').setRequired(true)),
-
+    .addStringOption(o => o
+      .setName('date')
+      .setDescription('Date (ex : vendredi 07 mars 2025)')
+      .setRequired(true))
+    .addStringOption(o => o
+      .setName('horaire')
+      .setDescription('Horaire (ex : 19h30)')
+      .setRequired(true))
+    .addStringOption(o => o
+      .setName('psn')
+      .setDescription('PSN du lanceur')
+      .setRequired(true)),
   async execute(interaction) {
     const date    = interaction.options.getString('date');
     const horaire = interaction.options.getString('horaire');
     const psn     = interaction.options.getString('psn');
+    const CITIZEN = '1308118795285565530';
 
-    const mention = `<@&${CITIZEN_ROLE_ID}>`;
-
-    // construit l’embed initial
+    // Embed de base
     const embed = new EmbedBuilder()
       .setColor(0xFF0000)
       .setTitle('📅 Session RP Old Town Western')
       .setDescription(
         `**Date :** ${date}\n` +
         `**Horaire :** ${horaire}\n` +
-        `**PSN du lanceur :** ${psn}\n\n` +
-        OPTIONS.map(o => `${o.emoji} = ${o.label}`).join('\n') +
-        `\n\nMerci de cliquer pour indiquer votre présence.`
+        `**PSN :** ${psn}\n\n` +
+        `✅ = Présents\n🕦 = En retard\n🤷 = Indécis\n❌ = Absents\n\n` +
+        `Merci de cliquer pour indiquer votre présence.`
       )
       .addFields(
-        OPTIONS.map(o => ({
-          name: `Membres ${o.category} (0) :`,
-          value: 'Aucun'
-        }))
+        { name: 'Membres présents (0) :',     value: 'Aucun' },
+        { name: 'Membres en retard (0) :',    value: 'Aucun' },
+        { name: 'Membres indécis (0) :',      value: 'Aucun' },
+        { name: 'Membres absents (0) :',      value: 'Aucun' }
       );
 
-    // crée les boutons
+    // Boutons
     const row = new ActionRowBuilder().addComponents(
-      OPTIONS.map(o =>
-        new ButtonBuilder()
-          .setCustomId(o.id)
-          .setEmoji(o.emoji)
-          .setLabel(o.label)
-          .setStyle(
-            o.id === 'present' ? ButtonStyle.Success :
-            o.id === 'late'    ? ButtonStyle.Secondary :
-            o.id === 'maybe'   ? ButtonStyle.Primary :
-                                 ButtonStyle.Danger
-          )
-      )
+      new ButtonBuilder()
+        .setCustomId('present')
+        .setLabel('Oui')
+        .setEmoji('✅')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('late')
+        .setLabel('En retard')
+        .setEmoji('🕦')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('maybe')
+        .setLabel('Indécis')
+        .setEmoji('🤷')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('absent')
+        .setLabel('Absent')
+        .setEmoji('❌')
+        .setStyle(ButtonStyle.Danger)
     );
 
-    // envoie
+    // Envoi
     const msg = await interaction.reply({
-      content: mention,
+      content: `<@&${CITIZEN}>`,
       embeds: [embed],
       components: [row],
       fetchReply: true
     });
 
-    // charge l’existant, ajoute la nouvelle session, sauvegarde
-    const sessions = loadSessions();
-    sessions.push({
-      messageId: msg.id,
-      channelId: msg.channelId,
-      votes: OPTIONS.reduce((acc,o) => { acc[o.id]=[]; return acc }, {}),
+    // Initialise la map et stocke en JSON
+    const sessions = interaction.client.sessionVotes;
+    sessions.set(msg.id, {
+      votes: {
+        present: new Set(),
+        late:    new Set(),
+        maybe:   new Set(),
+        absent:  new Set()
+      },
       meta: { date, horaire, psn }
     });
     saveSessions(sessions);
