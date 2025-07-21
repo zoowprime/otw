@@ -12,7 +12,7 @@ module.exports = {
 
 // 🏘️ Institutions et économie
       .addFields({
-        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE²**',
+        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE 3**',
         value:
           '**_Patron armurerie_**\n' +
           '**Rémunération :** par les ventes\n' +
