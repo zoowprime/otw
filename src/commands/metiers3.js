@@ -10,75 +10,33 @@ module.exports = {
       .setTitle('📜 Liste des métiers')
       .setColor(0xFFFFFF)
 
-   // 🏘️ Institutions et économie
+    // ⚖️ Justice et sécurité
       .addFields({
-        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE**',
+        name: '⚖️ **JUSTICE ET SÉCURITÉ²**',
         value:
-          '**_Maire_**\n' +
-          '**Rémunération :** municipalité\n' +
-          '**Paiement :** hebdomadaire ou par session si actif\n' +
-          '**Salaire :** 20 à 30 $ / session\n' +
-          'Gère la ville, reçoit parfois des pots‑de‑vin RP.\n\n' +
+          '**_Directeur BFRS_**\n' +
+          '**Rémunération :** par l’État\n' +
+          '**Paiement :** à chaque grande opération\n' +
+          '**Salaire :** 35 à 40 $ / session\n' +
+          'Hautement stratégique, très bien payé.\n\n' +
 
-          '**_Banquier_**\n' +
-          '**Rémunération :** par les profits de la banque\n' +
-          '**Paiement :** en fonction des transactions\n' +
-          '**Salaire :** 15 à 25 $ / session\n' +
-          'Peut s’enrichir fortement avec les emprunts, placements.\n\n' +
+          '**_BFRS – Section Alpha (Renseignement)_**\n' +
+          '**Rémunération :** par l’État\n' +
+          '**Paiement :** à chaque mission/filature\n' +
+          '**Salaire :** 20 à 25 $ / session\n' +
+          'Agents discrets, parfois infiltrés. Risque élevé, paiement secret.\n\n' +
 
-          '**_Directeur d’agence immobilière_**\n' +
-          '**Rémunération :** par commissions sur ventes\n' +
-          '**Paiement :** à chaque transaction RP\n' +
-          '**Salaire :** 20 à 50 $ / vente\n' +
-          'Gros gains mais dépend des clients.\n\n' +
-
-          '**_Agent immobilier_**\n' +
-          '**Rémunération :** par commission\n' +
-          '**Paiement :** à la vente ou la location\n' +
-          '**Salaire :** 10 à 25 $ / transaction\n' +
-          'Moins stable mais lucratif si RP dynamique.\n\n' +
-
-          '**_Patron armurerie_**\n' +
-          '**Rémunération :** par les ventes\n' +
-          '**Paiement :** quotidienne selon flux\n' +
-          '**Salaire :** 15 à 30 $ / session\n' +
-          'Dépend fortement de la demande en armes.\n\n' +
-
-          '**_Armurier_**\n' +
-          '**Rémunération :** par le patron\n' +
-          '**Paiement :** par session travaillée\n' +
-          '**Salaire :** 8 à 12 $ / session\n' +
-          'Main d’œuvre qualifiée.\n\n' +
-
-          '**_Patron d’agence de transport_**\n' +
-          '**Rémunération :** par contrat (état, privé)\n' +
-          '**Paiement :** à chaque livraison/mission\n' +
-          '**Salaire :** 20 à 40 $ / mission\n' +
-          'Peut négocier avec le gouvernement ou des entreprises.\n\n' +
-
-          '**_Agent de transport_**\n' +
-          '**Rémunération :** par le directeur\n' +
-          '**Paiement :** par livraison\n' +
+          '**_Milice nationale_**\n' +
+          '**Rémunération :** par l’État (ou gouverneur selon contexte)\n' +
+          '**Paiement :** à chaque mobilisation\n' +
           '**Salaire :** 10 à 15 $ / session\n' +
-          'Danger potentiel selon les trajets.\n\n' +
+          'Moins stable, souvent mobilisé lors de crises.\n\n' +
 
-          '**_Patron d’écurie_**\n' +
-          '**Rémunération :** par les ventes / locations de chevaux\n' +
-          '**Paiement :** variable, selon fréquentation\n' +
-          '**Salaire :** 20 à 35 $ / session\n' +
-          'S’il y a du passage, c’est rentable.\n\n' +
-
-          '**_Écuyer / Soigneur_**\n' +
-          '**Rémunération :** par le patron\n' +
-          '**Paiement :** par session travaillée\n' +
-          '**Salaire :** 6 à 10 $ / session\n' +
-          'Moins payé, mais très présent RP.\n\n' +
-
-          '**_Contremaître_**\n' +
-          '**Rémunération :** par les mines/entreprises\n' +
-          '**Paiement :** par journée d’encadrement\n' +
-          '**Salaire :** 12 à 18 $ / session\n' +
-          'Gère les ouvriers, parfois impliqué dans les conflits sociaux.'
+          '**_Garde du corps_**\n' +
+          '**Rémunération :** privée\n' +
+          '**Paiement :** selon le contrat ou jour de service\n' +
+          '**Salaire :** 10 à 20 $ / session\n' +
+          'Peut varier selon la notoriété du client.'
       });
 
     await interaction.reply({ embeds: [embed] });
