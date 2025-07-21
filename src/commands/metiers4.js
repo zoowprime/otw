@@ -1,4 +1,4 @@
-// src/commands/metiers3.js
+// src/commands/metiers4.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
