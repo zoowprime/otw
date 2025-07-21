@@ -9,8 +9,12 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle('📜 Liste des métiers')
       .setColor(0xFFFFFF)
-
- '**_Agent de transport_**\n' +
+    
+// 🏘️ Institutions et économie
+      .addFields({
+        name: '🏘️ **INSTITUTIONS ET ÉCONOMIE 3**',
+        value:
+          '**_Agent de transport_**\n' +
           '**Rémunération :** par le directeur\n' +
           '**Paiement :** par livraison\n' +
           '**Salaire :** 10 à 15 $ / session\n' +
