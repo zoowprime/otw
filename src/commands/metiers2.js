@@ -48,7 +48,7 @@ module.exports = {
           '**Rémunération :** municipalité\n' +
           '**Paiement :** selon implication\n' +
           '**Salaire :** 8 à 12 $ / session\n' +
-          'Statut plus flexible, souvent temporaire.\n\n' +
+          'Statut plus flexible, souvent temporaire.'
                 });
 
     await interaction.reply({ embeds: [embed] });
