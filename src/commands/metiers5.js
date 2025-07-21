@@ -30,7 +30,7 @@ module.exports = {
           '**Rémunération :** par contrat (état, privé)\n' +
           '**Paiement :** à chaque livraison/mission\n' +
           '**Salaire :** 20 à 40 $ / mission\n' +
-          'Peut négocier avec le gouvernement ou des entreprises.\n\n' +
+          'Peut négocier avec le gouvernement ou des entreprises.'
         });
 
     await interaction.reply({ embeds: [embed] });
