@@ -2,9 +2,9 @@
 const {
   EmbedBuilder,
   ActionRowBuilder,
+  StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   MessageFlags
 } = require('discord.js');
 require('dotenv').config({ path: './id.env' });
@@ -28,12 +28,20 @@ const reasons = [
 
 /**
  * Envoie le panel pour ouvrir un ticket
+ * Ne renvoie rien si un panel "Ouvrir un Ticket" est déjà présent
  */
 async function sendTicketPanel(channel) {
+  // 1️⃣ Vérifier les 50 derniers messages pour voir si le panel existe déjà
+  const fetched = await channel.messages.fetch({ limit: 50 });
+  if (fetched.some(m => m.embeds[0]?.title === "Ouvrir un Ticket")) {
+    return;
+  }
+
+  // 2️⃣ Sinon, on construit et on envoie le panel
   const embed = new EmbedBuilder()
     .setTitle("Ouvrir un Ticket")
     .setDescription(
-      "👋 BONJOUR À TOUS 👋\n" +
+      "👋 **BONJOUR À TOUS** 👋\n" +
       "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n" +
       "MERCI DE SÉLECTIONNER UNE RAISON EN RAPPORT AVEC VOTRE SOUCI OU VOTRE DEMANDE.\n" +
       "TOUT TICKET INACTIF SERA FERMÉ !\n" +
@@ -62,7 +70,6 @@ async function handleTicketInteraction(interaction) {
     const choice = interaction.values[0];
     const reason = reasons.find(r => r.value === choice)?.label || choice;
 
-    // Création du salon
     try {
       const channel = await interaction.guild.channels.create({
         name: `${interaction.user.username}-${choice}`,
@@ -75,7 +82,6 @@ async function handleTicketInteraction(interaction) {
         ]
       });
 
-      // Embed d’accueil
       const welcomeEmbed = new EmbedBuilder()
         .setTitle(`Ticket – ${interaction.user.tag}`)
         .setDescription(
@@ -84,15 +90,16 @@ async function handleTicketInteraction(interaction) {
         )
         .setColor(0xff0000);
 
-      // Bouton Fermer
       const closeBtn = new ButtonBuilder()
         .setCustomId("close_ticket")
         .setLabel("Fermer le ticket")
         .setStyle(ButtonStyle.Secondary);
 
-      await channel.send({ embeds: [welcomeEmbed], components: [new ActionRowBuilder().addComponents(closeBtn)] });
+      await channel.send({
+        embeds: [welcomeEmbed],
+        components: [new ActionRowBuilder().addComponents(closeBtn)]
+      });
 
-      // Confirmation éphémère
       return interaction.editReply({
         content: `✅ Votre ticket a été créé : ${channel}`,
         flags: MessageFlags.Ephemeral
@@ -119,18 +126,15 @@ async function handleTicketInteraction(interaction) {
     try {
       await interaction.channel.setParent(CLOSED_TICKET_CATEGORY_ID);
 
-      // Nouvel embed
       const closedEmbed = new EmbedBuilder()
         .setTitle("Ticket fermé")
         .setDescription("Ce ticket est désormais fermé.")
         .setColor(0x555555);
 
-      // Boutons Réouvrir & Supprimer
       const reopenBtn = new ButtonBuilder()
         .setCustomId("reopen_ticket")
         .setLabel("Réouvrir")
         .setStyle(ButtonStyle.Primary);
-
       const deleteBtn = new ButtonBuilder()
         .setCustomId("delete_ticket")
         .setLabel("Supprimer")
@@ -199,10 +203,7 @@ async function handleTicketInteraction(interaction) {
     }
 
     await interaction.reply({ content: "🗑️ Suppression du ticket…", flags: MessageFlags.Ephemeral });
-    setTimeout(() => {
-      interaction.channel.delete().catch(console.error);
-    }, 1500);
-
+    setTimeout(() => interaction.channel.delete().catch(console.error), 1500);
     return;
   }
 }
