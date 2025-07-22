@@ -8,7 +8,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
-  ChannelType
+  ChannelType,
+  MessageFlags
 } = require('discord.js');
 const QUESTIONS = require('../data/qcmQuestions.json');
 
@@ -16,15 +17,15 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('qcm')
     .setDescription('Démarre votre QCM RP')
-    // Seuls ceux qui ont déjà le rôle QCM_EN_COURS peuvent lancer
+    // On ne veut pas que tout le monde puisse spammer /qcm
     .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
 
   async execute(interaction) {
     const userId = interaction.user.id;
     const guild  = interaction.guild;
 
-    // 1) Déférer la réponse (éphémère)
-    await interaction.deferReply({ ephemeral: true });
+    // 1) Déférer la réponse (utiliser flags désormais)
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // 2) Vérifier le rôle QCM_EN_COURS
     const qcRole = guild.roles.cache.get(process.env.QCM_EN_COURS);
@@ -42,15 +43,11 @@ module.exports = {
         type: ChannelType.GuildText,
         parent: process.env.QCM_START_CATEGORY,
         permissionOverwrites: [
-          // Tout le monde : pas de vue
           { id: guild.id, deny: ['ViewChannel'] },
-          // L'utilisateur : accès complet
-          { id: userId, allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
-          // Les staffs
+          { id: userId,   allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
           { id: process.env.STAFF_ROLE_ID, allow: ['ViewChannel','ReadMessageHistory'] },
-          // Le bot lui‑même
           { id: interaction.client.user.id, allow: ['ViewChannel','SendMessages','ReadMessageHistory'] }
-        ],
+        ]
       });
       console.log('📔 Salon QCM créé:', channel.id);
     } catch (err) {
@@ -60,7 +57,7 @@ module.exports = {
       });
     }
 
-    // 4) Confirmer la création
+    // 4) Confirmer la création au joueur
     await interaction.editReply({
       content: `✅ Salon créé : ${channel}`
     });
@@ -81,27 +78,27 @@ module.exports = {
         ])
     );
 
-    const startMsg = await channel.send({
-      embeds: [startEmbed],
-      components: [startRow]
-    });
-
-    // 6) Attendre la sélection (2 min max)
-    const startSelection = await startMsg.awaitMessageComponent({
-      componentType: 'SELECT_MENU',
-      time: 120_000
-    }).catch(() => null);
-
-    // Si pas de réponse ou mauvaise personne
-    if (
-      !startSelection ||
-      startSelection.user.id !== userId
-    ) {
-      // On peut décider de supprimer le salon après timeout, mais ici on stoppe
+    let startMsg;
+    try {
+      startMsg = await channel.send({ embeds: [startEmbed], components: [startRow] });
+    } catch (err) {
+      console.error('❌ Erreur envoi startEmbed :', err);
       return;
     }
 
-    // Si annulation
+    // 6) Attendre la sélection (2 min max)
+    const startSelection = await startMsg.awaitMessageComponent({
+      componentType: 'SELECT_MENU',
+      time: 120_000,
+      max: 1
+    }).catch(() => null);
+
+    if (!startSelection || startSelection.user.id !== userId) {
+      console.log('⚠️ QCM non démarré (pas de réponse ou mauvais user).');
+      return;
+    }
+
+    // 7) Si annulation
     if (startSelection.values[0] === 'start_no') {
       await startSelection.update({
         embeds: [
@@ -117,7 +114,7 @@ module.exports = {
       return setTimeout(() => channel.delete().catch(() => {}), 10_000);
     }
 
-    // 7) Démarrer le QCM
+    // 8) Démarrer le QCM
     await startSelection.update({ content: '🎬 Le QCM démarre…', embeds: [], components: [] });
     let score = 0;
     const shuffled = QUESTIONS.sort(() => Math.random() - 0.5).slice(0, 30);
@@ -134,17 +131,18 @@ module.exports = {
           .setCustomId(`qcm_question_${userId}_${i}`)
           .setPlaceholder('Votre réponse…')
           .addOptions(
-            q.choices.map((c, idx) => ({
-              label: c,
-              value: `opt_${idx}`
-            }))
+            q.choices.map((c, idx) => ({ label: c, value: `opt_${idx}` }))
           )
       );
 
-      const qMsg = await channel.send({ embeds: [qEmbed], components: [qRow] });
-      const answerIndex = q.choices.findIndex(c => c === q.answer);
+      let qMsg;
+      try {
+        qMsg = await channel.send({ embeds: [qEmbed], components: [qRow] });
+      } catch (err) {
+        console.error(`❌ Erreur envoi question ${i+1} :`, err);
+        continue;
+      }
 
-      // Attendre une réponse (2 min max)
       const collected = await qMsg.awaitMessageComponent({
         componentType: 'SELECT_MENU',
         time: 120_000,
@@ -154,7 +152,7 @@ module.exports = {
       if (
         collected &&
         collected.user.id === userId &&
-        collected.values[0] === `opt_${answerIndex}`
+        collected.values[0] === `opt_${q.choices.findIndex(c => c === q.answer)}`
       ) {
         score++;
       }
@@ -163,7 +161,7 @@ module.exports = {
       await qMsg.edit({ components: [] });
     }
 
-    // 8) Envoyer le bilan et le bouton “Terminer”
+    // 9) Envoyer le bilan + bouton “Terminer”  
     const passed = score >= 20;
     const endEmbed = new EmbedBuilder()
       .setColor(passed ? 0x00ff00 : 0xff0000)
@@ -171,7 +169,7 @@ module.exports = {
       .setDescription(
         `Vous avez obtenu **${score} / 30** réponses correctes.\n` +
         (passed
-          ? '🎉 Félicitations ! Cliquez sur **Terminer le QCM**.'
+          ? '🎉 Félicitations ! Cliquez sur **Terminer le QCM**.'
           : '❌ Vous n’avez pas atteint 20 bonnes réponses. Vous pourrez réessayer dans 24h.')
       );
 
@@ -182,9 +180,15 @@ module.exports = {
         .setStyle(ButtonStyle.Primary)
     );
 
-    const endMsg = await channel.send({ embeds: [endEmbed], components: [endRow] });
+    let endMsg;
+    try {
+      endMsg = await channel.send({ embeds: [endEmbed], components: [endRow] });
+    } catch (err) {
+      console.error('❌ Erreur envoi bilan :', err);
+      return;
+    }
 
-    // 9) Attendre le clic sur “Terminer le QCM” (24 h max)
+    // 10) Attendre “Terminer” (24 h max)
     const finishBtn = await endMsg.awaitMessageComponent({
       componentType: 'BUTTON',
       time: 86_400_000,
@@ -193,18 +197,17 @@ module.exports = {
 
     if (!finishBtn || finishBtn.user.id !== userId) return;
 
-    // Mettre à jour les rôles + archiver le salon
+    // 11) Retirer/ajouter les rôles + archiver le salon
     await interaction.member.roles.remove(process.env.QCM_EN_COURS);
     if (passed) {
       await interaction.member.roles.add(process.env.CITIZEN_ROLE_ID);
     } else {
       await interaction.member.roles.add(process.env.ORAL_A_FAIRE);
-      // Vous pouvez stocker ici la date du retry +24h
+      // stocker timestamp pour cooldown si besoin
     }
 
     await channel.setParent(process.env.QCM_END_CATEGORY);
 
-    // Afficher le score final
     await finishBtn.update({
       content: `✅ QCM terminé (score : **${score} / 30**) – salon archivé.`,
       embeds: [],
