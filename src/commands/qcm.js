@@ -6,7 +6,8 @@ const {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  ChannelType
 } = require('discord.js');
 const QUESTIONS = require('../data/qcmQuestions.json');
 
@@ -14,76 +15,78 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('qcm')
     .setDescription('Démarre votre QCM RP')
+    // On suppose que seul le rôle QCM_EN_COURS peut l’utiliser
     .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
 
   async execute(interaction) {
     const userId = interaction.user.id;
     const guild  = interaction.guild;
 
-    // Vérifie le rôle QCM_EN_COURS
+    // 1) On défère la réponse immédiatement (ephemeral)
+    await interaction.deferReply({ ephemeral: true });
+
+    // 2) Vérifie le rôle QCM_EN_COURS
     const qcRole = guild.roles.cache.get(process.env.QCM_EN_COURS);
     if (!qcRole || !interaction.member.roles.cache.has(qcRole.id)) {
-      return interaction.reply({
-        content: '❌ Vous n’avez pas le rôle nécessaire pour démarrer le QCM.',
-        ephemeral: true
+      return interaction.editReply({
+        content: '❌ Vous n’avez pas le rôle **QCM EN COURS** pour lancer ce QCM.',
       });
     }
 
-    // On a 3s pour répondre à Discord, on différre la réponse
-    await interaction.deferReply({ ephemeral: true });
+    // 3) Création du salon privé
+    let channel;
+    try {
+      channel = await guild.channels.create({
+        name: `qcm-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: process.env.QCM_START_CATEGORY,
+        permissionOverwrites: [
+          { id: guild.id,             deny: ['ViewChannel'] },
+          { id: userId,               allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
+          { id: process.env.STAFF_ROLE_ID, allow: ['ViewChannel','ReadMessageHistory'] }
+        ],
+      });
+    } catch (err) {
+      console.error('Erreur création du salon QCM :', err);
+      return interaction.editReply({ content: '❌ Impossible de créer le salon du QCM.' });
+    }
 
-    // Création du salon privé
-    const channel = await guild.channels.create({
-      name: `qcm-${interaction.user.username}`,
-      type: 0,
-      parent: process.env.QCM_START_CATEGORY,
-      permissionOverwrites: [
-        { id: guild.id, deny: ['ViewChannel'] },
-        { id: userId,   allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
-        { id: process.env.STAFF_ROLE_ID, allow: ['ViewChannel','ReadMessageHistory'] }
-      ],
-    });
-
-    // On confirme à l'utilisateur
+    // 4) On confirme la création du salon
     await interaction.editReply({
-      content: `✅ Salon QCM créé : ${channel}`,
-      ephemeral: true
+      content: `✅ Salon créé : ${channel}`,
     });
 
-    // Embed de lancement
+    // 5) Envoi de l’embed de lancement DANS le salon privé
     const startEmbed = new EmbedBuilder()
       .setColor(0xff0000)
       .setTitle('Souhaitez-vous lancer le QCM ?')
-      .setDescription('Sélectionnez **Oui** pour débuter, **Non** pour annuler et revenir en arrière.');
+      .setDescription('Sélectionnez **Oui** pour débuter, **Non** pour annuler.');
 
     const startRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`qcm_start_${userId}`)
-        .setPlaceholder('Faites un choix…')
+        .setPlaceholder('Votre choix…')
         .addOptions([
-          { label: 'Oui',  value: 'start_yes' },
-          { label: 'Non',  value: 'start_no' }
+          { label: 'Oui', value: 'start_yes' },
+          { label: 'Non', value: 'start_no' }
         ])
     );
 
-    const msg = await channel.send({ embeds: [startEmbed], components: [startRow] });
+    const startMsg = await channel.send({ embeds: [startEmbed], components: [startRow] });
 
-    // Choix Oui/Non
-    const startColl = msg.createMessageComponentCollector({
-      componentType: 3, // menu déroulant
+    // 6) Collecteur pour début / annulation
+    const startCollector = startMsg.createMessageComponentCollector({
+      componentType: 3, // StringSelectMenu
       time: 120_000
     });
 
-    startColl.on('collect', async sel => {
-      if (sel.user.id !== userId) {
-        return sel.reply({ content: '❌ Ce n’est pas pour vous.', ephemeral: true });
-      }
-      startColl.stop();
+    startCollector.on('collect', async sel => {
+      if (sel.user.id !== userId) return sel.reply({ content: '❌ Ce n’est pas pour vous.', ephemeral: true });
+      startCollector.stop();
 
       if (sel.values[0] === 'start_no') {
         // Annulation
         await sel.update({
-          content: '\u200B',
           embeds: [
             new EmbedBuilder()
               .setColor(0xff0000)
@@ -92,27 +95,20 @@ module.exports = {
           ],
           components: []
         });
+        // Retire le rôle et supprime le salon
         await interaction.member.roles.remove(process.env.QCM_EN_COURS);
         await interaction.member.roles.add(process.env.ORAL_A_FAIRE);
         return setTimeout(() => channel.delete().catch(() => {}), 10_000);
       }
 
-      // Démarrage
-      await sel.update({
-        content: '🎬 Le QCM démarre…',
-        embeds: [],
-        components: []
-      });
+      // 7) Démarrage du QCM
+      await sel.update({ content: '🎬 Le QCM démarre…', embeds: [], components: [] });
 
       let score = 0;
-      const shuffled = QUESTIONS
-        .map(q => ({ ...q }))           // copie
-        .sort(() => Math.random() - .5) // mélange
-        .slice(0, 30);
+      const shuffled = QUESTIONS.sort(() => Math.random() - .5).slice(0, 30);
 
       for (let i = 0; i < shuffled.length; i++) {
         const q = shuffled[i];
-
         const qEmbed = new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle(`Question ${i + 1}`)
@@ -121,7 +117,7 @@ module.exports = {
         const qRow = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId(`qcm_question_${userId}_${i}`)
-            .setPlaceholder('Choisissez une réponse…')
+            .setPlaceholder('Réponse…')
             .addOptions(
               q.choices.map((c, idx) => ({
                 label: c,
@@ -131,32 +127,24 @@ module.exports = {
         );
 
         const qMsg = await channel.send({ embeds: [qEmbed], components: [qRow] });
-        const correctIndex = q.choices.indexOf(q.answer);
+        const answerIndex = q.choices.findIndex(c => c === q.answer);
 
-        const qColl = qMsg.createMessageComponentCollector({
+        // On attend la réponse ou le timeout
+        const collected = await qMsg.awaitMessageComponent({
           componentType: 3,
-          max: 1,
           time: 120_000
-        });
+        }).catch(() => null);
 
-        await new Promise(resolve => {
-          qColl.on('collect', async selQ => {
-            if (selQ.user.id === userId && selQ.values[0] === `opt_${correctIndex}`) {
-              score++;
-            }
-            // désactiver le menu immédiatement
-            await selQ.update({ components: [] }).catch(() => {});
-            resolve();
-          });
-          qColl.on('end', async () => {
-            // si pas de réponse, on désactive aussi
-            await qMsg.edit({ components: [] }).catch(() => {});
-            resolve();
-          });
-        });
+        // Si c’est l’utilisateur et bonne réponse
+        if (collected && collected.user.id === userId && collected.values[0] === `opt_${answerIndex}`) {
+          score++;
+        }
+
+        // Désactive les menus
+        await qMsg.edit({ components: [] });
       }
 
-      // Bilan
+      // 8) Bilan final
       const passed = score >= 20;
       const endEmbed = new EmbedBuilder()
         .setColor(passed ? 0x00ff00 : 0xff0000)
@@ -164,7 +152,7 @@ module.exports = {
         .setDescription(
           `Vous avez obtenu **${score} / 30** réponses correctes.\n` +
           (passed
-            ? '🎉 Félicitations, vous avez réussi ! Cliquez sur **Terminer le QCM**.'
+            ? '🎉 Félicitations, vous avez réussi ! Cliquez sur **Terminer le QCM**.'
             : '❌ Vous n’avez pas atteint 20 bonnes réponses. Vous pourrez réessayer dans 24h.')
         );
 
@@ -177,35 +165,25 @@ module.exports = {
 
       const endMsg = await channel.send({ embeds: [endEmbed], components: [endRow] });
 
-      const finishColl = endMsg.createMessageComponentCollector({
-        componentType: 2, // bouton
-        max: 1,
-        time: 86_400_000 // 24h
-      });
+      // 9) Collecteur pour « Terminer »
+      const finishBtn = await endMsg.awaitMessageComponent({
+        componentType: 2,
+        time: 86_400_000
+      }).catch(() => null);
 
-      finishColl.on('collect', async btn => {
-        if (btn.user.id !== userId) {
-          return btn.reply({ content: '❌ Ce n’est pas pour vous.', ephemeral: true });
-        }
+      if (!finishBtn || finishBtn.user.id !== userId) return;
 
-        // Retrait / ajout de rôles
-        await interaction.member.roles.remove(process.env.QCM_EN_COURS);
-        if (passed) {
-          await interaction.member.roles.add(process.env.CITIZEN_ROLE_ID);
-        } else {
-          await interaction.member.roles.add(process.env.ORAL_A_FAIRE);
-          // TODO : stocker le timestamp pour le cooldown 24h
-        }
+      // Roles & archivage
+      await interaction.member.roles.remove(process.env.QCM_EN_COURS);
+      if (passed) await interaction.member.roles.add(process.env.CITIZEN_ROLE_ID);
+      else        await interaction.member.roles.add(process.env.ORAL_A_FAIRE);
 
-        // Déplace le salon
-        await channel.setParent(process.env.QCM_END_CATEGORY);
+      await channel.setParent(process.env.QCM_END_CATEGORY);
 
-        // Mise à jour finale
-        await btn.update({
-          content: `✅ QCM terminé (score : **${score} / 30**) – salon archivé.`,
-          embeds: [],
-          components: []
-        });
+      await finishBtn.update({
+        content: `✅ QCM terminé (score : **${score}/30**) – salon archivé.`,
+        embeds: [],
+        components: []
       });
     });
   }
