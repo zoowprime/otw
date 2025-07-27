@@ -13,8 +13,8 @@ module.exports = {
     )
     .addStringOption(option =>
       option
-        .setName('durée')
-        .setDescription('Durée du coma (ex: 30m, 2h)')
+        .setName('duree')      // ← plus d’accent !
+        .setDescription('Durée du coma (ex : 30m, 2h)')
         .setRequired(true)
     )
     .addStringOption(option =>
@@ -25,27 +25,27 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // 1️⃣ Ack immédiat pour éviter le timeout
-    await interaction.deferReply({ ephemeral: false });
+    // Ack immédiat
+    await interaction.deferReply();
 
-    // 2️⃣ Récupération des options
+    // Récupère les options
     const cible  = interaction.options.getUser('cible');
-    const duree  = interaction.options.getString('durée');
+    const duree  = interaction.options.getString('duree');
     const raison = interaction.options.getString('raison');
 
-    // 3️⃣ Construction de l’embed
+    // Construit l’embed
     const embed = new EmbedBuilder()
-      .setColor(0xFFFFFF)                         // fond blanc
+      .setColor(0xFFFFFF) // fond blanc
       .setTitle('💤 État de coma déclenché')
       .setDescription(`${cible} est maintenant en coma RP… Zzz`)
       .addFields(
-        { name: '🎯 Joueur concerné', value: `${cible}`, inline: true },
-        { name: '⏱️ Durée du coma',    value: duree,      inline: true },
-        { name: '❓ Raison du coma',    value: raison,     inline: false },
+        { name: '🎯 Joueur concerné', value: `<@${cible.id}>`, inline: true },
+        { name: '⏱️ Durée du coma',    value: duree,                inline: true },
+        { name: '❓ Raison du coma',    value: raison,               inline: false }
       )
-      .setFooter({ text: 'Ils se réveilleront quand leur temps sera écoulé !' });
+      .setFooter({ text: 'Ils se réveilleront quand leur temps sera écoulé !' });
 
-    // 4️⃣ Envoi de l’embed (édit de la réponse différée)
+    // Envoi
     await interaction.editReply({ embeds: [embed] });
   }
 };
