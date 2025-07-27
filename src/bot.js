@@ -66,6 +66,7 @@ require('./events/raidProtect')(client);
 require('./events/qcmNoCmd')(client);
 require('./events/heistSessions')(client);
 require('./events/candidature')(client);
+require('./events/starterPack')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
