@@ -20,7 +20,10 @@ module.exports = (client) => {
   // 1️⃣ À l'initialisation, poste le panneau si nécessaire
   client.once('ready', async () => {
     const launchCh = await client.channels.fetch(CANDIDATURE_CHANNEL).catch(() => null);
-    if (!launchCh || !launchCh.isText()) return console.error('Salon de candidature introuvable');
+    // Vérifie qu'on a bien un channel textuel
+    if (!launchCh || !launchCh.isTextBased()) {
+      return console.error('Salon de candidature introuvable ou non textuel');
+    }
 
     // Ne renvoie pas si le panneau existe déjà
     const recent = await launchCh.messages.fetch({ limit: 50 });
@@ -82,7 +85,7 @@ module.exports = (client) => {
       const headerEmbed = new EmbedBuilder()
         .setTitle('Candidature de ' + interaction.user.tag)
         .setColor(0xff0000)
-        .setDescription('Cliquez sur **Supprimer le salon** une fois que vous avez terminé ou si vous souhaitez annuler.')
+        .setDescription('Cliquez sur **Supprimer le salon** une fois que vous avez terminé ou si vous souhaitez annuler.');
 
       const deleteBtn = new ButtonBuilder()
         .setCustomId('candidature_delete')
