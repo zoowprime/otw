@@ -6,145 +6,132 @@ const {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  MessageFlags,
-  ComponentType,
+  ChannelType,
+  MessageFlags
 } = require('discord.js');
 
-const {
-  CANDIDATURE_CHANNEL,
-  CANDIDATURE_CATEGORY,
-  STAFF_ROLE_ID
-} = process.env;
-
 module.exports = (client) => {
-  // 1️⃣ À l'initialisation, poste le panneau si nécessaire
+  const CANDIDATURE_CHANNEL     = process.env.CANDIDATURE_CHANNEL;
+  const CANDIDATURE_CATEGORY    = process.env.CANDIDATURE_CATEGORY;
+  const STAFF_ROLE_ID           = process.env.STAFF_ROLE_ID;
+
+  // 1️⃣ Au démarrage, poste le menu “Faire ma candidature” si pas déjà là
   client.once('ready', async () => {
     const launchCh = await client.channels.fetch(CANDIDATURE_CHANNEL).catch(() => null);
-    // Vérifie qu'on a bien un channel textuel
-    if (!launchCh || !launchCh.isTextBased()) {
-      return console.error('Salon de candidature introuvable ou non textuel');
+    if (!launchCh || launchCh.type !== ChannelType.GuildText) {
+      return console.error('Salon candidature introuvable ou non textuel');
     }
 
-    // Ne renvoie pas si le panneau existe déjà
-    const recent = await launchCh.messages.fetch({ limit: 50 });
-    if (recent.some(m => m.embeds[0]?.title === 'Déposer une candidature')) return;
+    // Ne renvoie pas si on trouve déjà un embed de lancement
+    const fetched = await launchCh.messages.fetch({ limit: 50 });
+    if (fetched.some(m => m.embeds[0]?.title === '📢 Déposer une candidature')) {
+      return;
+    }
 
     const embed = new EmbedBuilder()
-      .setTitle('Déposer une candidature')
-      .setColor(0xff0000)
+      .setTitle('📢 Déposer une candidature')
       .setDescription(
-        'Si vous souhaitez déposer votre candidature, ouvrez le menu ci‑dessous et sélectionnez **Faire ma candidature**.\n' +
-        'Le modèle de candidature vous sera directement fourni par le bot !'
-      );
+        'Si vous souhaitez déposer votre candidature, ouvrez le menu déroulant et sélectionnez **Faire ma candidature**.\n' +
+        'Le modèle de candidature vous sera directement fourni !'
+      )
+      .setColor(0xff0000);
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('candidature_open')
       .setPlaceholder('Faire ma candidature')
       .addOptions([
-        {
-          label: 'Faire ma candidature',
-          value: 'faire_candidature',
-        }
+        { label: 'Faire ma candidature', value: 'open' }
       ]);
 
     const row = new ActionRowBuilder().addComponents(menu);
     await launchCh.send({ embeds: [embed], components: [row] });
   });
 
-  // 2️⃣ Gestion de l’ouverture de la candidature
+  // 2️⃣ Quand quelqu’un sélectionne “Faire ma candidature”
   client.on('interactionCreate', async interaction => {
-    // ----- Menu déroulant “Faire ma candidature” -----
-    if (interaction.isStringSelectMenu() && interaction.customId === 'candidature_open') {
-      if (interaction.values[0] !== 'faire_candidature') return;
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (!interaction.isStringSelectMenu() || interaction.customId !== 'candidature_open') return;
+    await interaction.deferReply({ ephemeral: true });
 
-      // Création du salon sous la catégorie de candidature
-      let candidateCh;
-      try {
-        candidateCh = await interaction.guild.channels.create({
-          name: `candidature-${interaction.user.username}`,
-          type: 0, // GuildText
-          parent: CANDIDATURE_CATEGORY,
-          permissionOverwrites: [
-            { id: interaction.guild.id, deny: ['ViewChannel'] },
-            { id: interaction.user.id, allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
-            { id: STAFF_ROLE_ID, allow: ['ViewChannel','ReadMessageHistory'] }
-          ]
-        });
-      } catch (err) {
-        console.error('❌ Impossible de créer le salon candidature:', err);
-        return interaction.editReply({ content: '❌ Échec de la création du salon.' });
-      }
+    try {
+      const guild = interaction.guild;
+      const user  = interaction.user;
 
-      // Message de confirmation éphémère
-      await interaction.editReply({
-        content: `✅ Salon de candidature créé : ${candidateCh}`,
+      // Création du salon perso
+      const candidateCh = await guild.channels.create({
+        name: `candidature-${user.username}`,
+        type: ChannelType.GuildText,
+        parent: CANDIDATURE_CATEGORY,
+        permissionOverwrites: [
+          // bloque @everyone
+          { id: guild.id,                   deny: ['ViewChannel'] },
+          // autorise le candidat
+          { id: user.id,                    allow: ['ViewChannel','SendMessages','ReadMessageHistory'] },
+          // autorise le staff
+          { id: STAFF_ROLE_ID,              allow: ['ViewChannel','ReadMessageHistory'] },
+          // autorise le bot
+          { id: client.user.id,             allow: ['ViewChannel','SendMessages','ReadMessageHistory'] }
+        ]
       });
 
-      // 3️⃣ Envoyer dans ce salon l’embed + bouton de suppression & modèle
-      const headerEmbed = new EmbedBuilder()
-        .setTitle('Candidature de ' + interaction.user.tag)
-        .setColor(0xff0000)
-        .setDescription('Cliquez sur **Supprimer le salon** une fois que vous avez terminé ou si vous souhaitez annuler.');
-
-      const deleteBtn = new ButtonBuilder()
+      // Embed + bouton “Supprimer” dans le nouveau salon
+      const delBtn = new ButtonBuilder()
         .setCustomId('candidature_delete')
-        .setLabel('Supprimer le salon')
+        .setLabel('Supprimer la candidature')
         .setStyle(ButtonStyle.Danger);
+      const delRow = new ActionRowBuilder().addComponents(delBtn);
 
-      await candidateCh.send({
-        embeds: [headerEmbed],
-        components: [new ActionRowBuilder().addComponents(deleteBtn)]
-      });
+      const introEmbed = new EmbedBuilder()
+        .setTitle('✏️ Modèle de candidature')
+        .setDescription('Copiez ce formulaire, remplissez-le, puis un staff pourra supprimer ce salon une fois votre candidature traitée.')
+        .setColor(0xff0000);
 
-      // Modèle de candidature (plain text)
-      const template =
-`**Prénom :**
+      await candidateCh.send({ embeds: [introEmbed], components: [delRow] });
 
-**Âge (15 ans min) :**
+      // Le formulaire à copier
+      const model = [
+        '**Prénom :**',
+        '**Âge (15 ans min) :**',
+        '**Experience RP (serveur, type de projet) :**',
+        '**PSN :**',
+        '**Disponibilité :**',
+        '**Lundi =**',
+        '**Mardi =**',
+        '**Mercredi =**',
+        '**Jeudi =**',
+        '**Vendredi =**',
+        '**Samedi =**',
+        '**Dimanche =**',
+        '',
+        '**Nom :**',
+        '**Prénom :**',
+        '**Âge et date de naissance :**',
+        '**Sexe :**',
+        '**Taille (1m50‑2m) :**',
+        '**Origine :**',
+        '**Accent (oui/non) :**',
+        '**Trait de caractère (3 minimum) :**',
+        '**Projet (court, moyen, long – développer) :**',
+        '',
+        '`Nous vous demandons un Background réfléchi et cohérent avec le lore, pas de RP Rambo !`',
+        '',
+        '**Background (10 lignes minimum) :**'
+      ].join('\n');
 
-**Expérience RP (serveur, type de projet) :**
-
-**PSN :**
-
-**Disponibilité :**
-
-**Lundi =**
-**Mardi =**
-**Mercredi =**
-**Jeudi =**
-**Vendredi =**
-**Samedis =**
-**Dimanche =**
-
-**Nom :**
-**Prénom :**
-**Âge et date de naissance :**
-**Sexe :**
-**Taille (1m50‑2m) :**
-**Origine :**
-**Accent (oui/non) :**
-**Trait de caractère (3 minimum) :**
-**Projet (court, moyen, long…) :**
-
-\`Nous vous demandons un Background réfléchi et bien pensé (pas de RP « Rambo »), cohérent et détaillé.\`
-
-**Background (10 lignes minimum) :**`;
-
-      await candidateCh.send({ content: template });
+      await candidateCh.send({ content: model });
+      await interaction.editReply({ content: `✅ Salon créé : ${candidateCh}` });
+    } catch (err) {
+      console.error('Erreur ouverture candidature :', err);
+      await interaction.editReply({ content: '❌ Impossible de créer votre salon de candidature.' });
     }
+  });
 
-    // ----- Bouton “Supprimer le salon” -----
-    if (interaction.isButton() && interaction.customId === 'candidature_delete') {
-      // permissions staff uniquement
-      if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
-        return interaction.reply({
-          content: '❌ Vous n’avez pas la permission.',
-          flags: MessageFlags.Ephemeral
-        });
-      }
-      await interaction.reply({ content: '🗑️ Suppression du salon…', flags: MessageFlags.Ephemeral });
-      setTimeout(() => interaction.channel.delete().catch(console.error), 1500);
+  // 3️⃣ Supprimer le salon candidature (seul le staff)
+  client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton() || interaction.customId !== 'candidature_delete') return;
+    if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
+      return interaction.reply({ content: '❌ Vous n’avez pas la permission.', flags: MessageFlags.Ephemeral });
     }
+    await interaction.reply({ content: '🗑️ Le salon sera supprimé dans 5 secondes…', flags: MessageFlags.Ephemeral });
+    setTimeout(() => interaction.channel.delete().catch(console.error), 5_000);
   });
 };
