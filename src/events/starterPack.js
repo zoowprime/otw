@@ -5,15 +5,13 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  MessageFlags,
-  PermissionsBitField,
+  MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 const { getOrCreateInventory, updateInventory } = require('../inventoryData');
 
-// ---------- persistence : une seule fois par joueur jusqu'à /resetpack ----------
 const dataDir = process.env.DATA_DIR || '/data';
 const CLAIMS_PATH = path.join(dataDir, 'starterClaims.json');
 
@@ -32,8 +30,8 @@ function saveClaims(obj) {
   try { fs.writeFileSync(CLAIMS_PATH, JSON.stringify(obj, null, 2), 'utf8'); } catch {}
 }
 
-let claims = loadClaims(); // { userId: { claimedAt } }
-const processing = new Set(); // anti double-clic simultané
+// Anti double-clic simultané
+const processing = new Set();
 
 module.exports = (client) => {
   client.once('ready', async () => {
@@ -42,7 +40,7 @@ module.exports = (client) => {
     const ch = await client.channels.fetch(chId).catch(() => null);
     if (!ch || !ch.isTextBased()) return console.error('Salon Starter-Pack introuvable / non textuel');
 
-    // ne renvoie pas en double
+    // Ne renvoie pas en double
     const fetched = await ch.messages.fetch({ limit: 50 }).catch(() => null);
     if (fetched?.some(m => m.embeds[0]?.title === '🎒 Starter Pack')) return;
 
@@ -77,12 +75,14 @@ module.exports = (client) => {
     processing.add(userId);
 
     try {
-      // déjà pris ?
+      // 🔹 Recharge claims depuis le disque à chaque clic
+      const claims = loadClaims();
+
       if (claims[userId]) {
         return interaction.reply({ content: '⚠️ Tu as **déjà** pris le Starter Pack.', flags: MessageFlags.Ephemeral });
       }
 
-      // 1) give 50$ + cheval (idempotent côté inventaire si tu veux: vérifie avant d’ajouter)
+      // 1) give 50$ + cheval
       const acc = getOrCreateAccount(userId);
       acc.courant.liquide += 50;
       updateAccount(userId, acc);
@@ -107,14 +107,11 @@ module.exports = (client) => {
           `• **Cheval de Kentucky** (inventaire)\n\n` +
           `Bonne aventure 🤠`
         );
-      try { await user.send({ embeds: [dmEmbed] }); } catch { /* DM fermés */ }
+      try { await user.send({ embeds: [dmEmbed] }); } catch {}
 
       // 4) rendre le salon invisible pour ce joueur
-      // -> on crée/édite un overwrite d’interdiction de ViewChannel
       try {
-        await channel.permissionOverwrites.edit(userId, {
-          ViewChannel: false
-        }, { reason: 'Starter Pack consommé : cacher le salon pour cet utilisateur' });
+        await channel.permissionOverwrites.edit(userId, { ViewChannel: false }, { reason: 'Starter Pack consommé' });
       } catch (e) {
         console.error('Impossible de masquer le salon pour', userId, e);
       }
