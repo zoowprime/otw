@@ -4,11 +4,13 @@ const fs   = require('fs');
 const path = require('path');
 
 // Modules internes
-const ticketModule           = require('./ticket.js');
-const { handleEconomyCommand } = require('./economy');
-const { transformSessions }    = require('./transformSessions');
-const logger                   = require('./logger');
+const ticketModule                 = require('./ticket.js');
+const { handleEconomyCommand }     = require('./economy');
+const { transformSessions }        = require('./transformSessions');
+const logger                       = require('./logger');
 const { getOrCreateAccount, updateAccount } = require('./economyData');
+// ⬇️ AJOUT pour /session
+const { handleSessionButtons }     = require('./commands/session');
 
 // IDs pour les boutiques
 const SHOP_OWNER_ID           = process.env.SHOP_OWNER_ID;
@@ -17,29 +19,29 @@ const ILLEGAL_CONTACT_ROLE_ID = process.env.ILLEGAL_CONTACT_ROLE_ID;
 
 // Articles boutique légale
 const legalItems = {
-  tente_amelioree: { name: 'Tente améliorée',        desc: 'Plus grande & résistante', price: 45 },
-  tente_luxe:      { name: 'Tente de luxe (voyageur)',desc: 'Repos optimal',          price: 80 },
-  feu_camp:        { name: 'Feu de camp renforcé',   desc: 'Cuisiner plus rapidement', price: 18 },
-  tapis_sol:       { name: 'Tapis de sol',            desc: 'Confort & esthétique',    price: 10 },
-  chaises:         { name: 'Chaises et tabourets',    desc: 'S’asseoir RP',            price: 12 },
-  table_camp:      { name: 'Table de camp',           desc: 'Repas & réunions RP',     price: 20 },
-  drapeaux:        { name: 'Drapeaux personnalisés',  desc: 'Identité du groupe',      price: 15 },
-  eclairage:       { name: 'Éclairage (lanternes)',   desc: 'Lanternes suspendues',    price: 8 }
+  tente_amelioree: { name: 'Tente améliorée',         desc: 'Plus grande & résistante', price: 45 },
+  tente_luxe:      { name: 'Tente de luxe (voyageur)', desc: 'Repos optimal',            price: 80 },
+  feu_camp:        { name: 'Feu de camp renforcé',     desc: 'Cuisiner plus rapidement', price: 18 },
+  tapis_sol:       { name: 'Tapis de sol',             desc: 'Confort & esthétique',     price: 10 },
+  chaises:         { name: 'Chaises et tabourets',     desc: 'S’asseoir RP',             price: 12 },
+  table_camp:      { name: 'Table de camp',            desc: 'Repas & réunions RP',      price: 20 },
+  drapeaux:        { name: 'Drapeaux personnalisés',   desc: 'Identité du groupe',       price: 15 },
+  eclairage:       { name: 'Éclairage (lanternes)',    desc: 'Lanternes suspendues',     price: 8 }
 };
 
 // Articles boutique illégale
 const illegalItems = {
   fusil_semi_auto:     { name: 'Fusil Semi-Automatique',    price: 650 },
   mauser:              { name: 'Mauser',                    price: 750 },
-  fusil_double_canon:  { name: 'Fusil à Double Canon',       price: 750 },
-  fusil_pompe:         { name: 'Fusil à Pompe',              price: 550 },
-  fusil_canon_scie:    { name: 'Fusil à Canon Scié',         price: 550 },
-  fusil_semi_auto2:    { name: 'Fusil Semi-Automatique II',  price: 450 },
-  fusil_repetition:    { name: 'Fusil à Répétition',         price: 350 },
-  fusil_carcano:       { name: 'Fusil Carcano',              price: 425 },
-  dynamites:           { name: 'Dynamites',                  price: 250 },
-  bouteilles_incendie: { name: 'Bouteilles Incendiaires',    price: 50  },
-  tomahawk:            { name: 'Tomahawk',                   price: 150 }
+  fusil_double_canon:  { name: 'Fusil à Double Canon',      price: 750 },
+  fusil_pompe:         { name: 'Fusil à Pompe',             price: 550 },
+  fusil_canon_scie:    { name: 'Fusil à Canon Scié',        price: 550 },
+  fusil_semi_auto2:    { name: 'Fusil Semi-Automatique II', price: 450 },
+  fusil_repetition:    { name: 'Fusil à Répétition',        price: 350 },
+  fusil_carcano:       { name: 'Fusil Carcano',             price: 425 },
+  dynamites:           { name: 'Dynamites',                 price: 250 },
+  bouteilles_incendie: { name: 'Bouteilles Incendiaires',   price: 50  },
+  tomahawk:            { name: 'Tomahawk',                  price: 150 }
 };
 
 const client = new Client({
@@ -101,19 +103,19 @@ client.once('ready', async () => {
     const panelChannel = await client.channels.fetch(panelChannelId);
     if (panelChannel && typeof ticketModule.sendTicketPanel === 'function') {
       await ticketModule.sendTicketPanel(panelChannel);
-      console.log("🎟️ Panel de ticket envoyé.");
-      logger.sendLog("🎟️ Panel de ticket envoyé.");
+      console.log('🎟️ Panel de ticket envoyé.');
+      logger.sendLog('🎟️ Panel de ticket envoyé.');
     }
   } catch (err) {
-    console.error("Erreur envoi panel ticket :", err);
+    console.error('Erreur envoi panel ticket :', err);
     logger.sendError(err);
   }
 });
 
 // Gestion des interactions
 client.on('interactionCreate', async interaction => {
-  console.log("Interaction reçue:", interaction.customId || interaction.commandName);
-  logger.sendLog(`Interaction: ${interaction.customId||interaction.commandName}`);
+  console.log('Interaction reçue:', interaction.customId || interaction.commandName);
+  logger.sendLog(`Interaction: ${interaction.customId || interaction.commandName}`);
 
   // 1️⃣ Slash commands
   if (interaction.isChatInputCommand()) {
@@ -122,7 +124,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await command.execute(interaction);
     } catch (err) {
-      console.error("Erreur slash:", err);
+      console.error('Erreur slash:', err);
       logger.sendError(err);
       await interaction.reply({
         content: '❗ Une erreur est survenue.',
@@ -130,6 +132,13 @@ client.on('interactionCreate', async interaction => {
       });
     }
     return;
+  }
+
+  // ✅ Boutons de /session (ajout)
+  try {
+    await handleSessionButtons(interaction);
+  } catch (e) {
+    // on n’écrase pas les autres handlers si ce n’est pas une interaction /session
   }
 
   // 2️⃣ Boutique légale
@@ -183,14 +192,13 @@ client.on('interactionCreate', async interaction => {
 
   // 4️⃣ Tickets
   if (
-    (interaction.isStringSelectMenu() && interaction.customId === "ticket_reason_select") ||
-    (interaction.isButton()     && ["close_ticket","reopen_ticket","delete_ticket"]
-      .includes(interaction.customId))
+    (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') ||
+    (interaction.isButton() && ['close_ticket','reopen_ticket','delete_ticket'].includes(interaction.customId))
   ) {
     try {
       await ticketModule.handleTicketInteraction(interaction);
     } catch (err) {
-      console.error("Erreur ticket:", err);
+      console.error('Erreur ticket:', err);
       logger.sendError(err);
       if (!interaction.replied) {
         await interaction.reply({
@@ -203,7 +211,7 @@ client.on('interactionCreate', async interaction => {
   }
 
   // 5️⃣ En ville / Déconnecté
-  if (interaction.isButton() && ["en_ville","deconnecte"].includes(interaction.customId)) {
+  if (interaction.isButton() && ['en_ville','deconnecte'].includes(interaction.customId)) {
     const role   = interaction.guild.roles.cache.get('1378037596566978561');
     const member = interaction.member;
     if (!role || !member) return;
@@ -218,7 +226,7 @@ client.on('interactionCreate', async interaction => {
         flags: MessageFlags.Ephemeral
       });
     } catch (err) {
-      console.error("Erreur rôle ville:", err);
+      console.error('Erreur rôle ville:', err);
       logger.sendError(err);
       if (!interaction.replied) {
         await interaction.reply({
@@ -237,7 +245,7 @@ client.on('interactionCreate', async interaction => {
       try {
         await handleStockInteractions(interaction);
       } catch (err) {
-        console.error("Erreur stock:", err);
+        console.error('Erreur stock:', err);
         logger.sendError(err);
         if (!interaction.replied) {
           await interaction.reply({
@@ -265,5 +273,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.BOT_TOKEN);
-
-
