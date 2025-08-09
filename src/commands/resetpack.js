@@ -1,7 +1,6 @@
 // src/commands/resetpack.js
 const {
   SlashCommandBuilder,
-  PermissionFlagsBits,
   MessageFlags,
   EmbedBuilder,
 } = require('discord.js');
@@ -10,6 +9,7 @@ const path = require('path');
 
 const dataDir = process.env.DATA_DIR || '/data';
 const CLAIMS_PATH = path.join(dataDir, 'starterClaims.json');
+const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 
 function loadClaims() {
   try {
@@ -29,10 +29,17 @@ module.exports = {
       opt.setName('joueur')
         .setDescription('Le joueur à réinitialiser')
         .setRequired(true)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    ),
 
   async execute(interaction) {
+    // Vérifie si l'utilisateur a le rôle staff
+    if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
+      return interaction.reply({
+        content: '🚫 Tu n’as pas la permission d’utiliser cette commande.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
     const member = interaction.options.getUser('joueur', true);
     const chId = process.env.STARTER_PACK_CHANNEL;
 
@@ -45,10 +52,9 @@ module.exports = {
       return interaction.reply({ content: '❌ Salon Starter-Pack introuvable.', flags: MessageFlags.Ephemeral });
     }
 
-    // 1) enlève l’overwrite de masquage (pour qu’il revoie le salon)
+    // 1) enlève l’overwrite de masquage
     try {
       await channel.permissionOverwrites.delete(member.id).catch(async () => {
-        // si pas d’overwrite, on force un allow explicite (optionnel)
         await channel.permissionOverwrites.edit(member.id, { ViewChannel: true });
       });
     } catch (e) {
@@ -72,7 +78,7 @@ module.exports = {
       );
     try { await member.send({ embeds: [dm] }); } catch {}
 
-    // 4) confirmation admin
+    // 4) confirmation staff
     await interaction.reply({
       content: `✅ Starter Pack réinitialisé pour <@${member.id}>. Accès au salon rendu.`,
       flags: MessageFlags.Ephemeral
