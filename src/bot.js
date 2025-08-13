@@ -69,6 +69,7 @@ require('./events/qcmNoCmd')(client);
 require('./events/heistSessions')(client);
 require('./events/candidature')(client);
 require('./events/starterPack')(client);
+require('./events/catalogueWeapons')(client);
 
 // Chargement des commandes slash
 client.commands = new Collection();
@@ -273,3 +274,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.BOT_TOKEN);
+
