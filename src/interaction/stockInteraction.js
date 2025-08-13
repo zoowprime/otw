@@ -1,111 +1,174 @@
-// src/interaction/stockInteraction.js
+const fs = require('fs');
+const path = require('path');
 const {
-  InteractionType,
   ActionRowBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
+  StringSelectMenuBuilder,
   EmbedBuilder,
+  MessageFlags,
+  ChannelType,
 } = require('discord.js');
 
-// Liste complète des items disponibles (exemple basé sur votre liste)
-const availableItems = {
-  "cattleman_revolver": 18.50,
-  "navy_revolver": 18.00,
-  "double_action_revolver": 19.00,
-  "schofield_revolver": 20.50,
-  "lemat_revolver": 25.25,
-  "volcanic_pistol": 18.50,
-  "litchfield_rifle": 26.25,
-  "evans_rifle": 32.25,
-  "lancaster_rifle": 32.25,
-  "carabine_a_repetition": 32.25,
-  "fusil_a_petit_gibier": 15.25,
-  "fusil_springfield": 19.75,
-  "fusil_a_verrou": 26.25,
-  // Ajoutez ici les autres items (chevaux, alcools, etc.)
+const { categories } = require('../data/weaponsCatalog');
+const { getOrCreateInventory, updateInventory } = require('../inventoryData');
+const { getOrCreateAccount, updateAccount } = require('../economyData');
+
+const DATA_DIR = process.env.DATA_DIR || '/data';
+const STOCK_FILE = path.join(DATA_DIR, 'tetsu_stock.json');
+const STOCK_MSG_FILE = path.join(DATA_DIR, 'tetsu_stock_msg.json'); // { guildId: { channelId, messageId } }
+
+function ensureDir() { try { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {} }
+ensureDir();
+
+function loadStock() {
+  try { return JSON.parse(fs.readFileSync(STOCK_FILE, 'utf8') || '{}'); } catch { return {}; }
+}
+function saveStock(obj) {
+  try { fs.writeFileSync(STOCK_FILE, JSON.stringify(obj, null, 2), 'utf8'); } catch {}
+}
+function loadStockMsg() {
+  try { return JSON.parse(fs.readFileSync(STOCK_MSG_FILE, 'utf8') || '{}'); } catch { return {}; }
+}
+function saveStockMsg(obj) {
+  try { fs.writeFileSync(STOCK_MSG_FILE, JSON.stringify(obj, null, 2), 'utf8'); } catch {}
+}
+
+function initAllItems() {
+  const base = {};
+  for (const cat of categories) for (const item of cat.items) base[item] = 0;
+  return base;
+}
+
+function stockToEmbed(stock) {
+  const lines = [];
+  for (let i = 0; i < categories.length; i++) {
+    const cat = categories[i];
+    lines.push(`${i ? '\n' : ''}${cat.name} :`);
+    for (const item of cat.items) {
+      const n = stock[item] ?? 0;
+      lines.push(`● ${item} x ${n}`);
+    }
+    if (i < categories.length - 1) lines.push('\n⸻');
+  }
+  return new EmbedBuilder().setColor(0x5865F2).setTitle('📦 Stock — Tetsui Ronworks').setDescription(lines.join('\n'));
+}
+
+async function updateLiveStockMessage(client, guildId) {
+  const map = loadStockMsg();
+  const ref = map[guildId];
+  if (!ref) return;
+  try {
+    const channel = await client.channels.fetch(ref.channelId);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+    const msg = await channel.messages.fetch(ref.messageId).catch(() => null);
+    if (!msg) return;
+    const stock = { ...initAllItems(), ...loadStock() };
+    await msg.edit({ embeds: [stockToEmbed(stock)] });
+  } catch {}
+}
+
+// Helpers de menus
+function fullWeaponOptions() {
+  const options = [];
+  for (const cat of categories) {
+    for (const item of cat.items) options.push({ label: item, value: item });
+  }
+  return options.slice(0, 25);
+}
+function chunkWeapons() {
+  // Discord limite un select à 25 options → on pagine si besoin
+  const all = [];
+  for (const cat of categories) for (const item of cat.items) all.push({ label: item, value: item });
+  const chunks = [];
+  while (all.length) chunks.push(all.splice(0, 25));
+  return chunks;
+}
+
+module.exports.handleStockInteractions = async function handleStockInteractions(interaction) {
+  // 1) Sélecteur de fabrication (dans le salon catalogue)
+  if (interaction.isStringSelectMenu() && interaction.customId === 'weapon_fabricate_select') {
+    const chosen = interaction.values?.[0];
+    if (!chosen) return interaction.reply({ content: '❗ Choix invalide.', flags: MessageFlags.Ephemeral });
+
+    const fabChannelId = process.env.FABRICATION_ARME_CHANNEL;
+    const fabChannel = fabChannelId ? await interaction.client.channels.fetch(fabChannelId).catch(() => null) : null;
+
+    // maj stock
+    const stock = { ...initAllItems(), ...loadStock() };
+    stock[chosen] = (stock[chosen] ?? 0) + 1;
+    saveStock(stock);
+
+    if (fabChannel) {
+      await fabChannel.send(`🔫 Vous avez fabriqué **${chosen}** (par ${interaction.user}).`).catch(() => {});
+    }
+
+    // accuse réception
+    await interaction.reply({ content: `✅ **${chosen}** ajouté au stock.`, flags: MessageFlags.Ephemeral }).catch(() => {});
+
+    // MAJ des messages /stock actifs
+    await updateLiveStockMessage(interaction.client, interaction.guildId);
+    return;
+  }
+
+  // 2) Sélecteur de vente (ouvert par la commande /vendrearme)
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('sell_weapon_select:')) {
+    const [, targetId, priceStr] = interaction.customId.split(':');
+    const weapon = interaction.values?.[0];
+    if (!weapon) return interaction.reply({ content: '❗ Choix invalide.', flags: MessageFlags.Ephemeral });
+
+    const price = Number(priceStr || '0') || 0;
+    const companyId = process.env.ARMURERIER_USER;
+
+    // Vérifs du stock
+    const stock = { ...initAllItems(), ...loadStock() };
+    if ((stock[weapon] ?? 0) <= 0) {
+      return interaction.reply({ content: `❌ Stock insuffisant pour **${weapon}**.`, flags: MessageFlags.Ephemeral });
+    }
+
+    // Comptes
+    const buyerAcc = getOrCreateAccount(targetId);
+    if ((buyerAcc.courant?.liquide ?? 0) < price) {
+      return interaction.reply({ content: `💸 Le joueur n'a pas **${price}$** en liquide.`, flags: MessageFlags.Ephemeral });
+    }
+
+    // Débit/crédit
+    buyerAcc.courant.liquide -= price;
+    updateAccount(targetId, buyerAcc);
+    if (companyId) {
+      const comp = getOrCreateAccount(companyId);
+      comp.courant.liquide = (comp.courant.liquide ?? 0) + price;
+      updateAccount(companyId, comp);
+    }
+
+    // Inventaire
+    const inv = getOrCreateInventory(targetId);
+    inv.items = inv.items || [];
+    const idx = inv.items.findIndex(i => i?.name === weapon);
+    if (idx === -1) inv.items.push({ name: weapon, quantity: 1 });
+    else inv.items[idx].quantity += 1;
+    updateInventory(targetId, inv);
+
+    // Stock --
+    stock[weapon] -= 1;
+    saveStock(stock);
+
+    // Confirmation jolie
+    const embed = new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('Vente d’arme confirmée')
+      .setDescription(
+        `**Arme :** ${weapon}\n` +
+        `**Prix :** ${price}$\n` +
+        `**Client :** <@${targetId}>\n` +
+        (companyId ? `**Compte crédité :** <@${companyId}>` : '')
+      );
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
+
+    // MAJ des messages /stock actifs
+    await updateLiveStockMessage(interaction.client, interaction.guildId);
+    return;
+  }
 };
 
-// Exemple minimal pour la gestion des comptes
-// Remplacez ou importez votre fonction réelle depuis economy.js ou un module dédié
-function getOrCreateAccount(userId) {
-  // Pour cet exemple, nous utilisons un objet en mémoire avec 1000$ par défaut
-  if (!global._accounts) global._accounts = {};
-  if (!global._accounts[userId]) {
-    global._accounts[userId] = { courant: 1000, epargne: 0, investissement: 0 };
-  }
-  return global._accounts[userId];
-}
-
-async function handleStockInteractions(interaction) {
-  // Gestion du Select Menu pour la commande /stock add
-  if (interaction.isStringSelectMenu() && interaction.customId === 'stock_select_item') {
-    const selectedItem = interaction.values[0]; // ex: "cattleman_revolver"
-
-    // Création d'un modal pour demander la quantité
-    const modal = new ModalBuilder()
-      .setCustomId(`stock_quantity_modal_${selectedItem}`)
-      .setTitle('Quantité à ajouter');
-
-    const quantityInput = new TextInputBuilder()
-      .setCustomId('stock_quantity_input')
-      .setLabel(`Combien de ${selectedItem} souhaitez-vous ajouter ?`)
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Ex: 5')
-      .setRequired(true);
-
-    const row = new ActionRowBuilder().addComponents(quantityInput);
-    modal.addComponents(row);
-
-    await interaction.showModal(modal);
-  }
-  // Gestion de la soumission du modal
-  else if (
-    interaction.type === InteractionType.ModalSubmit &&
-    interaction.customId.startsWith('stock_quantity_modal_')
-  ) {
-    const selectedItem = interaction.customId.replace('stock_quantity_modal_', '');
-    const quantityValue = interaction.fields.getTextInputValue('stock_quantity_input');
-    const quantity = parseFloat(quantityValue);
-    if (isNaN(quantity) || quantity <= 0) {
-      return interaction.reply({ content: 'Quantité invalide. Veuillez réessayer.', ephemeral: true });
-    }
-    const pricePerUnit = availableItems[selectedItem];
-    if (!pricePerUnit) {
-      return interaction.reply({ content: 'Item introuvable.', ephemeral: true });
-    }
-    const totalPrice = pricePerUnit * quantity;
-
-    // Vérification des fonds du joueur
-    const account = getOrCreateAccount(interaction.user.id);
-    if (account.courant < totalPrice) {
-      return interaction.reply({
-        content: `Fonds insuffisants. Vous avez $${account.courant.toFixed(2)}, besoin de $${totalPrice.toFixed(2)}.`,
-        ephemeral: true,
-      });
-    }
-    // Déduction des fonds du joueur
-    account.courant -= totalPrice;
-    // Ajout des fonds à l'usine de production
-    const factoryAccount = getOrCreateAccount(process.env.USINE_PRODUCTION_ID);
-    factoryAccount.courant += totalPrice;
-    // Mise à jour du stock global
-    if (!global.stockData) global.stockData = {};
-    if (!global.stockData[selectedItem]) global.stockData[selectedItem] = { quantite: 0, prixtotal: 0 };
-    global.stockData[selectedItem].quantite += quantity;
-    global.stockData[selectedItem].prixtotal += totalPrice;
-
-    const embed = new EmbedBuilder()
-      .setColor(0xff0000)
-      .setTitle('Stock mis à jour')
-      .setDescription(
-        `Vous avez ajouté **${quantity}** de **${selectedItem}**.\n` +
-        `Prix unitaire : $${pricePerUnit.toFixed(2)}\n` +
-        `Total : $${totalPrice.toFixed(2)}\n\n` +
-        `Les fonds ont été déduits et crédités à l'usine de production.`
-      );
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-}
-
-module.exports = { handleStockInteractions };
+module.exports._stockInternal = {
+  loadStock, saveStock, initAllItems, stockToEmbed, loadStockMsg, saveStockMsg, updateLiveStockMessage, chunkWeapons, fullWeaponOptions
+};
