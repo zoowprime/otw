@@ -1,3 +1,4 @@
+// src/interaction/stockInteraction.js
 const fs = require('fs');
 const path = require('path');
 const {
@@ -151,7 +152,7 @@ module.exports.handleStockInteractions = async function handleStockInteractions(
     stock[weapon] -= 1;
     saveStock(stock);
 
-    // Confirmation jolie
+    // ✅ Confirmation publique (preuve) + petit accusé éphémère pour le vendeur
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
       .setTitle('Vente d’arme confirmée')
@@ -161,7 +162,17 @@ module.exports.handleStockInteractions = async function handleStockInteractions(
         `**Client :** <@${targetId}>\n` +
         (companyId ? `**Compte crédité :** <@${companyId}>` : '')
       );
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
+
+    // 1) Message public persistant dans le salon
+    await interaction.channel.send({ embeds: [embed] }).catch(() => {});
+
+    // 2) Accusé de réception éphémère (si rien n’a encore été répondu)
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: '✅ Vente enregistrée et publiée dans ce salon.',
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    }
 
     // MAJ des messages /stock actifs
     await updateLiveStockMessage(interaction.client, interaction.guildId);
@@ -170,5 +181,13 @@ module.exports.handleStockInteractions = async function handleStockInteractions(
 };
 
 module.exports._stockInternal = {
-  loadStock, saveStock, initAllItems, stockToEmbed, loadStockMsg, saveStockMsg, updateLiveStockMessage, chunkWeapons, fullWeaponOptions
+  loadStock,
+  saveStock,
+  initAllItems,
+  stockToEmbed,
+  loadStockMsg,
+  saveStockMsg,
+  updateLiveStockMessage,
+  chunkWeapons,
+  fullWeaponOptions
 };
