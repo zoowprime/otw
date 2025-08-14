@@ -9,7 +9,7 @@ const { handleEconomyCommand }     = require('./economy');
 const { transformSessions }        = require('./transformSessions');
 const logger                       = require('./logger');
 const { getOrCreateAccount, updateAccount } = require('./economyData');
-// ⬇️ AJOUT pour /session
+// ⬇️ /session
 const { handleSessionButtons }     = require('./commands/session');
 
 // IDs pour les boutiques
@@ -69,7 +69,10 @@ require('./events/qcmNoCmd')(client);
 require('./events/heistSessions')(client);
 require('./events/candidature')(client);
 require('./events/starterPack')(client);
-require('./events/catalogueWeapons')(client);
+
+// Catalogues / panneaux
+require('./events/catalogueWeapons')(client);   // armes
+require('./events/kinumaStable')(client);       // chevaux  ⬅️ AJOUT
 
 // Chargement des commandes slash
 client.commands = new Collection();
@@ -135,11 +138,11 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // ✅ Boutons de /session (ajout)
+  // ✅ Boutons de /session
   try {
     await handleSessionButtons(interaction);
   } catch (e) {
-    // on n’écrase pas les autres handlers si ce n’est pas une interaction /session
+    // noop
   }
 
   // 2️⃣ Boutique légale
@@ -239,20 +242,32 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // 6️⃣ Autres interactions (stock, etc.)
+  // 6️⃣ Autres interactions (stocks, etc.)
   {
+    // Armes
     const { handleStockInteractions } = require('./interaction/stockInteraction');
+    // Chevaux
+    const { handleHorseStockInteractions } = require('./interaction/horseStockInteraction');
+
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      // Armes
       try {
         await handleStockInteractions(interaction);
       } catch (err) {
-        console.error('Erreur stock:', err);
+        console.error('Erreur stock (armes):', err);
         logger.sendError(err);
         if (!interaction.replied) {
-          await interaction.reply({
-            content: '❗ Erreur.',
-            flags: MessageFlags.Ephemeral
-          });
+          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+      }
+      // Chevaux
+      try {
+        await handleHorseStockInteractions(interaction);
+      } catch (err) {
+        console.error('Erreur stock (chevaux):', err);
+        logger.sendError(err);
+        if (!interaction.replied) {
+          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
       }
     }
@@ -274,4 +289,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.BOT_TOKEN);
-
