@@ -71,6 +71,7 @@ require('./events/qcmNoCmd')(client);
 require('./events/heistSessions')(client);
 require('./events/candidature')(client);
 require('./events/starterPack')(client);
+require('./events/passiveRevenue')(client);
 
 // Catalogues / panneaux
 require('./events/catalogueWeapons')(client);   // armes
@@ -294,3 +295,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.BOT_TOKEN);
+
