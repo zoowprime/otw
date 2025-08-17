@@ -5,16 +5,20 @@ const { _internal } = require('../events/passiveRevenue');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('revenus_test')
-    .setDescription('Génère immédiatement les revenus passifs (test).'),
+    .setDescription('Génère immédiatement les revenus passifs (test, n’affecte pas le timer).'),
 
   async execute(interaction) {
     try {
-      // IMPORTANT : markRun = false => n’impacte PAS le calendrier 18:00
-      await _internal.generateRevenues(interaction.client, { markRun: false });
-      await interaction.reply({ content: '⚡ Revenus générés (test).', flags: MessageFlags.Ephemeral });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await _internal.generateRevenues(interaction.client, { markRun: false }); // n’écrit pas le “lastRun”
+      await interaction.editReply('⚡ Revenus générés (test).');
     } catch (e) {
       console.error('revenus_test:', e);
-      await interaction.reply({ content: '❌ Erreur lors de la génération.', flags: MessageFlags.Ephemeral });
+      if (interaction.deferred) {
+        await interaction.editReply('❌ Erreur lors de la génération.');
+      } else {
+        await interaction.reply({ content: '❌ Erreur lors de la génération.', flags: MessageFlags.Ephemeral });
+      }
     }
   }
 };
