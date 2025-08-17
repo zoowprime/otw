@@ -11,6 +11,8 @@ const logger                       = require('./logger');
 const { getOrCreateAccount, updateAccount } = require('./economyData');
 // ⬇️ /session
 const { handleSessionButtons }     = require('./commands/session');
+// ⬇️ Agriculture (récolte / transformation / livraison)
+const agriRuntime                  = require('./agri/agriRuntime');
 
 // IDs pour les boutiques
 const SHOP_OWNER_ID           = process.env.SHOP_OWNER_ID;
@@ -72,7 +74,7 @@ require('./events/starterPack')(client);
 
 // Catalogues / panneaux
 require('./events/catalogueWeapons')(client);   // armes
-require('./events/kinumaStable')(client);       // chevaux  ⬅️ AJOUT
+require('./events/kinumaStable')(client);       // chevaux
 
 // Chargement des commandes slash
 client.commands = new Collection();
@@ -90,6 +92,9 @@ const processedMessageIds = new Set();
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
+
+  // Branche le runtime agriculture (timers, updates)
+  agriRuntime.setClient(client);
 
   // Debug /data
   try {
