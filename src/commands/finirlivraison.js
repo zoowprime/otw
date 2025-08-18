@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js');
 const agri = require('../agri/agriRuntime');
-const { FIELDS } = require('../agri/agriCommon');
+const { FIELDS, UNIT_PRICES } = require('../agri/agriCommon');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -10,6 +10,7 @@ module.exports = {
   async execute(interaction) {
     try {
       const res = await agri.finishDelivery(interaction.guildId, interaction.user);
+      const unit = UNIT_PRICES[res.item];
       const emb = new EmbedBuilder()
         .setColor(0x2ecc71)
         .setTitle('✅ Livraison complétée')
@@ -18,11 +19,11 @@ module.exports = {
           `**Item :** ${res.item} (transformé)\n` +
           `**Quantité :** ${res.qty}\n` +
           `**Destination :** ${res.dest}\n` +
-          `**Paiement :** ${res.amount}$\n` +
+          (unit ? `**Prix unitaire :** $${unit}\n` : '') +
+          `**Paiement :** $${res.amount}\n` +
           `Stock mis à jour.`
         );
 
-      // Preuve publique
       await interaction.channel.send({ embeds: [emb] }).catch(() => {});
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: '👌 Livraison enregistrée.', flags: MessageFlags.Ephemeral }).catch(() => {});
