@@ -1,18 +1,31 @@
 // src/agri/agriCommon.js
-const { EmbedBuilder, ChannelType } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
 const FIELDS = [
   { key: 'shimazu', label: 'Domaine Shimazu', env: 'HARVEST_CHANNEL_SHIMAZU' },
   { key: 'caliga',  label: 'Caliga Hall',     env: 'HARVEST_CHANNEL_CALIGA'  },
 ];
 
-const RAW_ITEMS = ['Maïs', 'Coton', 'Blé'];
-const REF_ITEMS = ['Maïs', 'Coton', 'Blé']; // mêmes noms côté transformés
+// ⬇️ AJOUT des nouveaux items + on garde les anciens
+const RAW_ITEMS = ['Canne à sucre', 'Riz', 'Tabac', 'Maïs', 'Coton', 'Blé'];
+// Les transformés partagent le même nom (ton stockage utilise les mêmes clés)
+const REF_ITEMS = ['Canne à sucre', 'Riz', 'Tabac', 'Maïs', 'Coton', 'Blé'];
+
+// ⬇️ PRIX unitaires ($) pour les **transformés**
+// (clé = nom de base côté transformé)
+const UNIT_PRICES = {
+  'Canne à sucre': 0.10,
+  'Riz':           0.08,
+  'Tabac':         0.60,
+  'Maïs':          0.015,
+  'Coton':         0.30,
+  'Blé':           0.03,
+};
 
 // Timings
 const SESSION_MS = 5 * 60 * 1000; // 5 min
 const TICK_MS = 20 * 1000;        // 20 s
-const YIELD_PER_TICK = 4;         // 4 par tick → cap récolte 50, on stoppe dès 50
+const YIELD_PER_TICK = 4;         // 4 par tick → cap récolte 50
 
 function fieldByKey(key) { return FIELDS.find(f => f.key === key); }
 function fieldLabel(key)  { return fieldByKey(key)?.label || key; }
@@ -24,8 +37,6 @@ function harvestChannelIdForField(key) {
 }
 
 function stockEmbed(fieldKey, stock) {
-  // stock format:
-  // { raw: { "Maïs": n, "Coton": n, "Blé": n }, refined: { "Maïs": n, "Coton": n, "Blé": n } }
   const lines = [];
   lines.push(`**${fieldLabel(fieldKey)} — Stock**\n`);
   lines.push(`**Bruts :**`);
@@ -54,14 +65,9 @@ function randomDest() {
   return DELIVERY_DESTINATIONS[Math.floor(Math.random() * DELIVERY_DESTINATIONS.length)];
 }
 
-function randomPayment() {
-  // 30 → 50 inclus
-  return Math.floor(Math.random() * 21) + 30;
-}
-
 module.exports = {
-  FIELDS, RAW_ITEMS, REF_ITEMS,
+  FIELDS, RAW_ITEMS, REF_ITEMS, UNIT_PRICES,
   SESSION_MS, TICK_MS, YIELD_PER_TICK,
   fieldByKey, fieldLabel, fieldKeyFromLabel, harvestChannelIdForField,
-  stockEmbed, randomDest, randomPayment
+  stockEmbed, randomDest
 };
