@@ -17,12 +17,18 @@ function stockFileForField(fieldKey) {
 function loadJSON(p, fallback = {}) { try { return JSON.parse(fs.readFileSync(p, 'utf8') || JSON.stringify(fallback)); } catch { return fallback; } }
 function saveJSON(p, obj) { try { fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf8'); } catch {} }
 
-// STOCK per field
+// ➕ Défauts mis à jour avec les nouveaux items
 function loadStock(fieldKey) {
   const p = stockFileForField(fieldKey);
   const s = loadJSON(p, {});
-  if (!s.raw) s.raw = { 'Maïs': 0, 'Coton': 0, 'Blé': 0 };
-  if (!s.refined) s.refined = { 'Maïs': 0, 'Coton': 0, 'Blé': 0 };
+  if (!s.raw) s.raw = {
+    'Canne à sucre': 0, 'Riz': 0, 'Tabac': 0,
+    'Maïs': 0, 'Coton': 0, 'Blé': 0
+  };
+  if (!s.refined) s.refined = {
+    'Canne à sucre': 0, 'Riz': 0, 'Tabac': 0,
+    'Maïs': 0, 'Coton': 0, 'Blé': 0
+  };
   return s;
 }
 function saveStock(fieldKey, stock) {
