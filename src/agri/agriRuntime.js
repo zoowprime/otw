@@ -1,8 +1,8 @@
 // src/agri/agriRuntime.js
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const {
-  RAW_ITEMS, SESSION_MS, TICK_MS, YIELD_PER_TICK,
-  fieldLabel, harvestChannelIdForField, stockEmbed, randomDest, randomPayment
+  RAW_ITEMS, UNIT_PRICES, SESSION_MS, TICK_MS, YIELD_PER_TICK,
+  fieldLabel, harvestChannelIdForField, stockEmbed, randomDest
 } = require('./agriCommon');
 const {
   loadStock, saveStock,
@@ -50,7 +50,6 @@ function ensureGuildSessions(gid) {
 }
 
 /** ------------------ RÉCOLTE ------------------ **/
-
 async function startHarvest(guildId, user, fieldKey, item) {
   if (!RAW_ITEMS.includes(item)) throw new Error('Item brut invalide');
   const k = key(guildId, fieldKey, user.id);
@@ -66,13 +65,11 @@ async function startHarvest(guildId, user, fieldKey, item) {
   };
   harvestTimers.set(k, ctx);
 
-  // persistance minimale (optionnel)
   const sess = ensureGuildSessions(guildId);
   if (!sess[guildId][fieldKey]) sess[guildId][fieldKey] = {};
   sess[guildId][fieldKey][user.id] = { item, startedAt: now, willEndAt: ctx.willEndAt, count: 0 };
   saveSessions(sess);
 
-  // Ticks 20 s
   ctx.interval = setInterval(async () => {
     const now2 = Date.now();
     if (now2 >= ctx.willEndAt || ctx.count >= 50) {
@@ -80,11 +77,9 @@ async function startHarvest(guildId, user, fieldKey, item) {
       await finalizeHarvest(guildId, user, fieldKey);
       return;
     }
-    // incrémente
     const add = Math.min(YIELD_PER_TICK, 50 - ctx.count);
     ctx.count += add;
 
-    // update persistance
     const sess2 = loadSessions();
     if (sess2[guildId]?.[fieldKey]?.[user.id]) {
       sess2[guildId][fieldKey][user.id].count = ctx.count;
@@ -97,7 +92,7 @@ async function startHarvest(guildId, user, fieldKey, item) {
       guildId,
       fieldKey,
       `🌾 **Récolte — ${fieldLabel(fieldKey)}**\n` +
-      `<@${user.id}> récolte du **${item}**… (t+${elapsed}s, reste ~${remain}s)\n` +
+      `<@${user.id}> récolte du **${ctx.item}**… (t+${elapsed}s, reste ~${remain}s)\n` +
       `Total provisoire: **${ctx.count}/50**`
     );
   }, TICK_MS);
@@ -106,15 +101,13 @@ async function startHarvest(guildId, user, fieldKey, item) {
 async function finalizeHarvest(guildId, user, fieldKey) {
   const k = key(guildId, fieldKey, user.id);
   const ctx = harvestTimers.get(k);
-  if (!ctx) return; // déjà finalisé
+  if (!ctx) return;
   clearInterval(ctx.interval);
 
-  // Transferer au stock (brut)
   const s = loadStock(fieldKey);
   s.raw[ctx.item] = (s.raw[ctx.item] ?? 0) + ctx.count;
   saveStock(fieldKey, s);
 
-  // Nettoyage sessions
   const sess = loadSessions();
   if (sess[guildId]?.[fieldKey]?.[user.id]) {
     delete sess[guildId][fieldKey][user.id];
@@ -123,7 +116,6 @@ async function finalizeHarvest(guildId, user, fieldKey) {
 
   harvestTimers.delete(k);
 
-  // Message fin + MAJ live stock
   await sendHarvestTick(
     guildId,
     fieldKey,
@@ -142,7 +134,6 @@ async function stopHarvest(guildId, user, fieldKey) {
 }
 
 /** ------------------ TRANSFORMATION ------------------ **/
-
 async function startTransform(guildId, user, fieldKey, item) {
   if (!RAW_ITEMS.includes(item)) throw new Error('Item brut invalide');
   const k = key(guildId, fieldKey, user.id);
@@ -172,7 +163,7 @@ async function startTransform(guildId, user, fieldKey, item) {
       guildId,
       fieldKey,
       `⚙️ **Transformation — ${fieldLabel(fieldKey)}**\n` +
-      `<@${user.id}> transforme du **${item}**… (t+${elapsed}s, reste ~${remain}s)`
+      `<@${user.id}> transforme du **${ctx.item}**… (t+${elapsed}s, reste ~${remain}s)`
     );
   }, TICK_MS);
 }
@@ -213,7 +204,6 @@ async function stopTransform(guildId, user, fieldKey) {
 }
 
 /** ------------------ LIVRAISONS ------------------ **/
-
 function ensureGuildDeliveries(gid) {
   const d = loadDeliveries();
   if (!d[gid]) d[gid] = {};
@@ -221,13 +211,11 @@ function ensureGuildDeliveries(gid) {
 }
 
 async function startDelivery(guildId, user, fieldKey, item, qty) {
-  // Vérif stock transformé
   const s = loadStock(fieldKey);
   const have = s.refined[item] ?? 0;
   if (qty <= 0) throw new Error('Quantité invalide');
   if (qty > have) throw new Error(`Stock insuffisant: ${item} transformé disponible = ${have}`);
 
-  // Réservation
   const d = ensureGuildDeliveries(guildId);
   d[guildId][user.id] = {
     fieldKey, item, qty,
@@ -249,33 +237,36 @@ async function finishDelivery(guildId, user) {
   // Décrément stock transformé
   const s = loadStock(fieldKey);
   const have = s.refined[item] ?? 0;
-  const used = Math.min(have, qty); // sécurité si stock a bougé
+  const used = Math.min(have, qty);
   s.refined[item] = have - used;
   saveStock(fieldKey, s);
 
-  // Paiement 30–50$
-  const amount = randomPayment();
+  // 💵 Paiement = prix_unitaire(item transformé) * qty
+  const unit = UNIT_PRICES[item];
+  if (typeof unit !== 'number') {
+    // sécurité : ne pas bloquer, mais aucun paiement si non configuré
+    delete d[guildId][user.id];
+    saveDeliveries(d);
+    await updateLiveStockMessage(guildId, fieldKey);
+    return { fieldKey, item, qty: used, dest, amount: 0 };
+  }
+  const amount = +(unit * used).toFixed(2);
   const acc = getOrCreateAccount(user.id);
+  acc.courant = acc.courant || { liquide: 0, banque: 0 };
   acc.courant.liquide = (acc.courant.liquide ?? 0) + amount;
   updateAccount(user.id, acc);
 
-  // Nettoyage
   delete d[guildId][user.id];
   saveDeliveries(d);
 
-  // Retour
   await updateLiveStockMessage(guildId, fieldKey);
-  return { fieldKey, item, qty: used, dest, amount };
+  return { fieldKey, item, qty: used, dest, amount, unit };
 }
 
 module.exports = {
   setClient,
-  // Récolte
   startHarvest, stopHarvest,
-  // Transformation
   startTransform, stopTransform,
-  // Livraison
   startDelivery, finishDelivery,
-  // Stock live
   updateLiveStockMessage
 };
