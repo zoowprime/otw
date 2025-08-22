@@ -1,6 +1,8 @@
+// src/commands/stock.js
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { _stockInternal } = require('../interaction/stockInteraction');       // armes
-const { _horseStockInternal } = require('../interaction/horseStockInteraction'); // chevaux
+const { _stockInternal } = require('../interaction/stockInteraction'); // armes
+const { _horseStockInternal } = require('../interaction/horseStockInteraction'); // Kinuma
+const { _hockleyHorseStockInternal } = require('../interaction/hockleyHorseStockInteraction'); // Hockley
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,7 +14,8 @@ module.exports = {
         .setRequired(true)
         .addChoices(
           { name: 'tetsuironworks', value: 'tetsuironworks' },
-          { name: 'KinumaStable',   value: 'kinuma' }
+          { name: 'KinumaStable',   value: 'kinuma' },
+          { name: 'HockleysHorse',  value: 'hockley' },
         )
     ),
 
@@ -36,6 +39,16 @@ module.exports = {
       const refs = _horseStockInternal.loadStockMsg();
       refs[interaction.guildId] = { channelId: sent.channelId, messageId: sent.id };
       _horseStockInternal.saveStockMsg(refs);
+      return;
+    }
+
+    if (source === 'hockley') {
+      const stock = { ..._hockleyHorseStockInternal.initAllHorses(), ..._hockleyHorseStockInternal.loadStock() };
+      const embed = _hockleyHorseStockInternal.stockToEmbed(stock);
+      const sent = await interaction.reply({ embeds: [embed], fetchReply: true });
+      const refs = _hockleyHorseStockInternal.loadStockMsg();
+      refs[interaction.guildId] = { channelId: sent.channelId, messageId: sent.id };
+      _hockleyHorseStockInternal.saveStockMsg(refs);
       return;
     }
 
