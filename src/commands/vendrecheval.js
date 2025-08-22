@@ -1,3 +1,4 @@
+// src/commands/vendrecheval.js
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
@@ -5,12 +6,23 @@ const {
   StringSelectMenuOptionBuilder,
   MessageFlags,
 } = require('discord.js');
-const { _horseStockInternal } = require('../interaction/horseStockInteraction');
+
+const { _horseStockInternal } = require('../interaction/horseStockInteraction');         // Kinuma
+const { _hockleyHorseStockInternal } = require('../interaction/hockleyHorseStockInteraction'); // Hockley
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('vendrecheval')
-    .setDescription('Vendre un cheval depuis le stock Kinuma (liste déroulante, montre aussi ceux à 0).')
+    .setDescription('Vendre un cheval depuis le stock (Kinuma ou Hockley).')
+    .addStringOption(o =>
+      o.setName('ecurie')
+        .setDescription('Choisis l’écurie')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Kinuma Stable', value: 'kinuma' },
+          { name: 'Hockley’s Horse', value: 'hockley' },
+        )
+    )
     .addUserOption(o =>
       o.setName('cible')
         .setDescription('Acheteur')
@@ -24,12 +36,22 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    const stable = interaction.options.getString('ecurie', true);
     const target = interaction.options.getUser('cible', true);
     const price  = interaction.options.getInteger('prix', true);
 
-    const stock = { ..._horseStockInternal.initAllHorses(), ..._horseStockInternal.loadStock() };
+    let stock, initAll, customBaseId;
 
-    // Toutes les montures, même à 0 (affiche la quantité)
+    if (stable === 'kinuma') {
+      initAll = _horseStockInternal.initAllHorses;
+      stock   = { ...initAll(), ..._horseStockInternal.loadStock() };
+      customBaseId = 'sell_horse_select_kinuma';
+    } else {
+      initAll = _hockleyHorseStockInternal.initAllHorses;
+      stock   = { ...initAll(), ..._hockleyHorseStockInternal.loadStock() };
+      customBaseId = 'sell_horse_select_hockley';
+    }
+
     const options = Object.keys(stock).map(name =>
       new StringSelectMenuOptionBuilder()
         .setLabel(name)
@@ -38,14 +60,14 @@ module.exports = {
     );
 
     const menu = new StringSelectMenuBuilder()
-      .setCustomId(`sell_horse_select:${target.id}:${price}`)
+      .setCustomId(`${customBaseId}:${target.id}:${price}`)
       .setPlaceholder(`Choisis le cheval à vendre à ${target.username}`)
-      .addOptions(options.slice(0, 25)); // si >25, on splittera plus tard (actuellement ça passe)
+      .addOptions(options.slice(0, 25)); // (si un jour >25, on splittra)
 
     const row = new ActionRowBuilder().addComponents(menu);
 
     await interaction.reply({
-      content: `Sélectionne le cheval à vendre à <@${target.id}> pour **${price}$** :\n*(Ceux à 0 sont affichés mais **non vendables**.)*`,
+      content: `**${stable === 'kinuma' ? 'Kinuma Stable' : 'Hockley’s Horse'}** — Sélectionne le cheval à vendre à <@${target.id}> pour **${price}$** :\n*(Ceux à 0 sont affichés mais **non vendables**.)*`,
       components: [row],
       flags: MessageFlags.Ephemeral,
     });
