@@ -76,7 +76,8 @@ require('./events/trainMerch')(client);
 
 // Catalogues / panneaux
 require('./events/catalogueWeapons')(client);   // armes
-require('./events/kinumaStable')(client);       // chevaux
+require('./events/kinumaStable')(client);       // chevaux (Kinuma)
+require('./events/hockleyStable')(client);      // chevaux (Hockley)  ⬅️ AJOUT
 
 // Chargement des commandes slash
 client.commands = new Collection();
@@ -137,10 +138,12 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       console.error('Erreur slash:', err);
       logger.sendError(err);
-      await interaction.reply({
-        content: '❗ Une erreur est survenue.',
-        flags: MessageFlags.Ephemeral
-      });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❗ Une erreur est survenue.',
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
     }
     return;
   }
@@ -215,7 +218,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({
           content: '❗ Erreur.',
           flags: MessageFlags.Ephemeral
-        });
+        }).catch(() => {});
       }
     }
     return;
@@ -243,7 +246,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({
           content: '❗ Erreur.',
           flags: MessageFlags.Ephemeral
-        });
+        }).catch(() => {});
       }
     }
     return;
@@ -253,8 +256,10 @@ client.on('interactionCreate', async interaction => {
   {
     // Armes
     const { handleStockInteractions } = require('./interaction/stockInteraction');
-    // Chevaux
+    // Chevaux (Kinuma)
     const { handleHorseStockInteractions } = require('./interaction/horseStockInteraction');
+    // Chevaux (Hockley) ⬅️ AJOUT
+    const { handleHockleyHorseStockInteractions } = require('./interaction/hockleyHorseStockInteraction');
 
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
       // Armes
@@ -267,11 +272,21 @@ client.on('interactionCreate', async interaction => {
           await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
       }
-      // Chevaux
+      // Chevaux (Kinuma)
       try {
         await handleHorseStockInteractions(interaction);
       } catch (err) {
-        console.error('Erreur stock (chevaux):', err);
+        console.error('Erreur stock (chevaux/Kinuma):', err);
+        logger.sendError(err);
+        if (!interaction.replied) {
+          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+      }
+      // Chevaux (Hockley) ⬅️ AJOUT
+      try {
+        await handleHockleyHorseStockInteractions(interaction);
+      } catch (err) {
+        console.error('Erreur stock (chevaux/Hockley):', err);
         logger.sendError(err);
         if (!interaction.replied) {
           await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -296,5 +311,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.BOT_TOKEN);
-
-
