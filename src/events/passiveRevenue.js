@@ -32,19 +32,19 @@ const LE_GARRISON_USER         = process.env.LE_GARRISON_USER;
 // target: 'entreprise' => crédit sur account.entreprise.liquide
 // target: 'courant'    => crédit sur account.courant.liquide
 const entreprises = [
-  { name: "Kokuryu Holdings",                  min: 250,   max: 600,  account: SHIMAZU_USER,              target: 'entreprise' },
-  { name: "Tetsuryu Freight & Co.",            min: 0,    max: 350,  account: TETSURYU_USER,             target: 'entreprise' },
-  { name: "Kinuma Stable",                     min: 0,    max: 150,  account: KINUMA_ECURIE_USER,        target: 'entreprise' },
-  { name: "Tetsu Ironworks",                   min: 0,    max: 190,  account: TETSU_IRONWORKS_USER,      target: 'entreprise' },
-  { name: "La plantation Shimazu",             min: 0,    max: 100,  account: SHIMAZU_USER,              target: 'entreprise' },
-  { name: "La plantation de Caliga Hall",      min: 0,    max: 120,  account: CALIGA_HALL_USER,          target: 'entreprise' },
-  { name: "Entreprises de Belleshore (Total)", min: 1000, max: 3000, account: GOUVERNEMENT_USER,         target: 'courant'    },
+  { name: "Maison Rosenfeld",                  min: 250,   max: 600,  account: SHIMAZU_USER,              target: 'entreprise' },
+  { name: "Rosenfeld Rail & Steel Co.",        min: 50,    max: 350,  account: TETSURYU_USER,             target: 'entreprise' },
+  { name: "Ecurie MathieuMH",                  min: 50,    max: 150,  account: KINUMA_ECURIE_USER,        target: 'entreprise' },
+  { name: "Rosenfeld Firearms Co.",            min: 50,    max: 190,  account: TETSU_IRONWORKS_USER,      target: 'entreprise' },
+  { name: "La plantation Rosenfeld",           min: 50,    max: 300,  account: SHIMAZU_USER,              target: 'entreprise' },
+  { name: "La plantation Hockley",             min: 50,    max: 120,  account: CALIGA_HALL_USER,          target: 'entreprise' },
+  { name: "Entreprises de Belleshore (Total)", min: 3000, max: 7000, account: GOUVERNEMENT_USER,         target: 'courant'    },
 
   // 🔥 Nouvelles entreprises
   { name: "Hockley's Industries & Co.",        min: 100,  max: 500,  account: HOCKLEYS_INDUSTRIES_USER,  target: 'entreprise' },
   { name: "Hockley's Horses",                  min: 0,    max: 150,  account: HOCKLEYS_HORSES_USER,      target: 'entreprise' },
   { name: "Winchester Bank",                   min: 300,  max: 1000, account: WINCHESTER_BANK_USER,      target: 'entreprise' },
-  { name: "Meiyo Bank",                        min: 150,  max: 650,  account: MEIYO_BANK_USER,           target: 'entreprise' },
+  { name: "Rosenfeld Banking House",           min: 300,  max: 1250,  account: MEIYO_BANK_USER,           target: 'entreprise' },
   { name: "Le Garrison",                       min: 100,    max: 200,  account: LE_GARRISON_USER,          target: 'entreprise' },
 ];
 
