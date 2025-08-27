@@ -15,37 +15,39 @@ function saveState(obj) { try { fs.writeFileSync(STATE_FILE, JSON.stringify(obj,
 const REVENUS_PASSIFS_CHANNEL = process.env.REVENUS_PASSIFS_CHANNEL;
 
 // Comptes existants
-const SHIMAZU_USER         = process.env.SHIMAZU_USER;
-const TETSURYU_USER        = process.env.TETSURYU_USER;
-const KINUMA_ECURIE_USER   = process.env.KINUMA_ECURIE_USER;
-const TETSU_IRONWORKS_USER = process.env.TETSU_IRONWORKS_USER;
-const CALIGA_HALL_USER     = process.env.CALIGA_HALL_USER;
+const ROSENFELD_USER         = process.env.ROSENFELD_USER;
+const ROSENFELDRAILSTEEL_USER        = process.env.ROSENFELDRAILSTEEL_USER;
+const MATHIEUMH_ECURIE_USER   = process.env.MATHIEUMH_ECURIE_USER;
+const ROSENFELDFIREARMS_USER = process.env.ROSENFELDFIREARMS_USER;
+const ROSENFELDHALL_USER     = process.env.ROSENFELDHALL_USER;
 const GOUVERNEMENT_USER    = process.env.GOUVERNEMENT_USER;
 
 // ✨ Nouveaux comptes (ajoute ces variables dans id.env)
 const HOCKLEYS_INDUSTRIES_USER = process.env.HOCKLEYS_INDUSTRIES_USER;
 const HOCKLEYS_HORSES_USER     = process.env.HOCKLEYS_HORSES_USER;
 const WINCHESTER_BANK_USER     = process.env.WINCHESTER_BANK_USER;
-const MEIYO_BANK_USER          = process.env.MEIYO_BANK_USER;
+const ROSENFELD_BANKINGHOUSE_USER          = process.env.ROSENFELD_BANKINGHOUSE_USER;
 const LE_GARRISON_USER         = process.env.LE_GARRISON_USER;
+const USINE_ARME_PROD          = process.env.USINE_ARME_PROD;
 
 // target: 'entreprise' => crédit sur account.entreprise.liquide
 // target: 'courant'    => crédit sur account.courant.liquide
 const entreprises = [
-  { name: "Maison Rosenfeld",                  min: 250,   max: 600,  account: SHIMAZU_USER,              target: 'entreprise' },
-  { name: "Rosenfeld Rail & Steel Co.",        min: 50,    max: 350,  account: TETSURYU_USER,             target: 'entreprise' },
-  { name: "Ecurie MathieuMH",                  min: 50,    max: 150,  account: KINUMA_ECURIE_USER,        target: 'entreprise' },
-  { name: "Rosenfeld Firearms Co.",            min: 50,    max: 190,  account: TETSU_IRONWORKS_USER,      target: 'entreprise' },
-  { name: "La plantation Rosenfeld",           min: 50,    max: 300,  account: SHIMAZU_USER,              target: 'entreprise' },
-  { name: "La plantation Hockley",             min: 50,    max: 120,  account: CALIGA_HALL_USER,          target: 'entreprise' },
+  { name: "Maison Rosenfeld",                  min: 250,   max: 600,  account: ROSENFELD_USER,            target: 'entreprise' },
+  { name: "Rosenfeld Rail & Steel Co.",        min: 50,    max: 350,  account: ROSENFELDRAILSTEEL_USER,   target: 'entreprise' },
+  { name: "Ecurie MathieuMH",                  min: 50,    max: 150,  account: MATHIEUMH_ECURIE_USER,     target: 'entreprise' },
+  { name: "Rosenfeld Firearms Co.",            min: 50,    max: 190,  account: ROSENFELDFIREARMS_USER,      target: 'entreprise' },
+  { name: "La plantation Rosenfeld Ranch",     min: 50,    max: 300,  account: ROSENFELD_USER,              target: 'entreprise' },
+  { name: "La plantation Rosenfeld Manor",             min: 50,    max: 150,  account: ROSENFELDHALL_USER,          target: 'entreprise' },
   { name: "Entreprises de Belleshore (Total)", min: 3000, max: 7000, account: GOUVERNEMENT_USER,         target: 'courant'    },
 
   // 🔥 Nouvelles entreprises
-  { name: "Hockley's Industries & Co.",        min: 100,  max: 500,  account: HOCKLEYS_INDUSTRIES_USER,  target: 'entreprise' },
-  { name: "Hockley's Horses",                  min: 0,    max: 150,  account: HOCKLEYS_HORSES_USER,      target: 'entreprise' },
+  { name: "ENTREPRISE A REPRENDRE",        min: 100,  max: 500,  account: HOCKLEYS_INDUSTRIES_USER,  target: 'entreprise' },
+  { name: "ENTREPRISE A REPRENDRE",                  min: 0,    max: 150,  account: HOCKLEYS_HORSES_USER,      target: 'entreprise' },
   { name: "Winchester Bank",                   min: 300,  max: 1000, account: WINCHESTER_BANK_USER,      target: 'entreprise' },
-  { name: "Rosenfeld Banking House",           min: 300,  max: 1250,  account: MEIYO_BANK_USER,           target: 'entreprise' },
-  { name: "Le Garrison",                       min: 100,    max: 200,  account: LE_GARRISON_USER,          target: 'entreprise' },
+  { name: "Rosenfeld Banking House",           min: 300,  max: 1250,  account: ROSENFELD_BANKINGHOUSE_USER,           target: 'entreprise' },
+  { name: "ENTREPRISE A REPRENDRE",                       min: 100,    max: 200,  account: LE_GARRISON_USER,          target: 'entreprise' },
+  { name: "Usine de production d'arme Rosenfeld", min: 500,    max:3200,  account: USINE_ARME_PROD,          target: 'entreprise' },
 ];
 
 function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
