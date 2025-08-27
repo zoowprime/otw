@@ -17,7 +17,7 @@ function stockFileForField(fieldKey) {
 function loadJSON(p, fallback = {}) { try { return JSON.parse(fs.readFileSync(p, 'utf8') || JSON.stringify(fallback)); } catch { return fallback; } }
 function saveJSON(p, obj) { try { fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf8'); } catch {} }
 
-// ➕ Défauts mis à jour avec les nouveaux items
+// Défauts avec les 6 items
 function loadStock(fieldKey) {
   const p = stockFileForField(fieldKey);
   const s = loadJSON(p, {});
