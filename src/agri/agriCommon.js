@@ -2,8 +2,8 @@
 const { EmbedBuilder } = require('discord.js');
 
 const FIELDS = [
-  { key: 'shimazu', label: 'Domaine Shimazu', env: 'HARVEST_CHANNEL_SHIMAZU' },
-  { key: 'caliga',  label: 'Caliga Hall',     env: 'HARVEST_CHANNEL_CALIGA'  },
+  { key: 'Rosenfeld Ranch', label: 'Emerald Ranch', env: 'HARVEST_CHANNEL_SHIMAZU' },
+  { key: 'Rosenfeld Manor',  label: 'Braithwaite Manor',     env: 'HARVEST_CHANNEL_SHIMAZU'  },
 ];
 
 // ⬇️ AJOUT des nouveaux items + on garde les anciens
