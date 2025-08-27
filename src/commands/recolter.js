@@ -1,3 +1,4 @@
+// src/commands/recolter.js
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const agri = require('../agri/agriRuntime');
 const { FIELDS, RAW_ITEMS } = require('../agri/agriCommon');
@@ -5,7 +6,7 @@ const { FIELDS, RAW_ITEMS } = require('../agri/agriCommon');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('recolter')
-    .setDescription('Démarrer une récolte de 5 minutes (messages toutes les 20s, cap 50).')
+    .setDescription('Démarrer une récolte (tick 20s, sans limite) — s’arrête avec /stoprecolte.')
     .addStringOption(o =>
       o.setName('champ')
         .setDescription('Sélectionne le champ')
@@ -24,7 +25,10 @@ module.exports = {
     const item     = interaction.options.getString('item', true);
     try {
       await agri.startHarvest(interaction.guildId, interaction.user, fieldKey, item);
-      await interaction.reply({ content: `🌾 Récolte lancée sur **${item}** (${FIELDS.find(f => f.key===fieldKey).label}).`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `🌾 Récolte lancée sur **${item}** (${FIELDS.find(f => f.key===fieldKey).label}).`,
+        flags: MessageFlags.Ephemeral
+      });
     } catch (e) {
       await interaction.reply({ content: `❌ ${e.message}`, flags: MessageFlags.Ephemeral });
     }
