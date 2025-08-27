@@ -2,17 +2,15 @@
 const { EmbedBuilder } = require('discord.js');
 
 const FIELDS = [
-  { key: 'Rosenfeld Ranch', label: 'Emerald Ranch', env: 'HARVEST_CHANNEL_SHIMAZU' },
-  { key: 'Rosenfeld Manor',  label: 'Braithwaite Manor',     env: 'HARVEST_CHANNEL_SHIMAZU'  },
+  { key: 'Rosenfeld Ranch', label: 'Emerald Ranch',     env: 'HARVEST_CHANNEL_SHIMAZU' },
+  { key: 'Rosenfeld Manor', label: 'Braithwaite Manor', env: 'HARVEST_CHANNEL_SHIMAZU' },
 ];
 
-// ⬇️ AJOUT des nouveaux items + on garde les anciens
+// Items bruts (et transformés : mêmes clés)
 const RAW_ITEMS = ['Canne à sucre', 'Riz', 'Tabac', 'Maïs', 'Coton', 'Blé'];
-// Les transformés partagent le même nom (ton stockage utilise les mêmes clés)
 const REF_ITEMS = ['Canne à sucre', 'Riz', 'Tabac', 'Maïs', 'Coton', 'Blé'];
 
-// ⬇️ PRIX unitaires ($) pour les **transformés**
-// (clé = nom de base côté transformé)
+// Prix unitaires ($) pour les items **transformés**
 const UNIT_PRICES = {
   'Canne à sucre': 0.10,
   'Riz':           0.08,
@@ -22,10 +20,9 @@ const UNIT_PRICES = {
   'Blé':           0.03,
 };
 
-// Timings
-const SESSION_MS = 5 * 60 * 1000; // 5 min
-const TICK_MS = 20 * 1000;        // 20 s
-const YIELD_PER_TICK = 4;         // 4 par tick → cap récolte 50
+// Ticking (configurable)
+const TICK_MS = 20 * 1000;   // un message / incrément toutes les 20s
+const YIELD_PER_TICK = 4;    // +4 unités / tick (récolte & transformation)
 
 function fieldByKey(key) { return FIELDS.find(f => f.key === key); }
 function fieldLabel(key)  { return fieldByKey(key)?.label || key; }
@@ -39,9 +36,9 @@ function harvestChannelIdForField(key) {
 function stockEmbed(fieldKey, stock) {
   const lines = [];
   lines.push(`**${fieldLabel(fieldKey)} — Stock**\n`);
-  lines.push(`**Bruts :**`);
+  lines.push('**Bruts :**');
   RAW_ITEMS.forEach(n => lines.push(`• ${n} x ${stock.raw?.[n] ?? 0}`));
-  lines.push(`\n**Transformés :**`);
+  lines.push('\n**Transformés :**');
   REF_ITEMS.forEach(n => lines.push(`• ${n} x ${stock.refined?.[n] ?? 0}`));
 
   return new EmbedBuilder()
@@ -67,7 +64,7 @@ function randomDest() {
 
 module.exports = {
   FIELDS, RAW_ITEMS, REF_ITEMS, UNIT_PRICES,
-  SESSION_MS, TICK_MS, YIELD_PER_TICK,
+  TICK_MS, YIELD_PER_TICK,
   fieldByKey, fieldLabel, fieldKeyFromLabel, harvestChannelIdForField,
   stockEmbed, randomDest
 };
