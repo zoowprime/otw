@@ -1,3 +1,4 @@
+// src/commands/transformer.js
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const agri = require('../agri/agriRuntime');
 const { FIELDS, RAW_ITEMS } = require('../agri/agriCommon');
@@ -5,7 +6,7 @@ const { FIELDS, RAW_ITEMS } = require('../agri/agriCommon');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('transformer')
-    .setDescription('Démarrer une transformation de 5 minutes (messages toutes les 20s).')
+    .setDescription('Démarrer une transformation (tick 20s, sans limite) — s’arrête avec /stoptransform.')
     .addStringOption(o =>
       o.setName('champ')
         .setDescription('Sélectionne le champ')
@@ -24,7 +25,10 @@ module.exports = {
     const item     = interaction.options.getString('item', true);
     try {
       await agri.startTransform(interaction.guildId, interaction.user, fieldKey, item);
-      await interaction.reply({ content: `⚙️ Transformation lancée sur **${item}** (${FIELDS.find(f => f.key===fieldKey).label}).`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `⚙️ Transformation lancée sur **${item}** (${FIELDS.find(f => f.key===fieldKey).label}).`,
+        flags: MessageFlags.Ephemeral
+      });
     } catch (e) {
       await interaction.reply({ content: `❌ ${e.message}`, flags: MessageFlags.Ephemeral });
     }
