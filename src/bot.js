@@ -5,7 +5,7 @@ const {
   GatewayIntentBits,
   Collection,
   MessageFlags,
-  ActivityType, // statut d’activité
+  ActivityType,
 } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
@@ -13,15 +13,14 @@ const path = require('path');
 // Modules internes
 const ticketModule                         = require('./ticket.js');
 const { handleEconomyCommand }             = require('./economy');
-const { transformSessions }                = require('./transformSessions');
+const { transformSessions }                = require('./transformSessions'); // (si utilisé ailleurs)
 const logger                               = require('./logger');
 const { getOrCreateAccount, updateAccount }= require('./economyData');
-// ⬇️ /session
+// /session (boutons)
 const { handleSessionButtons }             = require('./commands/session');
-// ⬇️ Agriculture (récolte / transformation / livraison)
+// Agriculture (récolte / transformation / livraison)
 const agriRuntime                          = require('./agri/agriRuntime');
-
-// ⬇️ Inventaire (menus déroulants donner/voler)
+// Inventaire (menus déroulants donner/voler)
 const { handleInventoryInteractions }      = require('./interaction/inventoryInteraction');
 
 // IDs pour les boutiques
@@ -101,19 +100,19 @@ for (const file of commandFiles) {
 // Prévenir les doublons de messages texte
 const processedMessageIds = new Set();
 
-// Au démarrage
+// Démarrage
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
 
-  // ⬇️ Statut d’activité du bot
+  // Statut d’activité configurable
   const activityText = process.env.BOT_ACTIVITY_TEXT || 'Old Town Western V.3';
   const activityTypeEnv = (process.env.BOT_ACTIVITY_TYPE || 'PLAYING').toUpperCase();
   const activityType =
     activityTypeEnv === 'WATCHING'  ? ActivityType.Watching  :
     activityTypeEnv === 'LISTENING' ? ActivityType.Listening :
     activityTypeEnv === 'COMPETING' ? ActivityType.Competing :
-    ActivityType.Playing; // défaut
+    ActivityType.Playing;
 
   try {
     client.user.setPresence({
@@ -159,7 +158,7 @@ client.on('interactionCreate', async interaction => {
   console.log('Interaction reçue:', interaction.customId || interaction.commandName);
   logger.sendLog(`Interaction: ${interaction.customId || interaction.commandName}`);
 
-  // 1️⃣ Slash commands
+  // Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -178,21 +177,21 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // ✅ Boutons de /session
+  // Boutons de /session
   try {
     await handleSessionButtons(interaction);
   } catch {
     // noop
   }
 
-  // 2️⃣ Boutique légale
+  // Boutique légale (menus)
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_buy') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const key = interaction.values[0], it = legalItems[key];
     if (!it) return interaction.editReply('❌ Article introuvable.');
     const buyerId = interaction.user.id;
     const buyer   = getOrCreateAccount(buyerId);
-    if (buyer.courant.banque < it.price) {
+    if ((buyer.courant?.banque ?? 0) < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
     buyer.courant.banque -= it.price;
@@ -205,7 +204,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`);
   }
 
-  // 3️⃣ Boutique illégale
+  // Boutique illégale (menus)
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_illegal_buy') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (!interaction.member.roles.cache.has(ILLEGAL_CONTACT_ROLE_ID)) {
@@ -215,7 +214,7 @@ client.on('interactionCreate', async interaction => {
     if (!it) return interaction.editReply('❌ Article introuvable.');
     const buyerId = interaction.user.id;
     const buyer   = getOrCreateAccount(buyerId);
-    if (buyer.courant.banque < it.price) {
+    if ((buyer.courant?.banque ?? 0) < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
     buyer.courant.banque -= it.price;
@@ -233,7 +232,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // 4️⃣ Tickets
+  // Tickets
   if (
     (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') ||
     (interaction.isButton() && ['close_ticket','reopen_ticket','delete_ticket'].includes(interaction.customId))
@@ -253,7 +252,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // 5️⃣ En ville / Déconnecté
+  // En ville / Déconnecté
   if (interaction.isButton() && ['en_ville','deconnecte'].includes(interaction.customId)) {
     const role   = interaction.guild.roles.cache.get('1378037596566978561');
     const member = interaction.member;
@@ -281,7 +280,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // 6️⃣ Autres interactions (stocks, inventaire, etc.)
+  // Autres interactions (stocks, chevaux, inventaire…)
   {
     // Armes
     const { handleStockInteractions } = require('./interaction/stockInteraction');
@@ -347,6 +346,16 @@ client.on('messageCreate', async message => {
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
   }
+});
+
+// Anti-crash doux (utile sur Render worker)
+process.on('unhandledRejection', (err) => {
+  console.error('UnhandledRejection:', err);
+  logger.sendError(err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('UncaughtException:', err);
+  logger.sendError(err);
 });
 
 client.login(process.env.BOT_TOKEN);
