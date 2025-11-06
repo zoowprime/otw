@@ -1,198 +1,173 @@
 // src/commands/inventaire.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getOrCreateInventory, updateInventory } = require('../inventoryData');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 
-// Définition des types d’objets disponibles
-const typeChoices = [
-  { name: 'Cheval', value: 'cheval' },
-  { name: 'Arme', value: 'arme' },
-  { name: 'Accessoire', value: 'accessoire' }
-];
+const {
+  getOrCreateInventory,
+} = require('../inventoryData');
 
-// Listes d'objets par catégorie (exemples – vous pouvez compléter avec la liste complète)
-const objectsList = {
-  cheval: [
-    { name: 'Mustang - Bai Sauvage', value: 'Mustang_Bai_Sauvage' },
-    { name: 'American Paint - Tobiano', value: 'American_Paint_Tobiano' }
-    // Ajoutez ici le reste des chevaux...
-  ],
-  arme: [
-    { name: 'Cattleman Revolver', value: 'Cattleman_Revolver' },
-    { name: 'Navy Revolver', value: 'Navy_Revolver' },
-    { name: 'Double Action Revolver', value: 'Double_Action_Revolver' }
-    // Ajoutez ici le reste des armes...
-  ],
-  accessoire: [
-    { name: 'Holster simple en cuir', value: 'Holster_simple_cuir' },
-    { name: 'Ceinture holster simple', value: 'Ceinture_holster_simple' }
-    // Ajoutez ici le reste des accessoires...
-  ]
+const CAT_META = {
+  armes:              { label: 'Armes',        emoji: '🗡️' },
+  chevaux:            { label: 'Chevaux',      emoji: '🐎' },
+  charrettes:         { label: 'Charrettes',   emoji: '🚚' },
+  minerais:           { label: 'Minerais',     emoji: '⛏️' },
+  autres:             { label: 'Autres',       emoji: '🎒' },
+  agricole_brut:      { label: 'Agricole (Brut)',        emoji: '🌾' },
+  agricole_transforme:{ label: 'Agricole (Transformé)',  emoji: '⚙️' },
 };
+
+function embedInventory(username, inv) {
+  const lines = [];
+  const section = (key) => {
+    const meta = CAT_META[key];
+    const items = inv[key] || [];
+    const title = `\n${meta.emoji} **${meta.label}**`;
+    if (!items.length) return `${title}\n• _Aucun_`;
+    return `${title}\n` + items.map(it => `• ${it.name} — **$${(it.quantity || 0)}**`).join('\n');
+  };
+
+  const desc = [
+    section('armes'),
+    section('chevaux'),
+    section('charrettes'),
+    section('minerais'),
+    section('autres'),
+    // Affiche les sections agricoles si tu veux les rendre visibles tout de suite :
+    // section('agricole_brut'),
+    // section('agricole_transforme'),
+  ].join('\n');
+
+  return new EmbedBuilder()
+    .setColor(0xF1C40F)
+    .setTitle(`🎒 Inventaire de ${username}`)
+    .setDescription(desc)
+    .setFooter({ text: 'OTW • Inventaire persistant' })
+    .setTimestamp();
+}
+
+function categoriesForUser(userId) {
+  const inv = getOrCreateInventory(userId);
+  const keys = Object.keys(CAT_META);
+  return keys.filter(k => (inv[k] || []).length > 0);
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventaire')
-    .setDescription('Gestion d\'inventaire pour votre personnage.')
-    
-    // Sous-commande: /inventaire afficher [target]
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('afficher')
-        .setDescription('Affiche l\'inventaire d\'un joueur.')
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Joueur cible (facultatif)')
+    .setDescription("Gestion d'inventaire persistant & joliment présenté.")
+
+    .addSubcommand(sc =>
+      sc.setName('voir')
+        .setDescription("Voir un inventaire")
+        .addUserOption(o =>
+          o.setName('cible')
+            .setDescription("Joueur dont on veut voir l'inventaire (facultatif)")
             .setRequired(false)
         )
     )
-    
-    // Sous-commande: /inventaire ajouter
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('ajouter')
-        .setDescription('Ajoute un objet à l\'inventaire d\'un joueur.')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Type d\'objet')
-            .setRequired(true)
-            .addChoices(...typeChoices)
-        )
-        .addStringOption(option =>
-          option.setName('objet')
-            .setDescription('Objet à ajouter')
-            .setRequired(true)
-            .setAutocomplete(true)
-        )
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Joueur cible')
+
+    .addSubcommand(sc =>
+      sc.setName('donner')
+        .setDescription("Donner 1 unité d'un item à un joueur (menu par catégorie → item)")
+        .addUserOption(o =>
+          o.setName('cible')
+            .setDescription('Joueur à qui donner')
             .setRequired(true)
         )
     )
-    
-    // Sous-commande: /inventaire retirer
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('retirer')
-        .setDescription('Retire un objet de l\'inventaire.')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Type d\'objet')
-            .setRequired(true)
-            .addChoices(...typeChoices)
-        )
-        .addStringOption(option =>
-          option.setName('objet')
-            .setDescription('Objet à retirer')
-            .setRequired(true)
-            .setAutocomplete(true)
-        )
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Joueur cible (facultatif, défaut : vous)')
-            .setRequired(false)
-        )
-    )
-    
-    // Sous-commande: /inventaire supprimer
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('supprimer')
-        .setDescription('Supprime tout l\'inventaire d\'un joueur (action irréversible).')
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Joueur cible')
+
+    .addSubcommand(sc =>
+      sc.setName('voler')
+        .setDescription("Voler 1 unité d'un item (catégorie → item). Rôle requis: THIEF_ROLE_ID")
+        .addUserOption(o =>
+          o.setName('cible')
+            .setDescription('Victime')
             .setRequired(true)
         )
     ),
-  
-  async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-    const target = interaction.options.getUser('target') || interaction.user;
-    const inv = getOrCreateInventory(target.id);
 
-    if (subcommand === 'afficher') {
-      let description = `**Inventaire de ${target.username} :**\n\n`;
-      for (const type of Object.keys(inv)) {
-        description += `**${type.toUpperCase()}**\n`;
-        const items = inv[type];
-        if (Object.keys(items).length === 0) {
-          description += "Aucun objet\n";
-        } else {
-          for (const [item, quantity] of Object.entries(items)) {
-            description += `${item} x${quantity}\n`;
-          }
-        }
-        description += "\n";
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+
+    if (sub === 'voir') {
+      const user = interaction.options.getUser('cible') || interaction.user;
+      const inv = getOrCreateInventory(user.id);
+      const embed = embedInventory(user.username, inv);
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (sub === 'donner') {
+      const target = interaction.options.getUser('cible', true);
+      if (target.id === interaction.user.id) {
+        return interaction.reply({ content: '❌ Tu ne peux pas te donner un item à toi-même.', flags: MessageFlags.Ephemeral });
       }
-      const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle("Inventaire")
-        .setDescription(description);
-      return interaction.reply({ embeds: [embed] });
-    } else if (subcommand === 'ajouter') {
-      const type = interaction.options.getString('type');
-      const objet = interaction.options.getString('objet');
-      const targetForAdd = interaction.options.getUser('target');
-      const inventory = getOrCreateInventory(targetForAdd.id);
-      if (!inventory[type][objet]) {
-        inventory[type][objet] = 0;
+      const availCats = categoriesForUser(interaction.user.id);
+      if (!availCats.length) {
+        return interaction.reply({ content: '🥲 Ton inventaire est vide.', flags: MessageFlags.Ephemeral });
       }
-      inventory[type][objet] += 1;
-      updateInventory(targetForAdd.id, inventory);
-      const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle("Inventaire mis à jour")
-        .setDescription(`${objet} a été ajouté à l'inventaire de ${targetForAdd.username} (Total: ${inventory[type][objet]}).`);
-      return interaction.reply({ embeds: [embed] });
-    } else if (subcommand === 'retirer') {
-      const type = interaction.options.getString('type');
-      const objet = interaction.options.getString('objet');
-      const targetForRet = interaction.options.getUser('target') || interaction.user;
-      const inventory = getOrCreateInventory(targetForRet.id);
-      if (!inventory[type][objet] || inventory[type][objet] <= 0) {
-        const embed = new EmbedBuilder()
-          .setColor(0xff0000)
-          .setTitle("Erreur")
-          .setDescription(`${targetForRet.username} ne possède pas ${objet} dans son inventaire.`);
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`inv_give_select:${target.id}`)
+        .setPlaceholder('Choisis une catégorie à donner')
+        .addOptions(
+          availCats.map(k => {
+            const meta = CAT_META[k];
+            return new StringSelectMenuOptionBuilder()
+              .setLabel(meta.label)
+              .setValue(k)
+              .setEmoji(meta.emoji);
+          })
+        );
+
+      const row = new ActionRowBuilder().addComponents(menu);
+      return interaction.reply({
+        content: `🎁 Sélectionne une **catégorie** à donner à <@${target.id}> :`,
+        components: [row],
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    if (sub === 'voler') {
+      const thiefRole = process.env.THIEF_ROLE_ID;
+      if (thiefRole && !interaction.member.roles.cache.has(thiefRole)) {
+        return interaction.reply({ content: '❌ Tu n’as pas l’autorisation de voler.', flags: MessageFlags.Ephemeral });
       }
-      inventory[type][objet] -= 1;
-      if (inventory[type][objet] === 0) delete inventory[type][objet];
-      updateInventory(targetForRet.id, inventory);
-      const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle("Inventaire mis à jour")
-        .setDescription(`${objet} a été retiré de l'inventaire de ${targetForRet.username} (Restant: ${inventory[type][objet] || 0}).`);
-      return interaction.reply({ embeds: [embed] });
-    } else if (subcommand === 'supprimer') {
-      const targetForSuppr = interaction.options.getUser('target');
-      updateInventory(targetForSuppr.id, { cheval: {}, arme: {}, accessoire: {} });
-      const embed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle("Inventaire supprimé")
-        .setDescription(`L'inventaire de ${targetForSuppr.username} a été supprimé.`);
-      return interaction.reply({ embeds: [embed] });
+      const victim = interaction.options.getUser('cible', true);
+      if (victim.id === interaction.user.id) {
+        return interaction.reply({ content: '❌ Tu ne peux pas te voler toi-même.', flags: MessageFlags.Ephemeral });
+      }
+
+      const availCats = categoriesForUser(victim.id);
+      if (!availCats.length) {
+        return interaction.reply({ content: '😶 La cible n’a rien à voler.', flags: MessageFlags.Ephemeral });
+      }
+
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`inv_steal_select:${victim.id}`)
+        .setPlaceholder('Choisis une catégorie à voler')
+        .addOptions(
+          availCats.map(k => {
+            const meta = CAT_META[k];
+            return new StringSelectMenuOptionBuilder()
+              .setLabel(meta.label)
+              .setValue(k)
+              .setEmoji(meta.emoji);
+          })
+        );
+
+      const row = new ActionRowBuilder().addComponents(menu);
+      return interaction.reply({
+        content: `🕶️ Choisis une **catégorie** à voler à <@${victim.id}> :`,
+        components: [row],
+        flags: MessageFlags.Ephemeral,
+      });
     }
   },
-
-  // Gestion de l'autocomplétion pour l'option 'objet'
-  async autocomplete(interaction) {
-    const focusedOption = interaction.options.getFocused(true);
-    let choices = [];
-    // Si le champ objet est en autocompletion, on peut récupérer le type s'il a été renseigné
-    const type = interaction.options.getString('type');
-    if (focusedOption.name === 'objet') {
-      if (type && objectsList[type]) {
-        choices = objectsList[type];
-      } else {
-        // Sinon, on fusionne les choix de toutes les catégories (attention au nombre max de 25)
-        choices = [].concat(...Object.values(objectsList));
-      }
-    }
-    const filtered = choices.filter(choice =>
-      choice.name.toLowerCase().includes(focusedOption.value.toLowerCase())
-    ).slice(0, 25);
-    return interaction.respond(filtered);
-  }
 };
