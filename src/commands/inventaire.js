@@ -1,173 +1,158 @@
 // src/commands/inventaire.js
 const {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  MessageFlags,
-  PermissionFlagsBits,
+  SlashCommandBuilder, EmbedBuilder, ActionRowBuilder,
+  StringSelectMenuBuilder, ComponentType, MessageFlags
 } = require('discord.js');
+const { getInventory, addItem, removeItem } = require('../data/inventoryData');
 
-const {
-  getOrCreateInventory,
-} = require('../inventoryData');
+const CATS = [
+  { key:'armes', label:'Armes', emoji:'🔫' },
+  { key:'chevaux', label:'Chevaux', emoji:'🐎' },
+  { key:'charrettes', label:'Charrettes', emoji:'🚚' },
+  { key:'minerais', label:'Minerais', emoji:'⛏️' },
+  { key:'autres', label:'Autres', emoji:'🎒' },
+];
 
-const CAT_META = {
-  armes:              { label: 'Armes',        emoji: '🗡️' },
-  chevaux:            { label: 'Chevaux',      emoji: '🐎' },
-  charrettes:         { label: 'Charrettes',   emoji: '🚚' },
-  minerais:           { label: 'Minerais',     emoji: '⛏️' },
-  autres:             { label: 'Autres',       emoji: '🎒' },
-  agricole_brut:      { label: 'Agricole (Brut)',        emoji: '🌾' },
-  agricole_transforme:{ label: 'Agricole (Transformé)',  emoji: '⚙️' },
-};
-
-function embedInventory(username, inv) {
+function renderInventory(inv, username){
   const lines = [];
-  const section = (key) => {
-    const meta = CAT_META[key];
-    const items = inv[key] || [];
-    const title = `\n${meta.emoji} **${meta.label}**`;
-    if (!items.length) return `${title}\n• _Aucun_`;
-    return `${title}\n` + items.map(it => `• ${it.name} — **$${(it.quantity || 0)}**`).join('\n');
-  };
-
-  const desc = [
-    section('armes'),
-    section('chevaux'),
-    section('charrettes'),
-    section('minerais'),
-    section('autres'),
-    // Affiche les sections agricoles si tu veux les rendre visibles tout de suite :
-    // section('agricole_brut'),
-    // section('agricole_transforme'),
-  ].join('\n');
-
+  lines.push(`✅ **Sacoche**: ${inv.bag ? 'Oui' : 'Non'}`);
+  lines.push('');
+  for (const c of CATS) {
+    const arr = inv.sections[c.key] || [];
+    lines.push(`**${c.emoji} ${c.label}**`);
+    if (!arr.length) lines.push('_Vide_');
+    else for (const it of arr) lines.push(`• ${it.name} — **x${it.qty}**`);
+    lines.push('');
+  }
   return new EmbedBuilder()
-    .setColor(0xF1C40F)
+    .setColor(0x34495e)
     .setTitle(`🎒 Inventaire de ${username}`)
-    .setDescription(desc)
-    .setFooter({ text: 'OTW • Inventaire persistant' })
-    .setTimestamp();
-}
-
-function categoriesForUser(userId) {
-  const inv = getOrCreateInventory(userId);
-  const keys = Object.keys(CAT_META);
-  return keys.filter(k => (inv[k] || []).length > 0);
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'OTW Économie' });
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventaire')
-    .setDescription("Gestion d'inventaire persistant & joliment présenté.")
-
-    .addSubcommand(sc =>
-      sc.setName('voir')
-        .setDescription("Voir un inventaire")
-        .addUserOption(o =>
-          o.setName('cible')
-            .setDescription("Joueur dont on veut voir l'inventaire (facultatif)")
-            .setRequired(false)
-        )
-    )
-
-    .addSubcommand(sc =>
-      sc.setName('donner')
-        .setDescription("Donner 1 unité d'un item à un joueur (menu par catégorie → item)")
-        .addUserOption(o =>
-          o.setName('cible')
-            .setDescription('Joueur à qui donner')
-            .setRequired(true)
-        )
-    )
-
-    .addSubcommand(sc =>
-      sc.setName('voler')
-        .setDescription("Voler 1 unité d'un item (catégorie → item). Rôle requis: THIEF_ROLE_ID")
-        .addUserOption(o =>
-          o.setName('cible')
-            .setDescription('Victime')
-            .setRequired(true)
-        )
-    ),
-
-  async execute(interaction) {
+    .setDescription('Inventaire persistant')
+    .addSubcommand(sc => sc.setName('voir').setDescription('Voir un inventaire')
+      .addUserOption(o => o.setName('target').setDescription('Joueur (optionnel)').setRequired(false)))
+    .addSubcommand(sc => sc.setName('donner').setDescription('Donner un item à un joueur')
+      .addUserOption(o => o.setName('target').setDescription('Destinataire').setRequired(true)))
+    .addSubcommand(sc => sc.setName('voler').setDescription('Voler un item à un joueur (RP)')
+      .addUserOption(o => o.setName('target').setDescription('Victime').setRequired(true))),
+  async execute(interaction){
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'voir') {
-      const user = interaction.options.getUser('cible') || interaction.user;
-      const inv = getOrCreateInventory(user.id);
-      const embed = embedInventory(user.username, inv);
-      return interaction.reply({ embeds: [embed] });
+      const target = interaction.options.getUser('target') || interaction.user;
+      const inv = getInventory(target.id);
+      return interaction.reply({ embeds: [renderInventory(inv, target.username)], ephemeral: true });
     }
 
-    if (sub === 'donner') {
-      const target = interaction.options.getUser('cible', true);
-      if (target.id === interaction.user.id) {
-        return interaction.reply({ content: '❌ Tu ne peux pas te donner un item à toi-même.', flags: MessageFlags.Ephemeral });
-      }
-      const availCats = categoriesForUser(interaction.user.id);
-      if (!availCats.length) {
-        return interaction.reply({ content: '🥲 Ton inventaire est vide.', flags: MessageFlags.Ephemeral });
-      }
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId(`inv_give_select:${target.id}`)
-        .setPlaceholder('Choisis une catégorie à donner')
-        .addOptions(
-          availCats.map(k => {
-            const meta = CAT_META[k];
-            return new StringSelectMenuOptionBuilder()
-              .setLabel(meta.label)
-              .setValue(k)
-              .setEmoji(meta.emoji);
-          })
-        );
-
-      const row = new ActionRowBuilder().addComponents(menu);
-      return interaction.reply({
-        content: `🎁 Sélectionne une **catégorie** à donner à <@${target.id}> :`,
-        components: [row],
-        flags: MessageFlags.Ephemeral,
-      });
+    // Donner / Voler : cible
+    const target = interaction.options.getUser('target');
+    if (target.id === interaction.user.id) {
+      return interaction.reply({ content: '🙃 Pas sur toi-même.', ephemeral: true });
     }
 
-    if (sub === 'voler') {
-      const thiefRole = process.env.THIEF_ROLE_ID;
-      if (thiefRole && !interaction.member.roles.cache.has(thiefRole)) {
-        return interaction.reply({ content: '❌ Tu n’as pas l’autorisation de voler.', flags: MessageFlags.Ephemeral });
-      }
-      const victim = interaction.options.getUser('cible', true);
-      if (victim.id === interaction.user.id) {
-        return interaction.reply({ content: '❌ Tu ne peux pas te voler toi-même.', flags: MessageFlags.Ephemeral });
-      }
+    const donorId = sub === 'donner' ? interaction.user.id : target.id;
+    const receiverId = sub === 'donner' ? target.id : interaction.user.id;
+    const donorName = sub === 'donner' ? interaction.user.username : target.username;
+    const receiverName = sub === 'donner' ? target.username : interaction.user.username;
 
-      const availCats = categoriesForUser(victim.id);
-      if (!availCats.length) {
-        return interaction.reply({ content: '😶 La cible n’a rien à voler.', flags: MessageFlags.Ephemeral });
-      }
+    const inv = getInventory(donorId);
 
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId(`inv_steal_select:${victim.id}`)
-        .setPlaceholder('Choisis une catégorie à voler')
-        .addOptions(
-          availCats.map(k => {
-            const meta = CAT_META[k];
-            return new StringSelectMenuOptionBuilder()
-              .setLabel(meta.label)
-              .setValue(k)
-              .setEmoji(meta.emoji);
-          })
-        );
+    // Choix catégorie
+    const menuCat = new StringSelectMenuBuilder()
+      .setCustomId('inv_cat')
+      .setPlaceholder('Choisis une catégorie')
+      .addOptions(CATS.map(c => ({
+        label: c.label, value: c.key, emoji: c.emoji
+      })));
+    const row1 = new ActionRowBuilder().addComponents(menuCat);
 
-      const row = new ActionRowBuilder().addComponents(menu);
-      return interaction.reply({
-        content: `🕶️ Choisis une **catégorie** à voler à <@${victim.id}> :`,
-        components: [row],
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  },
+    await interaction.reply({
+      embeds: [ new EmbedBuilder()
+        .setColor(0x9b59b6)
+        .setTitle(`${sub === 'donner' ? 'Donner' : 'Voler'} un item`)
+        .setDescription('1) Choisir la **catégorie**\n2) Choisir l’**item**\n3) Quantité (par défaut 1)')
+        .setFooter({ text: 'OTW Économie' })
+      ],
+      components: [row1],
+      flags: MessageFlags.Ephemeral
+    });
+
+    const msg = await interaction.fetchReply();
+    const selCat = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 60_000 }).catch(()=>null);
+    if (!selCat) return;
+    const catKey = selCat.values[0];
+
+    const arr = inv.sections[catKey] || [];
+    if (!arr.length) return selCat.update({ content: '📦 Catégorie vide.', components: [], embeds: [] });
+
+    const menuItem = new StringSelectMenuBuilder()
+      .setCustomId('inv_item')
+      .setPlaceholder('Choisis un item')
+      .addOptions(arr.slice(0,25).map(it => ({
+        label: `${it.name} (x${it.qty})`, value: it.name, emoji: (CATS.find(c=>c.key===catKey)||{}).emoji
+      })));
+    const row2 = new ActionRowBuilder().addComponents(menuItem);
+
+    await selCat.update({
+      embeds: [ new EmbedBuilder().setColor(0x9b59b6).setTitle('Item').setDescription('Sélectionne l’item à transférer.').setFooter({ text:'OTW Économie' }) ],
+      components: [row2]
+    });
+
+    const selItem = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 60_000 }).catch(()=>null);
+    if (!selItem) return;
+    const itemName = selItem.values[0];
+
+    await selItem.update({
+      embeds: [ new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle(`Quantité pour **${itemName}**`)
+        .setDescription('Réponds avec un nombre (par défaut 1).')
+        .setFooter({ text: 'OTW Économie' })
+      ],
+      components: []
+    });
+
+    const m = await interaction.channel.awaitMessages({
+      filter: m => m.author.id === interaction.user.id,
+      max: 1, time: 60_000
+    }).catch(()=>null);
+    const q = parseInt(m?.first()?.content || '1', 10);
+    if (isNaN(q) || q <= 0) return interaction.followUp({ content:'❌ Quantité invalide.', ephemeral:true });
+
+    // Transfert
+    try { removeItem(donorId, catKey, itemName, q); }
+    catch (e) { return interaction.followUp({ content:`⛔ ${e.message}`, ephemeral:true }); }
+
+    addItem(receiverId, catKey, itemName, q);
+
+    // MP infos
+    const dmDonor = await interaction.client.users.fetch(donorId).catch(()=>null);
+    const dmReceiver = await interaction.client.users.fetch(receiverId).catch(()=>null);
+
+    const embD = new EmbedBuilder()
+      .setColor(sub==='donner'?0x2ecc71:0xe67e22)
+      .setTitle(sub==='donner'?'🎁 Don effectué':'👜 Vol effectué')
+      .setDescription(`**${itemName} x${q}** → ${receiverName}`)
+      .setFooter({ text: 'OTW Économie' });
+
+    const embR = new EmbedBuilder()
+      .setColor(sub==='donner'?0x2ecc71:0xe67e22)
+      .setTitle(sub==='donner'?'🎁 Vous avez reçu':'⚠️ On vous a volé')
+      .setDescription(`**${itemName} x${q}** de ${donorName}`)
+      .setFooter({ text: 'OTW Économie' });
+
+    dmDonor?.send({ embeds:[embD]}).catch(()=>{});
+    dmReceiver?.send({ embeds:[embR]}).catch(()=>{});
+
+    return interaction.followUp({
+      content: `✅ **${itemName} x${q}** transféré à **${receiverName}**.`,
+      ephemeral: true
+    });
+  }
 };
