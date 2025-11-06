@@ -5,21 +5,24 @@ const {
   GatewayIntentBits,
   Collection,
   MessageFlags,
-  ActivityType,          // ⬅️ pour le statut d’activité
+  ActivityType, // statut d’activité
 } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 
 // Modules internes
-const ticketModule                 = require('./ticket.js');
-const { handleEconomyCommand }     = require('./economy');
-const { transformSessions }        = require('./transformSessions');
-const logger                       = require('./logger');
-const { getOrCreateAccount, updateAccount } = require('./economyData');
+const ticketModule                         = require('./ticket.js');
+const { handleEconomyCommand }             = require('./economy');
+const { transformSessions }                = require('./transformSessions');
+const logger                               = require('./logger');
+const { getOrCreateAccount, updateAccount }= require('./economyData');
 // ⬇️ /session
-const { handleSessionButtons }     = require('./commands/session');
+const { handleSessionButtons }             = require('./commands/session');
 // ⬇️ Agriculture (récolte / transformation / livraison)
-const agriRuntime                  = require('./agri/agriRuntime');
+const agriRuntime                          = require('./agri/agriRuntime');
+
+// ⬇️ Inventaire (menus déroulants donner/voler)
+const { handleInventoryInteractions }      = require('./interaction/inventoryInteraction');
 
 // IDs pour les boutiques
 const SHOP_OWNER_ID           = process.env.SHOP_OWNER_ID;
@@ -28,7 +31,7 @@ const ILLEGAL_CONTACT_ROLE_ID = process.env.ILLEGAL_CONTACT_ROLE_ID;
 
 // Articles boutique légale
 const legalItems = {
-  tente_amelioree: { name: 'Tente améliorée',         desc: 'Plus grande & résistante', price: 45 },
+  tente_amelioree: { name: 'Tente améliorée',          desc: 'Plus grande & résistante', price: 45 },
   tente_luxe:      { name: 'Tente de luxe (voyageur)', desc: 'Repos optimal',            price: 80 },
   feu_camp:        { name: 'Feu de camp renforcé',     desc: 'Cuisiner plus rapidement', price: 18 },
   tapis_sol:       { name: 'Tapis de sol',             desc: 'Confort & esthétique',     price: 10 },
@@ -107,17 +110,17 @@ client.once('ready', async () => {
   const activityText = process.env.BOT_ACTIVITY_TEXT || 'Old Town Western V.3';
   const activityTypeEnv = (process.env.BOT_ACTIVITY_TYPE || 'PLAYING').toUpperCase();
   const activityType =
-    activityTypeEnv === 'WATCHING' ? ActivityType.Watching :
+    activityTypeEnv === 'WATCHING'  ? ActivityType.Watching  :
     activityTypeEnv === 'LISTENING' ? ActivityType.Listening :
     activityTypeEnv === 'COMPETING' ? ActivityType.Competing :
-    ActivityType.Playing; // défaut: PLAYING
+    ActivityType.Playing; // défaut
 
   try {
     client.user.setPresence({
       activities: [{ name: activityText, type: activityType }],
       status: 'online',
     });
-    logger.sendLog(`🎮 Activité définie: ${ActivityType[activityType]} ${activityText}`);
+    logger.sendLog(`🎮 Activité définie: ${activityTypeEnv} ${activityText}`);
   } catch (e) {
     console.error('Erreur setPresence:', e);
     logger.sendError(e);
@@ -278,7 +281,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // 6️⃣ Autres interactions (stocks, etc.)
+  // 6️⃣ Autres interactions (stocks, inventaire, etc.)
   {
     // Armes
     const { handleStockInteractions } = require('./interaction/stockInteraction');
@@ -313,6 +316,16 @@ client.on('interactionCreate', async interaction => {
         await handleHockleyHorseStockInteractions(interaction);
       } catch (err) {
         console.error('Erreur stock (chevaux/Hockley):', err);
+        logger.sendError(err);
+        if (!interaction.replied) {
+          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+      }
+      // Inventaire (donner/voler via menus)
+      try {
+        await handleInventoryInteractions(interaction);
+      } catch (err) {
+        console.error('Erreur inventaire:', err);
         logger.sendError(err);
         if (!interaction.replied) {
           await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
