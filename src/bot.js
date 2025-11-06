@@ -10,25 +10,27 @@ const {
 const fs   = require('fs');
 const path = require('path');
 
-// Modules internes
-const ticketModule                         = require('./ticket.js');
-const { handleEconomyCommand }             = require('./economy');
-const { transformSessions }                = require('./transformSessions'); // (si utilisé ailleurs)
-const logger                               = require('./logger');
-const { getOrCreateAccount, updateAccount }= require('./economyData');
+// ─────────────────────────────────────────────────────────────
+// Modules internes (conservés)
+const ticketModule                           = require('./ticket.js');
+const { handleEconomyCommand }               = require('./economy');
+const { transformSessions }                  = require('./transformSessions'); // si utilisé ailleurs
+const logger                                 = require('./logger');
+const { getOrCreateAccount, updateAccount }  = require('./economyData');
 // /session (boutons)
-const { handleSessionButtons }             = require('./commands/session');
+const { handleSessionButtons }               = require('./commands/session');
 // Agriculture (récolte / transformation / livraison)
-const agriRuntime                          = require('./agri/agriRuntime');
-// Inventaire (menus déroulants donner/voler)
-const { handleInventoryInteractions }      = require('./interaction/inventoryInteraction');
+const agriRuntime                            = require('./agri/agriRuntime');
+// Inventaire (nouveau système : donner/voler via menus)
+const { handleInventoryInteractions }        = require('./interaction/inventoryInteraction');
 
-// IDs pour les boutiques
+// ─────────────────────────────────────────────────────────────
+// IDs pour les boutiques simples (optionnel)
 const SHOP_OWNER_ID           = process.env.SHOP_OWNER_ID;
 const ILLEGAL_SHOP_OWNER_ID   = process.env.ILLEGAL_SHOP_OWNER_ID;
 const ILLEGAL_CONTACT_ROLE_ID = process.env.ILLEGAL_CONTACT_ROLE_ID;
 
-// Articles boutique légale
+// Articles boutique légale (exemple simple)
 const legalItems = {
   tente_amelioree: { name: 'Tente améliorée',          desc: 'Plus grande & résistante', price: 45 },
   tente_luxe:      { name: 'Tente de luxe (voyageur)', desc: 'Repos optimal',            price: 80 },
@@ -40,7 +42,7 @@ const legalItems = {
   eclairage:       { name: 'Éclairage (lanternes)',    desc: 'Lanternes suspendues',     price: 8 }
 };
 
-// Articles boutique illégale
+// Articles boutique illégale (exemple simple)
 const illegalItems = {
   fusil_semi_auto:     { name: 'Fusil Semi-Automatique',    price: 650 },
   mauser:              { name: 'Mauser',                    price: 750 },
@@ -55,6 +57,8 @@ const illegalItems = {
   tomahawk:            { name: 'Tomahawk',                  price: 150 }
 };
 
+// ─────────────────────────────────────────────────────────────
+// Client Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -67,7 +71,8 @@ const client = new Client({
 // Initialise le logger
 logger.setClient(client);
 
-// Événements globaux
+// ─────────────────────────────────────────────────────────────
+// Événements globaux conservés
 require('./events/welcome.js')(client);
 require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
@@ -83,11 +88,11 @@ require('./events/starterPack')(client);
 require('./events/passiveRevenue')(client);
 require('./events/trainMerch')(client);
 
-// Catalogues / panneaux
-require('./events/catalogueWeapons')(client);   // armes
-require('./events/kinumaStable')(client);       // chevaux (Kinuma)
-require('./events/hockleyStable')(client);      // chevaux (Hockley)
+// ─────────────────────────────────────────────────────────────
+// ❌ Nettoyage : on supprime les anciens systèmes (catalogues Kinuma/Hockley/stockInteraction)
+// (donc PAS de require('./events/catalogueWeapons'), './events/kinumaStable', './events/hockleyStable')
 
+// ─────────────────────────────────────────────────────────────
 // Chargement des commandes slash
 client.commands = new Collection();
 const commandsPath  = path.join(__dirname, 'commands');
@@ -97,15 +102,17 @@ for (const file of commandFiles) {
   if (cmd.data && cmd.execute) client.commands.set(cmd.data.name, cmd);
 }
 
+// ─────────────────────────────────────────────────────────────
 // Prévenir les doublons de messages texte
 const processedMessageIds = new Set();
 
+// ─────────────────────────────────────────────────────────────
 // Démarrage
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
 
-  // Statut d’activité configurable
+  // Statut d’activité configurable (env: BOT_ACTIVITY_TEXT, BOT_ACTIVITY_TYPE)
   const activityText = process.env.BOT_ACTIVITY_TEXT || 'Old Town Western V.3';
   const activityTypeEnv = (process.env.BOT_ACTIVITY_TYPE || 'PLAYING').toUpperCase();
   const activityType =
@@ -153,6 +160,7 @@ client.once('ready', async () => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
 // Gestion des interactions
 client.on('interactionCreate', async interaction => {
   console.log('Interaction reçue:', interaction.customId || interaction.commandName);
@@ -232,108 +240,21 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // Tickets
-  if (
-    (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') ||
-    (interaction.isButton() && ['close_ticket','reopen_ticket','delete_ticket'].includes(interaction.customId))
-  ) {
+  // Inventaire (nouveau système : donner/voler via menus)
+  if (interaction.isButton() || interaction.isStringSelectMenu()) {
     try {
-      await ticketModule.handleTicketInteraction(interaction);
+      await handleInventoryInteractions(interaction);
     } catch (err) {
-      console.error('Erreur ticket:', err);
+      console.error('Erreur inventaire:', err);
       logger.sendError(err);
       if (!interaction.replied) {
-        await interaction.reply({
-          content: '❗ Erreur.',
-          flags: MessageFlags.Ephemeral
-        }).catch(() => {});
-      }
-    }
-    return;
-  }
-
-  // En ville / Déconnecté
-  if (interaction.isButton() && ['en_ville','deconnecte'].includes(interaction.customId)) {
-    const role   = interaction.guild.roles.cache.get('1378037596566978561');
-    const member = interaction.member;
-    if (!role || !member) return;
-    try {
-      if (interaction.customId === 'en_ville') {
-        await member.roles.add(role);
-      } else {
-        await member.roles.remove(role);
-      }
-      await interaction.reply({
-        content: '✅ Statut mis à jour.',
-        flags: MessageFlags.Ephemeral
-      });
-    } catch (err) {
-      console.error('Erreur rôle ville:', err);
-      logger.sendError(err);
-      if (!interaction.replied) {
-        await interaction.reply({
-          content: '❗ Erreur.',
-          flags: MessageFlags.Ephemeral
-        }).catch(() => {});
-      }
-    }
-    return;
-  }
-
-  // Autres interactions (stocks, chevaux, inventaire…)
-  {
-    // Armes
-    const { handleStockInteractions } = require('./interaction/stockInteraction');
-    // Chevaux (Kinuma)
-    const { handleHorseStockInteractions } = require('./interaction/horseStockInteraction');
-    // Chevaux (Hockley)
-    const { handleHockleyHorseStockInteractions } = require('./interaction/hockleyHorseStockInteraction');
-
-    if (interaction.isButton() || interaction.isStringSelectMenu()) {
-      // Armes
-      try {
-        await handleStockInteractions(interaction);
-      } catch (err) {
-        console.error('Erreur stock (armes):', err);
-        logger.sendError(err);
-        if (!interaction.replied) {
-          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
-      }
-      // Chevaux (Kinuma)
-      try {
-        await handleHorseStockInteractions(interaction);
-      } catch (err) {
-        console.error('Erreur stock (chevaux/Kinuma):', err);
-        logger.sendError(err);
-        if (!interaction.replied) {
-          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
-      }
-      // Chevaux (Hockley)
-      try {
-        await handleHockleyHorseStockInteractions(interaction);
-      } catch (err) {
-        console.error('Erreur stock (chevaux/Hockley):', err);
-        logger.sendError(err);
-        if (!interaction.replied) {
-          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
-      }
-      // Inventaire (donner/voler via menus)
-      try {
-        await handleInventoryInteractions(interaction);
-      } catch (err) {
-        console.error('Erreur inventaire:', err);
-        logger.sendError(err);
-        if (!interaction.replied) {
-          await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
+        await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
   }
 });
 
+// ─────────────────────────────────────────────────────────────
 // Commandes texte (économie)
 client.on('messageCreate', async message => {
   if (message.author.bot || !message.guild) return;
@@ -348,6 +269,7 @@ client.on('messageCreate', async message => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
 // Anti-crash doux (utile sur Render worker)
 process.on('unhandledRejection', (err) => {
   console.error('UnhandledRejection:', err);
@@ -358,4 +280,5 @@ process.on('uncaughtException', (err) => {
   logger.sendError(err);
 });
 
+// ─────────────────────────────────────────────────────────────
 client.login(process.env.BOT_TOKEN);
