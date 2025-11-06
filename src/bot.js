@@ -1,5 +1,12 @@
+// bot.js
 require('dotenv').config({ path: './id.env' });
-const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  MessageFlags,
+  ActivityType,          // ⬅️ pour le statut d’activité
+} = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 
@@ -77,7 +84,7 @@ require('./events/trainMerch')(client);
 // Catalogues / panneaux
 require('./events/catalogueWeapons')(client);   // armes
 require('./events/kinumaStable')(client);       // chevaux (Kinuma)
-require('./events/hockleyStable')(client);      // chevaux (Hockley)  ⬅️ AJOUT
+require('./events/hockleyStable')(client);      // chevaux (Hockley)
 
 // Chargement des commandes slash
 client.commands = new Collection();
@@ -95,6 +102,26 @@ const processedMessageIds = new Set();
 client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
+
+  // ⬇️ Statut d’activité du bot
+  const activityText = process.env.BOT_ACTIVITY_TEXT || 'Old Town Western V.3';
+  const activityTypeEnv = (process.env.BOT_ACTIVITY_TYPE || 'PLAYING').toUpperCase();
+  const activityType =
+    activityTypeEnv === 'WATCHING' ? ActivityType.Watching :
+    activityTypeEnv === 'LISTENING' ? ActivityType.Listening :
+    activityTypeEnv === 'COMPETING' ? ActivityType.Competing :
+    ActivityType.Playing; // défaut: PLAYING
+
+  try {
+    client.user.setPresence({
+      activities: [{ name: activityText, type: activityType }],
+      status: 'online',
+    });
+    logger.sendLog(`🎮 Activité définie: ${ActivityType[activityType]} ${activityText}`);
+  } catch (e) {
+    console.error('Erreur setPresence:', e);
+    logger.sendError(e);
+  }
 
   // Branche le runtime agriculture (timers, updates)
   agriRuntime.setClient(client);
@@ -151,7 +178,7 @@ client.on('interactionCreate', async interaction => {
   // ✅ Boutons de /session
   try {
     await handleSessionButtons(interaction);
-  } catch (e) {
+  } catch {
     // noop
   }
 
@@ -175,7 +202,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`);
   }
 
-  // 3️⃣ Boutique illégale (customId corrigé)
+  // 3️⃣ Boutique illégale
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_illegal_buy') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (!interaction.member.roles.cache.has(ILLEGAL_CONTACT_ROLE_ID)) {
@@ -195,7 +222,6 @@ client.on('interactionCreate', async interaction => {
       seller.courant.banque += it.price;
       updateAccount(ILLEGAL_SHOP_OWNER_ID, seller);
     }
-    // message public
     await interaction.editReply(`🤝 ${interaction.user} a acheté **${it.name}** pour **$${it.price}**.`);
     await interaction.followUp({
       content: `💵 Transféré à <@${ILLEGAL_SHOP_OWNER_ID}>.`,
@@ -258,7 +284,7 @@ client.on('interactionCreate', async interaction => {
     const { handleStockInteractions } = require('./interaction/stockInteraction');
     // Chevaux (Kinuma)
     const { handleHorseStockInteractions } = require('./interaction/horseStockInteraction');
-    // Chevaux (Hockley) ⬅️ AJOUT
+    // Chevaux (Hockley)
     const { handleHockleyHorseStockInteractions } = require('./interaction/hockleyHorseStockInteraction');
 
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
@@ -282,7 +308,7 @@ client.on('interactionCreate', async interaction => {
           await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
       }
-      // Chevaux (Hockley) ⬅️ AJOUT
+      // Chevaux (Hockley)
       try {
         await handleHockleyHorseStockInteractions(interaction);
       } catch (err) {
