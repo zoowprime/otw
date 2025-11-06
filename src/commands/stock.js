@@ -1,57 +1,31 @@
 // src/commands/stock.js
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { _stockInternal } = require('../interaction/stockInteraction'); // armes
-const { _horseStockInternal } = require('../interaction/horseStockInteraction'); // Kinuma
-const { _hockleyHorseStockInternal } = require('../interaction/hockleyHorseStockInteraction'); // Hockley
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { getShopIdFromMember, getShopStock } = require('../data/shopsData');
+
+function renderStock(stock){
+  const sec = ['armes','chevaux','charrettes'];
+  const lines = [];
+  for (const s of sec) {
+    const entries = Object.entries(stock[s]||{});
+    lines.push(`**${s.toUpperCase()}**`);
+    if (!entries.length) lines.push('_Vide_');
+    else for (const [name, qty] of entries) lines.push(`• ${name} — **x${qty}**`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('stock')
-    .setDescription('Afficher le stock d’un atelier/écurie.')
-    .addStringOption(o =>
-      o.setName('source')
-        .setDescription('Sélectionne la source')
-        .setRequired(true)
-        .addChoices(
-          { name: 'tetsuironworks', value: 'tetsuironworks' },
-          { name: 'KinumaStable',   value: 'kinuma' },
-          { name: 'HockleysHorse',  value: 'hockley' },
-        )
-    ),
-
-  async execute(interaction) {
-    const source = interaction.options.getString('source', true);
-
-    if (source === 'tetsuironworks') {
-      const stock = { ..._stockInternal.initAllItems(), ..._stockInternal.loadStock() };
-      const embed = _stockInternal.stockToEmbed(stock);
-      const sent = await interaction.reply({ embeds: [embed], fetchReply: true });
-      const refs = _stockInternal.loadStockMsg();
-      refs[interaction.guildId] = { channelId: sent.channelId, messageId: sent.id };
-      _stockInternal.saveStockMsg(refs);
-      return;
-    }
-
-    if (source === 'kinuma') {
-      const stock = { ..._horseStockInternal.initAllHorses(), ..._horseStockInternal.loadStock() };
-      const embed = _horseStockInternal.stockToEmbed(stock);
-      const sent = await interaction.reply({ embeds: [embed], fetchReply: true });
-      const refs = _horseStockInternal.loadStockMsg();
-      refs[interaction.guildId] = { channelId: sent.channelId, messageId: sent.id };
-      _horseStockInternal.saveStockMsg(refs);
-      return;
-    }
-
-    if (source === 'hockley') {
-      const stock = { ..._hockleyHorseStockInternal.initAllHorses(), ..._hockleyHorseStockInternal.loadStock() };
-      const embed = _hockleyHorseStockInternal.stockToEmbed(stock);
-      const sent = await interaction.reply({ embeds: [embed], fetchReply: true });
-      const refs = _hockleyHorseStockInternal.loadStockMsg();
-      refs[interaction.guildId] = { channelId: sent.channelId, messageId: sent.id };
-      _hockleyHorseStockInternal.saveStockMsg(refs);
-      return;
-    }
-
-    return interaction.reply({ content: 'Source inconnue.', flags: MessageFlags.Ephemeral });
-  },
+  data: new SlashCommandBuilder().setName('stock').setDescription('Voir le stock de votre boutique'),
+  async execute(interaction){
+    const shopId = getShopIdFromMember(interaction.member);
+    if (!shopId) return interaction.reply({ content: '⛔ Tu ne fais partie d’aucune boutique.', ephemeral: true });
+    const stock = getShopStock(shopId);
+    const embed = new EmbedBuilder()
+      .setColor(0x8e44ad)
+      .setTitle(`📦 Stock — ${shopId}`)
+      .setDescription(renderStock(stock))
+      .setFooter({ text: 'OTW Économie' });
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
 };
