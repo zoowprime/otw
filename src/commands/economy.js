@@ -1,787 +1,288 @@
 // src/commands/economy.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getOrCreateAccount, updateAccount, getAccount } = require('../economyData');
+const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-const embedReply = (description) =>
-  new EmbedBuilder().setColor(0xff0000).setDescription(description);
+const BANKER_ROLE = process.env.BANQUIER_ROLE_ID;
+const BANK_LOG_CHANNEL = process.env.BANK_LOG_CHANNEL || null;
 
-// Options globales pour le type de compte
+// ─────────────────────────────────────────────────────────────
+// Utils
+const fmt = (n) => `${(Number(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} $`;
+const footer = { text: 'otw' };
+
 const accountTypes = [
   { name: 'Courant', value: 'courant' },
   { name: 'Entreprise', value: 'entreprise' },
-  { name: 'Epargne', value: 'epargne' }
+  { name: 'Epargne', value: 'epargne' },
 ];
 
-// Options pour les sous-champs
 const subAccountChoices = [
   { name: 'Courant (Liquide)',    value: 'courant_liquide' },
   { name: 'Courant (Banque)',     value: 'courant_banque' },
   { name: 'Entreprise (Liquide)', value: 'entreprise_liquide' },
   { name: 'Entreprise (Banque)',  value: 'entreprise_banque' },
-  { name: 'Epargne',              value: 'epargne' }
+  { name: 'Épargne',              value: 'epargne' },
 ];
 
-/**
- * Récupère la valeur d’un sous-champ dans un compte.
- */
-function getBalanceRef(account, choice) {
+function getBalanceRef(acc, choice) {
   switch (choice) {
-    case 'courant_liquide':    return account.courant.liquide;
-    case 'courant_banque':     return account.courant.banque;
-    case 'entreprise_liquide': return account.entreprise.liquide;
-    case 'entreprise_banque':  return account.entreprise.banque;
-    case 'epargne':            return account.epargne;
+    case 'courant_liquide':    return acc.courant.liquide;
+    case 'courant_banque':     return acc.courant.banque;
+    case 'entreprise_liquide': return acc.entreprise.liquide;
+    case 'entreprise_banque':  return acc.entreprise.banque;
+    case 'epargne':            return acc.epargne;
     default:                   return null;
   }
 }
 
-/**
- * Affecte une valeur à un sous-champ dans un compte.
- */
-function setBalanceRef(account, choice, newValue) {
+function setBalanceRef(acc, choice, val) {
   switch (choice) {
-    case 'courant_liquide':    account.courant.liquide = newValue; break;
-    case 'courant_banque':     account.courant.banque = newValue; break;
-    case 'entreprise_liquide': account.entreprise.liquide = newValue; break;
-    case 'entreprise_banque':  account.entreprise.banque = newValue; break;
-    case 'epargne':            account.epargne = newValue; break;
+    case 'courant_liquide':    acc.courant.liquide    = val; break;
+    case 'courant_banque':     acc.courant.banque     = val; break;
+    case 'entreprise_liquide': acc.entreprise.liquide = val; break;
+    case 'entreprise_banque':  acc.entreprise.banque  = val; break;
+    case 'epargne':            acc.epargne            = val; break;
   }
 }
+
+function embedCourant(user, acc) {
+  const liq = acc.courant.liquide || 0;
+  const ban = acc.courant.banque  || 0;
+  return new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle(`🧑‍💼 Compte courant — ${user.username}`)
+    .setDescription(
+      `💵 **Liquide :** ${fmt(liq)}\n` +
+      `🏦 **Banque :** ${fmt(ban)}\n` +
+      `📊 **Total :** ${fmt(liq + ban)}`
+    )
+    .setFooter(footer);
+}
+
+function embedEntreprise(user, acc) {
+  const liq = acc.entreprise.liquide || 0;
+  const ban = acc.entreprise.banque  || 0;
+  return new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle(`🏢 Compte entreprise — ${user.username}`)
+    .setDescription(
+      `💵 **Liquide :** ${fmt(liq)}\n` +
+      `🏦 **Banque :** ${fmt(ban)}\n` +
+      `📊 **Total :** ${fmt(liq + ban)}`
+    )
+    .setFooter(footer);
+}
+
+function embedEpargne(user, acc) {
+  const ep = acc.epargne || 0;
+  return new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle(`🐖 Compte épargne — ${user.username}`)
+    .setDescription(`🏦 **Solde :** ${fmt(ep)}`)
+    .setFooter(footer);
+}
+
+function requireBanker(interaction) {
+  return interaction.member.roles.cache.has(BANKER_ROLE);
+}
+
+// ─────────────────────────────────────────────────────────────
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('economy')
-    .setDescription('Système économique avec comptes courant, entreprise et épargne.')
+    .setDescription('Comptes & opérations (courant, entreprise, épargne).')
 
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy compte
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('compte')
-        .setDescription('Affiche le compte choisi (Courant, Entreprise ou Epargne).')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Choisissez le type de compte')
-            .setRequired(true)
-            .addChoices(...accountTypes)
+    // /economy compte
+    .addSubcommand(sc =>
+      sc.setName('compte')
+        .setDescription('Affiche le compte choisi.')
+        .addStringOption(o =>
+          o.setName('type').setDescription('Type de compte')
+            .setRequired(true).addChoices(...accountTypes)
         )
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription("Afficher le compte d'un autre joueur (facultatif)")
-            .setRequired(false)
+        .addUserOption(o =>
+          o.setName('target').setDescription("Joueur cible (optionnel)")
         )
     )
 
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy solde
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('solde')
-        .setDescription('Affiche le solde total de votre compte sélectionné.')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Type de compte (courant, entreprise ou epargne)')
-            .setRequired(true)
-            .addChoices(...accountTypes)
+    // /economy solde (raccourci numérique)
+    .addSubcommand(sc =>
+      sc.setName('solde')
+        .setDescription('Affiche le solde total du compte choisi.')
+        .addStringOption(o =>
+          o.setName('type').setDescription('Type de compte')
+            .setRequired(true).addChoices(...accountTypes)
         )
     )
 
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy declarertaxe
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('declarertaxe')
-        .setDescription('Déclare une taxe.')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant de la taxe')
-            .setRequired(true)
+    // /economy ajouterfonds (banquier)
+    .addSubcommand(sc =>
+      sc.setName('ajouterfonds')
+        .setDescription("Ajoute des fonds dans un champ précis (banquiers).")
+        .addUserOption(o => o.setName('target').setDescription('Joueur cible').setRequired(true))
+        .addStringOption(o =>
+          o.setName('destination').setDescription('Champ cible')
+            .setRequired(true).addChoices(...subAccountChoices)
         )
+        .addNumberOption(o => o.setName('montant').setDescription('Montant à ajouter').setRequired(true))
     )
 
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy calculertaxe
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('calculertaxe')
-        .setDescription('Calcule la taxe sur un montant donné.')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant')
-            .setRequired(true)
+    // /economy retirerfonds (banquier)  ✅ NOUVEAU
+    .addSubcommand(sc =>
+      sc.setName('retirerfonds')
+        .setDescription("Retire des fonds d'un joueur (liquide/banque, courant/entreprise/épargne).")
+        .addUserOption(o => o.setName('target').setDescription('Joueur cible').setRequired(true))
+        .addStringOption(o =>
+          o.setName('source').setDescription('Champ à débiter')
+            .setRequired(true).addChoices(...subAccountChoices)
         )
-        .addNumberOption(option =>
-          option.setName('taux')
-            .setDescription('Taux en pourcentage')
-            .setRequired(true)
-        )
+        .addNumberOption(o => o.setName('montant').setDescription('Montant à retirer').setRequired(true))
     )
 
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy ajouterargent (banquiers uniquement)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('ajouterargent')
-        .setDescription('Ajoute de l’argent dans un champ précis (banquiers uniquement).')
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription("Le joueur cible")
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('destination')
-            .setDescription('Champ (ex: courant_liquide, courant_banque, entreprise_liquide, entreprise_banque, epargne)')
-            .setRequired(true)
-            .addChoices(...subAccountChoices)
-        )
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription("Montant à ajouter")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy ouvrircompte (banquiers uniquement)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('ouvrircompte')
-        .setDescription('Ouvre un compte pour un joueur (banquiers uniquement, épargne ou entreprise).')
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription("Le joueur cible")
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Type de compte à ouvrir (épargne ou entreprise)')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Epargne', value: 'epargne' },
-              { name: 'Entreprise', value: 'entreprise' }
-            )
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy transférer (banquiers uniquement)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('transférer')
-        .setDescription('Transfère de l’argent d’un champ à un autre (banquiers uniquement).')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à transférer')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Champ concerné')
-            .setRequired(true)
-            .addChoices(...subAccountChoices)
-        )
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription("Le joueur destinataire")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy emprunter
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('emprunter')
-        .setDescription("Demande d'emprunt")
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à emprunter')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('duree')
-            .setDescription("Durée de l’emprunt (ex: 12 mois)")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy contrat
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('contrat')
-        .setDescription("Création d'une demande d'ouverture de compte bancaire")
-        .addStringOption(option =>
-          option.setName('nombanque')
-            .setDescription('Nom de la Banque')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('adressebanque')
-            .setDescription('Adresse de la Banque')
-            .setRequired(true)
-        )
-        .addUserOption(option =>
-          option.setName('client')
-            .setDescription('Le client (mention)')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('adresseclient')
-            .setDescription('Adresse du Client')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('typecompte')
-            .setDescription('Type de Compte')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Courant', value: 'courant' },
-              { name: 'Entreprise', value: 'entreprise' },
-              { name: 'Epargne', value: 'epargne' }
-            )
-        )
-        .addNumberOption(option =>
-          option.setName('depotinitial')
-            .setDescription('Montant de Dépôt Initial')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('frais')
-            .setDescription('Frais Bancaires')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy retirerargent (banquiers uniquement, retire du compte courant)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('retirerargent')
-        .setDescription("Retire de l'argent du compte courant (banquiers uniquement)")
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Le joueur cible')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à retirer')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy retirermoney (conversion du compte bancaire vers liquide)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('retirermoney')
-        .setDescription('Convertit des fonds d’un compte (courant ou entreprise) en liquide')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Compte source (courant ou entreprise)')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Courant', value: 'courant' },
-              { name: 'Entreprise', value: 'entreprise' }
-            )
-        )
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à convertir')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy depargent (conversion du liquide vers le compte bancaire)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('depargent')
-        .setDescription('Dépose de l’argent liquide dans un compte (courant ou entreprise)')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription('Compte cible (courant ou entreprise)')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Courant', value: 'courant' },
-              { name: 'Entreprise', value: 'entreprise' }
-            )
-        )
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à déposer')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy paye (paiement entre joueurs)
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('paye')
-        .setDescription('Effectue un paiement entre joueurs depuis un champ source vers un champ destination')
-        .addStringOption(option =>
-          option.setName('source')
-            .setDescription('Votre champ source (ex: courant_liquide ou entreprise_liquide)')
+    // /economy paye (paiement joueur → joueur)
+    .addSubcommand(sc =>
+      sc.setName('paye')
+        .setDescription('Payer un joueur depuis un de vos champs vers un de ses champs.')
+        .addStringOption(o =>
+          o.setName('source').setDescription('Votre champ source')
             .setRequired(true)
             .addChoices(
               { name: 'Courant (Liquide)', value: 'courant_liquide' },
               { name: 'Entreprise (Liquide)', value: 'entreprise_liquide' }
             )
         )
-        .addStringOption(option =>
-          option.setName('destination')
-            .setDescription("Champ du destinataire (ex: courant_banque, entreprise_banque ou epargne)")
-            .setRequired(true)
-            .addChoices(...subAccountChoices)
+        .addStringOption(o =>
+          o.setName('destination').setDescription('Champ du destinataire')
+            .setRequired(true).addChoices(...subAccountChoices)
         )
-        .addUserOption(option =>
-          option.setName('target')
-            .setDescription('Le joueur à payer')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à payer')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy investir
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('investir')
-        .setDescription('Investit dans une entreprise')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à investir')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('entreprise')
-            .setDescription("Nom de l'entreprise")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy acheterpart
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('acheterpart')
-        .setDescription('Acheter des parts dans une entreprise')
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant pour acheter des parts')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('entreprise')
-            .setDescription("Nom de l'entreprise")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy achetermaison
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('achetermaison')
-        .setDescription('Acheter une maison')
-        .addNumberOption(option =>
-          option.setName('prix')
-            .setDescription('Prix de la maison')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('adresse')
-            .setDescription("Adresse de la maison")
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy acheterproduit
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('acheterproduit')
-        .setDescription('Acheter un produit')
-        .addStringOption(option =>
-          option.setName('produit')
-            .setDescription('Nom du produit')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('quantite')
-            .setDescription('Quantité à acheter')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('prix')
-            .setDescription('Prix du produit')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy vendrestock
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('vendrestock')
-        .setDescription('Vendre des stocks')
-        .addStringOption(option =>
-          option.setName('type')
-            .setDescription("Type d'item")
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('quantite')
-            .setDescription('Quantité à vendre')
-            .setRequired(true)
-        )
-        .addNumberOption(option =>
-          option.setName('prixtotal')
-            .setDescription('Prix total de la vente')
-            .setRequired(true)
-        )
-    )
-
-    // ─────────────────────────────────────────────────────────────
-    // Sous-commande: /economy remboursement
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('remboursement')
-        .setDescription("Rembourser un emprunt")
-        .addNumberOption(option =>
-          option.setName('montant')
-            .setDescription('Montant à rembourser')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('emprunt')
-            .setDescription("Identifiant de l'emprunt")
-            .setRequired(true)
-        )
+        .addUserOption(o => o.setName('target').setDescription('Destinataire').setRequired(true))
+        .addNumberOption(o => o.setName('montant').setDescription('Montant').setRequired(true))
     ),
-    
+
   async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand();
+    const sub = interaction.options.getSubcommand();
 
-    // ─────────────────────────────────────────────────────────────
     // /economy compte
-    if (subcommand === 'compte') {
-      try {
-        const type = interaction.options.getString('type').toLowerCase();
-        const target = interaction.options.getUser('target') || interaction.user;
-        const account = getOrCreateAccount(target.id);
-        if (type === 'courant') {
-          const liq = account.courant.liquide;
-          const ban = account.courant.banque;
-          const total = liq + ban;
-          const embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle(`Compte Courant de ${target.username}`)
-            .setDescription(
-              `**Liquide :** $${liq.toFixed(2)}\n` +
-              `**Banque :** $${ban.toFixed(2)}\n` +
-              `**Total :** $${total.toFixed(2)}`
-            );
-          return interaction.reply({ embeds: [embed] });
-        } else if (type === 'entreprise') {
-          const liq = account.entreprise.liquide;
-          const ban = account.entreprise.banque;
-          const total = liq + ban;
-          const embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle(`Compte Entreprise de ${target.username}`)
-            .setDescription(
-              `**Liquide :** $${liq.toFixed(2)}\n` +
-              `**Banque :** $${ban.toFixed(2)}\n` +
-              `**Total :** $${total.toFixed(2)}`
-            );
-          return interaction.reply({ embeds: [embed] });
-        } else if (type === 'epargne') {
-          const val = account.epargne;
-          const embed = new EmbedBuilder()
-            .setColor(0xff0000)
-            .setTitle(`Compte Epargne de ${target.username}`)
-            .setDescription(`**Solde :** $${val.toFixed(2)}`);
-          return interaction.reply({ embeds: [embed] });
-        } else {
-          return interaction.reply({ embeds: [embedReply("Type de compte invalide.")], ephemeral: true });
-        }
-      } catch (error) {
-        console.error("Erreur /economy compte:", error);
-        return interaction.reply({ content: "Une erreur est survenue lors de l'exécution de la commande.", ephemeral: true });
-      }
+    if (sub === 'compte') {
+      const type = interaction.options.getString('type');
+      const user = interaction.options.getUser('target') || interaction.user;
+      const acc = getOrCreateAccount(user.id);
+
+      if (type === 'courant') return interaction.reply({ embeds: [embedCourant(user, acc)] });
+      if (type === 'entreprise') return interaction.reply({ embeds: [embedEntreprise(user, acc)] });
+      if (type === 'epargne') return interaction.reply({ embeds: [embedEpargne(user, acc)] });
+      return interaction.reply({ content: 'Type de compte invalide.', ephemeral: true });
     }
 
-    // ─────────────────────────────────────────────────────────────
     // /economy solde
-    if (subcommand === 'solde') {
-      const type = interaction.options.getString('type').toLowerCase();
-      const account = getOrCreateAccount(interaction.user.id);
-      let value;
-      if (type === 'courant') {
-        value = account.courant.liquide + account.courant.banque;
-      } else if (type === 'entreprise') {
-        value = account.entreprise.liquide + account.entreprise.banque;
-      } else if (type === 'epargne') {
-        value = account.epargne;
-      } else {
-        return interaction.reply({ embeds: [embedReply("Type de compte invalide.")], ephemeral: true });
-      }
-      return interaction.reply({ embeds: [embedReply(`Votre solde pour le compte ${type} est $${value.toFixed(2)}.`)] });
+    if (sub === 'solde') {
+      const type = interaction.options.getString('type');
+      const acc = getOrCreateAccount(interaction.user.id);
+      let val = 0;
+      if (type === 'courant') val = (acc.courant.liquide || 0) + (acc.courant.banque || 0);
+      else if (type === 'entreprise') val = (acc.entreprise.liquide || 0) + (acc.entreprise.banque || 0);
+      else if (type === 'epargne') val = acc.epargne || 0;
+      else return interaction.reply({ content: 'Type de compte invalide.', ephemeral: true });
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x95a5a6).setDescription(`📊 **Solde ${type} :** ${fmt(val)}`).setFooter(footer)] });
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy declarertaxe
-    if (subcommand === 'declarertaxe') {
-      const montant = interaction.options.getNumber('montant');
-      return interaction.reply({ embeds: [embedReply(`Taxe déclarée: $${montant.toFixed(2)}.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy calculertaxe
-    if (subcommand === 'calculertaxe') {
-      const montant = interaction.options.getNumber('montant');
-      const taux = interaction.options.getNumber('taux');
-      const taxe = montant * (taux / 100);
-      return interaction.reply({ embeds: [embedReply(`La taxe pour $${montant.toFixed(2)} à ${taux}% est $${taxe.toFixed(2)}.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy ajouterargent (banquiers)
-    if (subcommand === 'ajouterargent') {
-      if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
-        return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
-      }
-      const target = interaction.options.getUser('target');
-      const destChoice = interaction.options.getString('destination');
+    // /economy ajouterfonds (banquier)
+    if (sub === 'ajouterfonds') {
+      if (!requireBanker(interaction)) return interaction.reply({ content: 'Commande réservée aux banquiers.', ephemeral: true });
+      const user = interaction.options.getUser('target');
+      const dest = interaction.options.getString('destination');
       const amount = interaction.options.getNumber('montant');
-      const account = getOrCreateAccount(target.id);
-      let oldVal = getBalanceRef(account, destChoice);
-      if (oldVal === null) {
-        return interaction.reply({ embeds: [embedReply(`Le champ ${destChoice} n'existe pas pour ce joueur.`)], ephemeral: true });
-      }
-      const newVal = oldVal + amount;
-      setBalanceRef(account, destChoice, newVal);
-      updateAccount(target.id, account);
-      return interaction.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été ajoutés dans ${destChoice} pour ${target.username}.`)] });
-    }
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy ouvrircompte (banquiers)
-    if (subcommand === 'ouvrircompte') {
-      if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
-        return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
-      }
-      const target = interaction.options.getUser('target');
-      const type = interaction.options.getString('type').toLowerCase();
-      const allowedTypes = ['epargne', 'entreprise'];
-      if (!allowedTypes.includes(type)) {
-        return interaction.reply({ embeds: [embedReply("Type de compte invalide. Seuls 'epargne' et 'entreprise' sont autorisés.")], ephemeral: true });
-      }
-      const account = getOrCreateAccount(target.id);
-      // On vérifie ici si le compte existe déjà (différent de zéro)
-      if (account[type] !== undefined && account[type] !== 0) {
-        return interaction.reply({ embeds: [embedReply(`${target.username} possède déjà un compte de type ${type}.`)], ephemeral: true });
-      }
-      account[type] = 0;
-      updateAccount(target.id, account);
-      return interaction.reply({ embeds: [embedReply(`Compte de type ${type} créé pour ${target.username}.`)] });
-    }
+      const acc = getOrCreateAccount(user.id);
+      const before = getBalanceRef(acc, dest);
+      if (before === null) return interaction.reply({ content: 'Champ invalide.', ephemeral: true });
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy transférer (banquiers)
-    if (subcommand === 'transférer') {
-      if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
-        return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
-      }
-      const amount = interaction.options.getNumber('montant');
-      const subChoice = interaction.options.getString('type');
-      const target = interaction.options.getUser('target');
-      const senderAccount = getOrCreateAccount(interaction.user.id);
-      const receiverAccount = getOrCreateAccount(target.id);
-      if (getBalanceRef(senderAccount, subChoice) < amount) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur votre compte pour cette opération.")], ephemeral: true });
-      }
-      setBalanceRef(senderAccount, subChoice, getBalanceRef(senderAccount, subChoice) - amount);
-      setBalanceRef(receiverAccount, subChoice, getBalanceRef(receiverAccount, subChoice) + amount);
-      updateAccount(interaction.user.id, senderAccount);
-      updateAccount(target.id, receiverAccount);
-      return interaction.reply({ embeds: [embedReply(`Transfert de $${amount.toFixed(2)} de ${interaction.user.username} vers ${target.username} dans ${subChoice} effectué.`)] });
-    }
+      setBalanceRef(acc, dest, before + amount);
+      updateAccount(user.id, acc);
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy emprunter
-    if (subcommand === 'emprunter') {
-      const amount = interaction.options.getNumber('montant');
-      const duree = interaction.options.getString('duree');
-      return interaction.reply({ embeds: [embedReply(`Demande d'emprunt de $${amount.toFixed(2)} pour ${duree} reçue.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy contrat
-    if (subcommand === 'contrat') {
-      const nomBanque = interaction.options.getString('nombanque');
-      const adresseBanque = interaction.options.getString('adressebanque');
-      const clientUser = interaction.options.getUser('client');
-      const adresseClient = interaction.options.getString('adresseclient');
-      const typeCompte = interaction.options.getString('typecompte');
-      const depotInitial = interaction.options.getNumber('depotinitial');
-      const frais = interaction.options.getNumber('frais');
-      const conditions = `Conditions Générales de Soumission d’un Compte Bancaire
-Les présentes conditions régissent l'ouverture d'un compte. (Texte complet ici)`;
-      const embed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle("Demande d'ouverture de compte bancaire")
+      const emb = new EmbedBuilder()
+        .setColor(0x27ae60)
+        .setTitle('💹 Ajout de fonds')
         .setDescription(
-          `**Nom de la Banque :** ${nomBanque}\n` +
-          `**Adresse de la Banque :** ${adresseBanque}\n\n` +
-          `**Nom du Client :** ${clientUser.username}\n` +
-          `**Adresse du Client :** ${adresseClient}\n` +
-          `**Type de Compte :** ${typeCompte}\n` +
-          `**Montant de Dépôt Initial :** $${depotInitial.toFixed(2)}\n` +
-          `**Frais Bancaires :** $${frais.toFixed(2)}\n\n` +
-          conditions
-        );
-      return interaction.reply({ embeds: [embed] });
+          `👤 **Joueur :** ${user}\n` +
+          `📍 **Champ :** \`${dest}\`\n` +
+          `➕ **Ajout :** ${fmt(amount)}\n` +
+          `💼 **Nouveau solde :** ${fmt(getBalanceRef(acc, dest))}`
+        )
+        .setFooter(footer);
+
+      await interaction.reply({ embeds: [emb] });
+      if (BANK_LOG_CHANNEL) {
+        interaction.client.channels.fetch(BANK_LOG_CHANNEL).then(ch => ch?.send({ embeds: [emb] })).catch(() => {});
+      }
+      return;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy retirerargent (banquiers)
-    if (subcommand === 'retirerargent') {
-      if (!interaction.member.roles.cache.has(process.env.BANQUIER_ROLE_ID)) {
-        return interaction.reply({ content: "Cette commande est réservée aux banquiers.", ephemeral: true });
+    // /economy retirerfonds (banquier)
+    if (sub === 'retirerfonds') {
+      if (!requireBanker(interaction)) return interaction.reply({ content: 'Commande réservée aux banquiers.', ephemeral: true });
+      const user = interaction.options.getUser('target');
+      const src  = interaction.options.getString('source');
+      const amount = interaction.options.getNumber('montant');
+
+      const acc = getOrCreateAccount(user.id);
+      const before = getBalanceRef(acc, src);
+      if (before === null) return interaction.reply({ content: 'Champ invalide.', ephemeral: true });
+      if (before < amount) return interaction.reply({ content: `Fonds insuffisants dans \`${src}\` (solde: ${fmt(before)}).`, ephemeral: true });
+
+      setBalanceRef(acc, src, before - amount);
+      updateAccount(user.id, acc);
+
+      const emb = new EmbedBuilder()
+        .setColor(0xe74c3c)
+        .setTitle('💸 Retrait de fonds')
+        .setDescription(
+          `👤 **Joueur :** ${user}\n` +
+          `📍 **Champ :** \`${src}\`\n` +
+          `➖ **Retrait :** ${fmt(amount)}\n` +
+          `💼 **Nouveau solde :** ${fmt(getBalanceRef(acc, src))}`
+        )
+        .setFooter(footer);
+
+      await interaction.reply({ embeds: [emb] });
+      if (BANK_LOG_CHANNEL) {
+        interaction.client.channels.fetch(BANK_LOG_CHANNEL).then(ch => ch?.send({ embeds: [emb] })).catch(() => {});
       }
+      return;
+    }
+
+    // /economy paye
+    if (sub === 'paye') {
       const target = interaction.options.getUser('target');
+      const src = interaction.options.getString('source');
+      const dst = interaction.options.getString('destination');
       const amount = interaction.options.getNumber('montant');
-      const account = getOrCreateAccount(target.id);
-      if (account.courant.banque < amount) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur le compte courant (banque) du joueur.")], ephemeral: true });
-      }
-      account.courant.banque -= amount;
-      updateAccount(target.id, account);
-      return interaction.reply({ embeds: [embedReply(`$${amount.toFixed(2)} ont été retirés du compte courant (banque) de ${target.username}.`)] });
-    }
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy retirermoney (conversion vers liquide)
-    if (subcommand === 'retirermoney') {
-      const type = interaction.options.getString('type').toLowerCase(); // "courant" ou "entreprise"
-      const amount = interaction.options.getNumber('montant');
-      const account = getOrCreateAccount(interaction.user.id);
-      if (account[type].banque < amount) {
-        return interaction.reply({ embeds: [embedReply(`Fonds insuffisants dans le compte ${type} (banque).`)], ephemeral: true });
-      }
-      account[type].banque -= amount;
-      account[type].liquide += amount;
-      updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez converti $${amount.toFixed(2)} du compte ${type} (banque) en liquide. Nouveau solde liquide: $${account[type].liquide.toFixed(2)}.`)] });
-    }
+      const sender = getOrCreateAccount(interaction.user.id);
+      const recv   = getOrCreateAccount(target.id);
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy depargent (conversion du liquide vers le compte bancaire)
-    if (subcommand === 'depargent') {
-      const type = interaction.options.getString('type').toLowerCase(); // "courant" ou "entreprise"
-      const amount = interaction.options.getNumber('montant');
-      const account = getOrCreateAccount(interaction.user.id);
-      if (account[type].liquide < amount) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants en liquide.")], ephemeral: true });
-      }
-      account[type].liquide -= amount;
-      account[type].banque += amount;
-      updateAccount(interaction.user.id, account);
-      return interaction.reply({ embeds: [embedReply(`Vous avez déposé $${amount.toFixed(2)} dans le compte ${type} (banque). Nouveau solde banque: $${account[type].banque.toFixed(2)}.`)] });
-    }
+      const sVal = getBalanceRef(sender, src);
+      const rVal = getBalanceRef(recv, dst);
+      if (sVal === null || rVal === null) return interaction.reply({ content: 'Champ source/destination invalide.', ephemeral: true });
+      if (sVal < amount) return interaction.reply({ content: `Fonds insuffisants dans \`${src}\`.`, ephemeral: true });
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy paye (paiement entre joueurs)
-    if (subcommand === 'paye') {
-      const target = interaction.options.getUser('target');
-      const sourceChoice = interaction.options.getString('source').toLowerCase(); // ex: "courant_liquide" ou "entreprise_liquide"
-      const destinationChoice = interaction.options.getString('destination').toLowerCase(); // ex: "courant_banque", "entreprise_banque" ou "epargne"
-      const amount = interaction.options.getNumber('montant');
-      
-      const senderAcc = getOrCreateAccount(interaction.user.id);
-      const receiverAcc = getOrCreateAccount(target.id);
-      
-      let senderValue = getBalanceRef(senderAcc, sourceChoice);
-      let receiverValue = getBalanceRef(receiverAcc, destinationChoice);
-      
-      if (senderValue === null || receiverValue === null) {
-        return interaction.reply({ embeds: [embedReply("Champ source ou destination invalide.")], ephemeral: true });
-      }
-      
-      if (senderValue < amount) {
-        return interaction.reply({ embeds: [embedReply("Fonds insuffisants sur votre champ source.")], ephemeral: true });
-      }
-      
-      setBalanceRef(senderAcc, sourceChoice, senderValue - amount);
-      setBalanceRef(receiverAcc, destinationChoice, receiverValue + amount);
-      
-      updateAccount(interaction.user.id, senderAcc);
-      updateAccount(target.id, receiverAcc);
-      
-      return interaction.reply({ embeds: [embedReply(`Vous avez payé $${amount.toFixed(2)} à ${target.username} de votre ${sourceChoice} vers leur ${destinationChoice}.`)] });
-    }
+      setBalanceRef(sender, src, sVal - amount);
+      setBalanceRef(recv,   dst, rVal + amount);
+      updateAccount(interaction.user.id, sender);
+      updateAccount(target.id, recv);
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy investir
-    if (subcommand === 'investir') {
-      const amount = interaction.options.getNumber('montant');
-      const entreprise = interaction.options.getString('entreprise');
-      return interaction.reply({ embeds: [embedReply(`Vous avez investi $${amount.toFixed(2)} dans ${entreprise}.`)] });
-    }
+      const emb = new EmbedBuilder()
+        .setColor(0x8e44ad)
+        .setTitle('🤝 Paiement effectué')
+        .setDescription(
+          `👤 **De :** ${interaction.user} \`(${src})\`\n` +
+          `👤 **À :** ${target} \`(${dst})\`\n` +
+          `💵 **Montant :** ${fmt(amount)}`
+        )
+        .setFooter(footer);
 
-    // ─────────────────────────────────────────────────────────────
-    // /economy acheterpart
-    if (subcommand === 'acheterpart') {
-      const amount = interaction.options.getNumber('montant');
-      const entreprise = interaction.options.getString('entreprise');
-      return interaction.reply({ embeds: [embedReply(`Vous avez acheté des parts pour $${amount.toFixed(2)} dans ${entreprise}.`)] });
+      return interaction.reply({ embeds: [emb] });
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy achetermaison
-    if (subcommand === 'achetermaison') {
-      const prix = interaction.options.getNumber('prix');
-      const adresse = interaction.options.getString('adresse');
-      return interaction.reply({ embeds: [embedReply(`Maison achetée à ${adresse} pour $${prix.toFixed(2)}.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy acheterproduit
-    if (subcommand === 'acheterproduit') {
-      const produit = interaction.options.getString('produit');
-      const quantite = interaction.options.getNumber('quantite');
-      const prix = interaction.options.getNumber('prix');
-      return interaction.reply({ embeds: [embedReply(`Vous avez acheté ${quantite} ${produit} pour $${prix.toFixed(2)}.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy vendrestock
-    if (subcommand === 'vendrestock') {
-      const itemType = interaction.options.getString('type').toLowerCase();
-      const quantite = interaction.options.getNumber('quantite');
-      const prixtotal = interaction.options.getNumber('prixtotal');
-      if (!global.stockData || !global.stockData[itemType] || global.stockData[itemType].quantite < quantite) {
-        return interaction.reply({ embeds: [embedReply(`Stock insuffisant pour ${itemType}.`)], ephemeral: true });
-      }
-      global.stockData[itemType].quantite -= quantite;
-      global.stockData[itemType].prixtotal -= prixtotal;
-      return interaction.reply({ embeds: [embedReply(`Vous avez vendu ${quantite} de ${itemType} pour un total de $${prixtotal.toFixed(2)}.`)] });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // /economy remboursement
-    if (subcommand === 'remboursement') {
-      const montant = interaction.options.getNumber('montant');
-      const emprunt = interaction.options.getString('emprunt');
-      return interaction.reply({ embeds: [embedReply(`Remboursement de $${montant.toFixed(2)} effectué pour l'emprunt ${emprunt}.`)] });
-    }
-  }
+  },
 };
