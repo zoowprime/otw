@@ -21,12 +21,12 @@ const roleToShop = {
 
 // shopId => owner userId (patron)  ✅ utilise bien *_USER_ID
 const shopOwner = {
-  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USER_ID || null,
-  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USER_ID || null,
-  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USER_ID || null,
-  ecurie_sd:        process.env.PATRON_ECURIE_SD_USER_ID || null,
-  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USER_ID || null,
-  ecurie_vh:        process.env.PATRON_ECURIE_VH_USER_ID || null,
+  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USER_ID,
+  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USER_ID,
+  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USER_ID,
+  ecurie_sd:        process.env.PATRON_ECURIE_SD_USER_ID,
+  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USER_ID,
+  ecurie_vh:        process.env.PATRON_ECURIE_VH_USER_ID,
 };
 
 function getShopIdFromMember(member){
