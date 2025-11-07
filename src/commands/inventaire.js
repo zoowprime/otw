@@ -1,7 +1,7 @@
 // src/commands/inventaire.js
 const {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder,
-  StringSelectMenuBuilder, ComponentType, MessageFlags
+  StringSelectMenuBuilder, ComponentType
 } = require('discord.js');
 const { getInventory, addItem, removeItem } = require('../data/inventoryData');
 
@@ -47,13 +47,13 @@ module.exports = {
     if (sub === 'voir') {
       const target = interaction.options.getUser('target') || interaction.user;
       const inv = getInventory(target.id);
-      return interaction.reply({ embeds: [renderInventory(inv, target.username)], ephemeral: true });
+      return interaction.reply({ embeds: [renderInventory(inv, target.username)] }); // ✅ pas éphémère
     }
 
     // Donner / Voler : cible
     const target = interaction.options.getUser('target');
     if (target.id === interaction.user.id) {
-      return interaction.reply({ content: '🙃 Pas sur toi-même.', ephemeral: true });
+      return interaction.reply({ content: '🙃 Pas sur toi-même.' }); // ✅ pas éphémère
     }
 
     const donorId = sub === 'donner' ? interaction.user.id : target.id;
@@ -80,8 +80,7 @@ module.exports = {
         .setFooter({ text: 'OTW Économie' })
       ],
       components: [row1],
-      flags: MessageFlags.Ephemeral
-    });
+    }); // ✅ pas éphémère
 
     const msg = await interaction.fetchReply();
     const selCat = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 60_000 }).catch(()=>null);
@@ -123,15 +122,15 @@ module.exports = {
       max: 1, time: 60_000
     }).catch(()=>null);
     const q = parseInt(m?.first()?.content || '1', 10);
-    if (isNaN(q) || q <= 0) return interaction.followUp({ content:'❌ Quantité invalide.', ephemeral:true });
+    if (isNaN(q) || q <= 0) return interaction.followUp({ content:'❌ Quantité invalide.' }); // ✅ pas éphémère
 
     // Transfert
     try { removeItem(donorId, catKey, itemName, q); }
-    catch (e) { return interaction.followUp({ content:`⛔ ${e.message}`, ephemeral:true }); }
+    catch (e) { return interaction.followUp({ content:`⛔ ${e.message}` }); } // ✅ pas éphémère
 
     addItem(receiverId, catKey, itemName, q);
 
-    // MP infos
+    // MP infos (on garde les MP en plus du message public)
     const dmDonor = await interaction.client.users.fetch(donorId).catch(()=>null);
     const dmReceiver = await interaction.client.users.fetch(receiverId).catch(()=>null);
 
@@ -151,8 +150,7 @@ module.exports = {
     dmReceiver?.send({ embeds:[embR]}).catch(()=>{});
 
     return interaction.followUp({
-      content: `✅ **${itemName} x${q}** transféré à **${receiverName}**.`,
-      ephemeral: true
-    });
+      content: `✅ **${itemName} x${q}** transféré à **${receiverName}**.`
+    }); // ✅ pas éphémère
   }
 };
