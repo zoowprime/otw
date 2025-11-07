@@ -1,14 +1,19 @@
+// src/data/shopsData.js
 const { loadJSON, saveJSON } = require('./jsonUtil');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
-// fichiers
+// ==============================
+// Constantes & helpers
+// ==============================
+
+// Fichiers JSON persistés
 const FILE_STOCK  = 'shops_stock.json';
 const FILE_PRICES = 'shops_prices.json';
 
-// catégories prises en charge
-const CATS = ['armes','chevaux','charrettes','autres','minerais'];
+// Catégories gérées par les shops
+const CATS = ['armes', 'chevaux', 'charrettes', 'autres', 'minerais'];
 
-// rôles => shopId
+// Mapping rôles -> shopId (un membre peut appartenir à une boutique via son rôle)
 const roleToShop = {
   [process.env.ARMURERIE_SD_ROLE]:     'armurerie_sd',
   [process.env.ARMURERIE_RHODES_ROLE]: 'armurerie_rhodes',
@@ -18,7 +23,36 @@ const roleToShop = {
   [process.env.ECURIE_VH_ROLE]:        'ecurie_vh',
 };
 
-function getShopIdFromMember(member){
+// Helper pour lire proprement un userId depuis l'env
+function envId(key) {
+  const v = process.env[key];
+  return v && String(v).trim().length ? String(v).trim() : null;
+}
+
+// Mapping shopId -> patron (userId)
+// ⚠️ LUS DANS LES VARIABLES ..._USER_ID
+const shopOwner = {
+  armurerie_sd:     envId('PATRON_ARMURERIE_SD_USER_ID'),
+  armurerie_rhodes: envId('PATRON_ARMURERIE_RHODES_USER_ID'),
+  armurerie_ab:     envId('PATRON_ARMURERIE_AB_USER_ID'),
+  ecurie_sd:        envId('PATRON_ECURIE_SD_USER_ID'),
+  ecurie_rhodes:    envId('PATRON_ECURIE_RHODES_USER_ID'),
+  ecurie_vh:        envId('PATRON_ECURIE_VH_USER_ID'),
+};
+
+// ==============================
+// Accès de base aux fichiers
+// ==============================
+function _stock()       { return loadJSON(FILE_STOCK,  {}); }
+function _saveStock(db) { saveJSON(FILE_STOCK,  db); }
+function _prices()      { return loadJSON(FILE_PRICES, {}); }
+function _savePrices(p) { saveJSON(FILE_PRICES, p); }
+
+// ==============================
+// API: Shops & rôles
+// ==============================
+function getShopIdFromMember(member) {
+  // On parcourt les rôles du membre, le premier qui matche gagne
   for (const [roleId, shopId] of Object.entries(roleToShop)) {
     if (!roleId) continue;
     if (member.roles.cache.has(roleId)) return shopId;
@@ -26,28 +60,14 @@ function getShopIdFromMember(member){
   return null;
 }
 
-/**
- * ⚠️ Lit l’ID du patron directement depuis process.env à CHAQUE appel
- * (évite les valeurs undefined si .env n’était pas chargé au moment du require)
- */
-function getOwnerId(shopId){
-  switch (shopId) {
-    case 'armurerie_sd':     return process.env.PATRON_ARMURERIE_SD_USER_ID     || null;
-    case 'armurerie_rhodes': return process.env.PATRON_ARMURERIE_RHODES_USER_ID || null;
-    case 'armurerie_ab':     return process.env.PATRON_ARMURERIE_AB_USER_ID     || null;
-    case 'ecurie_sd':        return process.env.PATRON_ECURIE_SD_USER_ID        || null;
-    case 'ecurie_rhodes':    return process.env.PATRON_ECURIE_RHODES_USER_ID    || null;
-    case 'ecurie_vh':        return process.env.PATRON_ECURIE_VH_USER_ID        || null;
-    default: return null;
-  }
+function getOwnerId(shopId) {
+  return shopOwner[shopId] || null;
 }
 
-function _stock(){ return loadJSON(FILE_STOCK, {}); }
-function _saveStock(db){ saveJSON(FILE_STOCK, db); }
-function _prices(){ return loadJSON(FILE_PRICES, {}); }
-function _savePrices(db){ saveJSON(FILE_PRICES, db); }
-
-function ensureShopStock(shopId){
+// ==============================
+// API: Stock
+// ==============================
+function ensureShopStock(shopId) {
   const db = _stock();
   if (!db[shopId]) {
     db[shopId] = {};
@@ -60,14 +80,18 @@ function ensureShopStock(shopId){
   return db[shopId];
 }
 
-function incrementStock(shopId, category, itemName, qty=1){
-  const db = _stock(); ensureShopStock(shopId);
+function incrementStock(shopId, category, itemName, qty = 1) {
+  if (!CATS.includes(category)) throw new Error('Catégorie invalide');
+  const db = _stock();
+  ensureShopStock(shopId);
   db[shopId][category][itemName] = (db[shopId][category][itemName] ?? 0) + qty;
   _saveStock(db);
 }
 
-function decrementStock(shopId, category, itemName, qty=1){
-  const db = _stock(); ensureShopStock(shopId);
+function decrementStock(shopId, category, itemName, qty = 1) {
+  if (!CATS.includes(category)) throw new Error('Catégorie invalide');
+  const db = _stock();
+  ensureShopStock(shopId);
   const cur = db[shopId][category][itemName] ?? 0;
   if (cur < qty) throw new Error('Stock insuffisant');
   db[shopId][category][itemName] = cur - qty;
@@ -75,62 +99,116 @@ function decrementStock(shopId, category, itemName, qty=1){
   _saveStock(db);
 }
 
-function getShopStock(shopId){ ensureShopStock(shopId); return _stock()[shopId]; }
+function getShopStock(shopId) {
+  ensureShopStock(shopId);
+  const db = _stock();
+  return db[shopId];
+}
 
-// ---------- PRIX ----------
-function setPrice(shopId, category, itemName, price){
+// ==============================
+// API: Prix
+// ==============================
+function setPrice(shopId, category, itemName, price) {
+  if (!CATS.includes(category)) throw new Error('Catégorie invalide');
   const p = _prices();
-  p[shopId] ||= {}; p[shopId][category] ||= {};
+  p[shopId] ||= {};
+  p[shopId][category] ||= {};
   p[shopId][category][itemName] = Number(price);
   _savePrices(p);
 }
-function getPrice(shopId, category, itemName){
+
+function getPrice(shopId, category, itemName) {
   const p = _prices();
   return p?.[shopId]?.[category]?.[itemName] ?? null;
 }
-function getAllPrices(shopId){ return _prices()?.[shopId] || {}; }
-function resetPrices(shopId){ const p = _prices(); delete p[shopId]; _savePrices(p); }
 
-// ---------- ENTREPRISE (patron) ----------
-// Débite d’abord banque, puis liquide
-function debitOwnerEnterprise(shopId, amount){
+function getAllPrices(shopId) {
+  const p = _prices();
+  return p?.[shopId] || {};
+}
+
+function resetPrices(shopId) {
+  const p = _prices();
+  if (p[shopId]) delete p[shopId];
+  _savePrices(p);
+}
+
+// ==============================
+// API: Paiements entreprise (patron)
+// ==============================
+
+/**
+ * Débite le compte entreprise du patron d'un shop.
+ * Règle: d'abord banque, puis liquide.
+ * @returns { ok: boolean, reason?: string, ownerId?: string, before?: {liquide,banque}, after?: {liquide,banque} }
+ */
+function debitOwnerEnterprise(shopId, amount) {
   const ownerId = getOwnerId(shopId);
-  if (!ownerId) return { ok:false, reason:'Aucun patron défini.' };
+  if (!ownerId) return { ok: false, reason: 'Aucun patron défini.' };
 
   const acc = getOrCreateAccount(ownerId);
-  acc.entreprise ||= { liquide:0, banque:0 };
+  const cur = acc.entreprise || { liquide: 0, banque: 0 };
 
-  const total = (acc.entreprise.banque||0) + (acc.entreprise.liquide||0);
-  if (total < amount) return { ok:false, reason:'Fonds insuffisants (entreprise).' };
+  const total = (cur.banque || 0) + (cur.liquide || 0);
+  if (total < amount) return { ok: false, reason: 'Fonds insuffisants (entreprise).' };
 
+  const before = { liquide: cur.liquide || 0, banque: cur.banque || 0 };
   let rest = amount;
-  if (acc.entreprise.banque >= rest) {
-    acc.entreprise.banque -= rest; rest = 0;
+
+  if (cur.banque >= rest) {
+    cur.banque -= rest;
+    rest = 0;
   } else {
-    rest -= acc.entreprise.banque;
-    acc.entreprise.banque = 0;
-    acc.entreprise.liquide = Math.max(0, (acc.entreprise.liquide||0) - rest);
+    rest -= cur.banque;
+    cur.banque = 0;
+    cur.liquide = Math.max(0, (cur.liquide || 0) - rest);
     rest = 0;
   }
 
+  acc.entreprise = cur;
   updateAccount(ownerId, acc);
-  return { ok:true, ownerId };
+
+  return { ok: true, ownerId, before, after: { liquide: cur.liquide, banque: cur.banque } };
 }
 
-function creditOwnerEnterpriseBank(shopId, amount){
+/**
+ * Crédite la banque entreprise du patron d'un shop.
+ * @returns { ok: boolean, reason?: string, ownerId?: string }
+ */
+function creditOwnerEnterpriseBank(shopId, amount) {
   const ownerId = getOwnerId(shopId);
-  if (!ownerId) return { ok:false, reason:'Aucun patron défini.' };
+  if (!ownerId) return { ok: false, reason: 'Aucun patron défini.' };
+
   const acc = getOrCreateAccount(ownerId);
-  acc.entreprise ||= { liquide:0, banque:0 };
-  acc.entreprise.banque = (acc.entreprise.banque||0) + amount;
+  acc.entreprise ||= { liquide: 0, banque: 0 };
+  acc.entreprise.banque = (acc.entreprise.banque || 0) + amount;
+
   updateAccount(ownerId, acc);
-  return { ok:true, ownerId };
+  return { ok: true, ownerId };
 }
 
+// ==============================
+// Exports
+// ==============================
 module.exports = {
-  getShopIdFromMember, getOwnerId,
-  incrementStock, decrementStock, getShopStock,
-  setPrice, getPrice, getAllPrices, resetPrices,
-  debitOwnerEnterprise, creditOwnerEnterpriseBank,
-  CATS
+  // mapping & infos
+  CATS,
+  getShopIdFromMember,
+  getOwnerId,
+
+  // stock
+  ensureShopStock,
+  incrementStock,
+  decrementStock,
+  getShopStock,
+
+  // prix
+  setPrice,
+  getPrice,
+  getAllPrices,
+  resetPrices,
+
+  // paiements
+  debitOwnerEnterprise,
+  creditOwnerEnterpriseBank,
 };
