@@ -11,22 +11,22 @@ const CATS = ['armes','chevaux','charrettes','autres','minerais'];
 
 // rôles => shopId
 const roleToShop = {
-  [process.env.ARMURERIE_SD_ROLE]:    'armurerie_sd',
-  [process.env.ARMURERIE_RHODES_ROLE]:'armurerie_rhodes',
-  [process.env.ARMURERIE_AB_ROLE]:    'armurerie_ab',
-  [process.env.ECURIE_SD_ROLE]:       'ecurie_sd',
-  [process.env.ECURIE_RHODES_ROLE]:   'ecurie_rhodes',
-  [process.env.ECURIE_VH_ROLE]:       'ecurie_vh',
+  [process.env.ARMURERIE_SD_ROLE]:     'armurerie_sd',
+  [process.env.ARMURERIE_RHODES_ROLE]: 'armurerie_rhodes',
+  [process.env.ARMURERIE_AB_ROLE]:     'armurerie_ab',
+  [process.env.ECURIE_SD_ROLE]:        'ecurie_sd',
+  [process.env.ECURIE_RHODES_ROLE]:    'ecurie_rhodes',
+  [process.env.ECURIE_VH_ROLE]:        'ecurie_vh',
 };
 
-// shopId => owner userId (patron)
+// shopId => owner userId (patron)  ✅ utilise bien *_USER_ID
 const shopOwner = {
-  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USERID,
-  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USERID,
-  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USERID,
-  ecurie_sd:        process.env.PATRON_ECURIE_SD_USERID,
-  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USERID,
-  ecurie_vh:        process.env.PATRON_ECURIE_VH_USERID,
+  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USER_ID || null,
+  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USER_ID || null,
+  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USER_ID || null,
+  ecurie_sd:        process.env.PATRON_ECURIE_SD_USER_ID || null,
+  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USER_ID || null,
+  ecurie_vh:        process.env.PATRON_ECURIE_VH_USER_ID || null,
 };
 
 function getShopIdFromMember(member){
@@ -120,3 +120,4 @@ module.exports = {
   debitOwnerEnterprise, creditOwnerEnterpriseBank,
   CATS
 };
+
