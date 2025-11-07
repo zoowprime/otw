@@ -1,4 +1,3 @@
-// src/data/shopsData.js
 const { loadJSON, saveJSON } = require('./jsonUtil');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 
@@ -19,16 +18,6 @@ const roleToShop = {
   [process.env.ECURIE_VH_ROLE]:        'ecurie_vh',
 };
 
-// shopId => owner userId (patron)  ✅ utilise bien *_USER_ID
-const shopOwner = {
-  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USER_ID,
-  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USER_ID,
-  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USER_ID,
-  ecurie_sd:        process.env.PATRON_ECURIE_SD_USER_ID,
-  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USER_ID,
-  ecurie_vh:        process.env.PATRON_ECURIE_VH_USER_ID,
-};
-
 function getShopIdFromMember(member){
   for (const [roleId, shopId] of Object.entries(roleToShop)) {
     if (!roleId) continue;
@@ -36,7 +25,22 @@ function getShopIdFromMember(member){
   }
   return null;
 }
-function getOwnerId(shopId){ return shopOwner[shopId] || null; }
+
+/**
+ * ⚠️ Lit l’ID du patron directement depuis process.env à CHAQUE appel
+ * (évite les valeurs undefined si .env n’était pas chargé au moment du require)
+ */
+function getOwnerId(shopId){
+  switch (shopId) {
+    case 'armurerie_sd':     return process.env.PATRON_ARMURERIE_SD_USER_ID     || null;
+    case 'armurerie_rhodes': return process.env.PATRON_ARMURERIE_RHODES_USER_ID || null;
+    case 'armurerie_ab':     return process.env.PATRON_ARMURERIE_AB_USER_ID     || null;
+    case 'ecurie_sd':        return process.env.PATRON_ECURIE_SD_USER_ID        || null;
+    case 'ecurie_rhodes':    return process.env.PATRON_ECURIE_RHODES_USER_ID    || null;
+    case 'ecurie_vh':        return process.env.PATRON_ECURIE_VH_USER_ID        || null;
+    default: return null;
+  }
+}
 
 function _stock(){ return loadJSON(FILE_STOCK, {}); }
 function _saveStock(db){ saveJSON(FILE_STOCK, db); }
@@ -61,6 +65,7 @@ function incrementStock(shopId, category, itemName, qty=1){
   db[shopId][category][itemName] = (db[shopId][category][itemName] ?? 0) + qty;
   _saveStock(db);
 }
+
 function decrementStock(shopId, category, itemName, qty=1){
   const db = _stock(); ensureShopStock(shopId);
   const cur = db[shopId][category][itemName] ?? 0;
@@ -69,9 +74,10 @@ function decrementStock(shopId, category, itemName, qty=1){
   if (db[shopId][category][itemName] <= 0) delete db[shopId][category][itemName];
   _saveStock(db);
 }
+
 function getShopStock(shopId){ ensureShopStock(shopId); return _stock()[shopId]; }
 
-// PRIX
+// ---------- PRIX ----------
 function setPrice(shopId, category, itemName, price){
   const p = _prices();
   p[shopId] ||= {}; p[shopId][category] ||= {};
@@ -85,22 +91,30 @@ function getPrice(shopId, category, itemName){
 function getAllPrices(shopId){ return _prices()?.[shopId] || {}; }
 function resetPrices(shopId){ const p = _prices(); delete p[shopId]; _savePrices(p); }
 
-// Paiement (entreprise patron) : d'abord banque, puis liquide
+// ---------- ENTREPRISE (patron) ----------
+// Débite d’abord banque, puis liquide
 function debitOwnerEnterprise(shopId, amount){
   const ownerId = getOwnerId(shopId);
   if (!ownerId) return { ok:false, reason:'Aucun patron défini.' };
+
   const acc = getOrCreateAccount(ownerId);
-  const cur = acc.entreprise || { liquide:0, banque:0 };
-  const total = (cur.banque||0)+(cur.liquide||0);
+  acc.entreprise ||= { liquide:0, banque:0 };
+
+  const total = (acc.entreprise.banque||0) + (acc.entreprise.liquide||0);
   if (total < amount) return { ok:false, reason:'Fonds insuffisants (entreprise).' };
 
   let rest = amount;
-  const before = { liquide: cur.liquide, banque: cur.banque };
-  if (cur.banque >= rest) { cur.banque -= rest; rest = 0; }
-  else { rest -= cur.banque; cur.banque = 0; cur.liquide = Math.max(0, cur.liquide - rest); rest = 0; }
+  if (acc.entreprise.banque >= rest) {
+    acc.entreprise.banque -= rest; rest = 0;
+  } else {
+    rest -= acc.entreprise.banque;
+    acc.entreprise.banque = 0;
+    acc.entreprise.liquide = Math.max(0, (acc.entreprise.liquide||0) - rest);
+    rest = 0;
+  }
 
-  acc.entreprise = cur; updateAccount(ownerId, acc);
-  return { ok:true, before, after:cur, ownerId };
+  updateAccount(ownerId, acc);
+  return { ok:true, ownerId };
 }
 
 function creditOwnerEnterpriseBank(shopId, amount){
@@ -120,4 +134,3 @@ module.exports = {
   debitOwnerEnterprise, creditOwnerEnterpriseBank,
   CATS
 };
-
