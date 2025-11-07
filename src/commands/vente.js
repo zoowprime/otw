@@ -59,7 +59,7 @@ module.exports = {
         .setFooter({ text: 'OTW Économie' })
       ],
       components: [row],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral // UI vendeur reste propre
     });
 
     const msg = await interaction.fetchReply();
@@ -97,12 +97,10 @@ module.exports = {
       .setFooter({ text: 'OTW Économie' });
 
     const dm = await interaction.client.users.fetch(target.id).catch(()=>null);
-
     if (dm) {
       await dm.send({ embeds: [reqEmbed], components: [rowBtns] }).catch(()=>{});
     }
 
-    // Également poster dans le salon courant (pour éviter DM fermés)
     await sel.update({
       embeds: [ new EmbedBuilder()
         .setColor(0xf39c12)
@@ -113,14 +111,8 @@ module.exports = {
       components: []
     });
 
-    // Créer un collector de boutons sur le canal DM si possible, sinon sur le salon courant
-    const collectorTarget = dm
-      ? (await dm.createDM())
-      : interaction.channel;
-
-    const buttonMsg = dm ? (await collectorTarget.messages.fetch({ limit:1 })).first() : null;
-
-    const collector = (buttonMsg || interaction.channel).createMessageComponentCollector({
+    // Collector (DM si possible, sinon salon courant)
+    const collector = (interaction.channel).createMessageComponentCollector({
       componentType: ComponentType.Button, time: 120_000
     });
 
@@ -134,7 +126,10 @@ module.exports = {
 
       if (i.customId === 'vente_refuse') {
         done = true;
-        await i.update({ embeds: [ new EmbedBuilder().setColor(0x95a5a6).setTitle('❌ Vente refusée').setFooter({ text:'OTW Économie' }) ], components: [] });
+        await i.update({
+          embeds: [ new EmbedBuilder().setColor(0x95a5a6).setTitle('❌ Vente refusée').setFooter({ text:'OTW Économie' }) ],
+          components: []
+        });
         return interaction.followUp({ content: `❌ **${target.username}** a refusé l’achat.`, ephemeral: true });
       }
 
@@ -142,7 +137,10 @@ module.exports = {
       const pay = debitPlayerCourant(target.id, unitPrice);
       if (!pay.ok) {
         done = true;
-        await i.update({ embeds: [ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Paiement refusé').setDescription('Fonds insuffisants sur **courant**.').setFooter({ text:'OTW Économie' }) ], components: [] });
+        await i.update({
+          embeds: [ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Paiement refusé').setDescription('Fonds insuffisants sur **courant**.').setFooter({ text:'OTW Économie' }) ],
+          components: []
+        });
         return interaction.followUp({ content: '⛔ Le client n’a pas assez de fonds.', ephemeral: true });
       }
 
@@ -153,7 +151,6 @@ module.exports = {
       try {
         decrementStock(shopId, cat, itemName, 1);
       } catch {
-        // si entre temps plus de stock
         return i.update({ embeds: [ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Stock épuisé').setFooter({ text:'OTW Économie' }) ], components: [] });
       }
 
@@ -165,9 +162,25 @@ module.exports = {
           .setColor(0x2ecc71).setTitle('✅ Achat validé')
           .setDescription(`Tu as reçu **${itemName}** dans ton inventaire.`)
           .setFooter({ text: 'OTW Économie' })
-        ], components: []
+        ],
+        components: []
       });
 
+      // ✅ Confirmation publique dans le salon
+      await interaction.channel.send({
+        embeds: [ new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('💼 Vente confirmée')
+          .setDescription(
+            `**${interaction.user.username}** a vendu **${itemName}** à **${target.username}**\n`+
+            `Boutique: **${shopId}** — Prix: **$${unitPrice.toFixed(2)}**`
+          )
+          .setTimestamp()
+          .setFooter({ text: 'OTW Économie' })
+        ]
+      });
+
+      // (tu peux garder ce retour pour le vendeur en privé si tu veux)
       await interaction.followUp({
         content: `✅ Vente confirmée: **${itemName}** → **${target.username}** pour **$${unitPrice.toFixed(2)}**.`,
         ephemeral: true
@@ -181,3 +194,4 @@ module.exports = {
     });
   }
 };
+
