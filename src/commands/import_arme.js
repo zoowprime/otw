@@ -20,11 +20,18 @@ module.exports = {
       .setName('import')
       .setDescription('Importer une arme (armureries uniquement)')
     ),
+
   async execute(interaction) {
     if (interaction.options.getSubcommand() !== 'import') return;
 
-    // Déterminer la boutique depuis le rôle
+    // 1) Déterminer la boutique depuis le rôle
     const shopId = getShopIdFromMember(interaction.member);
+
+    // 🔎 DEBUG CONSOLE
+    try {
+      const roleIds = [...interaction.member.roles.cache.keys()];
+      console.log('[arme import] user=', interaction.user.id, 'roles=', roleIds, 'shopId=', shopId);
+    } catch (_) {}
 
     if (!shopId || !shopId.startsWith('armurerie_')) {
       return interaction.reply({
@@ -33,18 +40,28 @@ module.exports = {
       });
     }
 
-    // Vérifier la présence du patron configuré
+    // 2) Vérifier la présence du patron configuré pour ce shop
     const ownerId = getOwnerId(shopId);
+
+    // 🔎 DEBUG CONSOLE
+    try {
+      console.log('[arme import] envVar=', envVarForShop(shopId), 'ownerId(lu)=', ownerId);
+    } catch (_) {}
+
     if (!ownerId) {
       const varName = envVarForShop(shopId) || 'PATRON_*_USER_ID';
       const emb = new EmbedBuilder()
         .setColor(0xe74c3c)
         .setTitle('⛔ Aucun patron défini')
-        .setDescription(`Boutique: **${shopId}**\n\n➜ Renseigne la variable **${varName}** dans ton \`.env\` (ou sur Render), puis redémarre le bot.`);
+        .setDescription(
+          `Boutique: **${shopId}**\n\n` +
+          `➜ Renseigne la variable **${varName}** dans ton \`.env\` (ou sur Render), puis redémarre le bot.`
+        )
+        .setFooter({ text: 'OTW Économie' });
       return interaction.reply({ embeds: [emb], ephemeral: true });
     }
 
-    // Menu d’armes
+    // 3) Menu d’armes
     const menu = new StringSelectMenuBuilder()
       .setCustomId('weapon_select')
       .setPlaceholder('🔫 Choisis une arme à importer')
@@ -65,9 +82,13 @@ module.exports = {
       .setDescription('Sélectionne une **arme**. Le prix sera débité du **compte entreprise** du patron.')
       .setFooter({ text: 'OTW Économie' });
 
-    await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      embeds: [embed],
+      components: [row],
+      flags: MessageFlags.Ephemeral
+    });
 
-    // Sélection
+    // 4) Attente de la sélection
     const msg = await interaction.fetchReply();
     const sel = await msg.awaitMessageComponent({
       componentType: ComponentType.StringSelect,
@@ -77,7 +98,7 @@ module.exports = {
 
     const { name, price } = JSON.parse(sel.values[0]);
 
-    // Paiement entreprise (patron)
+    // 5) Paiement entreprise (patron)
     const pay = debitOwnerEnterprise(shopId, price);
     if (!pay.ok) {
       const errEmb = new EmbedBuilder()
@@ -92,10 +113,10 @@ module.exports = {
       return sel.update({ embeds: [errEmb], components: [] });
     }
 
-    // Ajout stock
+    // 6) Ajout au stock
     incrementStock(shopId, 'armes', name, 1);
 
-    // Confirmation
+    // 7) Confirmation à l’utilisateur
     await sel.update({
       embeds: [
         new EmbedBuilder()
@@ -107,20 +128,22 @@ module.exports = {
       components: []
     });
 
-    // Log opc dans le salon d’import (si défini)
+    // 8) Log dans le salon d’import (si défini)
     if (IMPORT_CHANNEL_ID) {
-      interaction.client.channels.fetch(IMPORT_CHANNEL_ID).then(ch => {
-        ch?.send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x2ecc71)
-              .setTitle('📥 Import Arme')
-              .setDescription(`**${interaction.member}** a importé **${name}** pour **$${price}**\nBoutique: **${shopId}**`)
-              .setTimestamp()
-              .setFooter({ text: 'OTW Économie' })
-          ]
-        }).catch(() => {});
-      }).catch(() => {});
+      interaction.client.channels.fetch(IMPORT_CHANNEL_ID)
+        .then(ch => {
+          ch?.send({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ecc71)
+                .setTitle('📥 Import Arme')
+                .setDescription(`**${interaction.member}** a importé **${name}** pour **$${price}**\nBoutique: **${shopId}**`)
+                .setTimestamp()
+                .setFooter({ text: 'OTW Économie' })
+            ]
+          }).catch(() => {});
+        })
+        .catch(() => {});
     }
   }
 };
