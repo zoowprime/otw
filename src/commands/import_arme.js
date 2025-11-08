@@ -24,10 +24,10 @@ module.exports = {
   async execute(interaction) {
     if (interaction.options.getSubcommand() !== 'import') return;
 
-    // 1) Déterminer la boutique depuis le rôle
+    // Déterminer la boutique depuis les rôles
     const shopId = getShopIdFromMember(interaction.member);
 
-    // 🔎 DEBUG CONSOLE
+    // Debug utile
     try {
       const roleIds = [...interaction.member.roles.cache.keys()];
       console.log('[arme import] user=', interaction.user.id, 'roles=', roleIds, 'shopId=', shopId);
@@ -40,28 +40,20 @@ module.exports = {
       });
     }
 
-    // 2) Vérifier la présence du patron configuré pour ce shop
+    // Vérifier le patron configuré
     const ownerId = getOwnerId(shopId);
-
-    // 🔎 DEBUG CONSOLE
-    try {
-      console.log('[arme import] envVar=', envVarForShop(shopId), 'ownerId(lu)=', ownerId);
-    } catch (_) {}
-
+    console.log('[arme import] envVar=', envVarForShop(shopId), 'ownerId(lu)=', ownerId);
     if (!ownerId) {
       const varName = envVarForShop(shopId) || 'PATRON_*_USER_ID';
       const emb = new EmbedBuilder()
         .setColor(0xe74c3c)
         .setTitle('⛔ Aucun patron défini')
-        .setDescription(
-          `Boutique: **${shopId}**\n\n` +
-          `➜ Renseigne la variable **${varName}** dans ton \`.env\` (ou sur Render), puis redémarre le bot.`
-        )
+        .setDescription(`Boutique: **${shopId}**\n\n➜ Renseigne la variable **${varName}** puis redémarre le bot.`)
         .setFooter({ text: 'OTW Économie' });
       return interaction.reply({ embeds: [emb], ephemeral: true });
     }
 
-    // 3) Menu d’armes
+    // Menu d’armes
     const menu = new StringSelectMenuBuilder()
       .setCustomId('weapon_select')
       .setPlaceholder('🔫 Choisis une arme à importer')
@@ -88,7 +80,7 @@ module.exports = {
       flags: MessageFlags.Ephemeral
     });
 
-    // 4) Attente de la sélection
+    // Attente de la sélection
     const msg = await interaction.fetchReply();
     const sel = await msg.awaitMessageComponent({
       componentType: ComponentType.StringSelect,
@@ -96,54 +88,62 @@ module.exports = {
     }).catch(() => null);
     if (!sel) return;
 
-    const { name, price } = JSON.parse(sel.values[0]);
+    // ✅ éviter le timeout des 3s
+    await sel.deferUpdate();
 
-    // 5) Paiement entreprise (patron)
-    const pay = debitOwnerEnterprise(shopId, price);
-    if (!pay.ok) {
-      const errEmb = new EmbedBuilder()
-        .setColor(0xe74c3c)
-        .setTitle('⛔ Paiement refusé')
-        .setDescription(
-          `Raison : **${pay.reason || 'inconnue'}**` +
-          (pay.missingEnv ? `\nVariable manquante : **${pay.missingEnv}**` : '')
-        )
-        .setFooter({ text: 'OTW Économie' });
+    let finalEmbed;
+    try {
+      const { name, price } = JSON.parse(sel.values[0]);
 
-      return sel.update({ embeds: [errEmb], components: [] });
-    }
+      // Paiement entreprise (patron)
+      const pay = debitOwnerEnterprise(shopId, price);
+      if (!pay.ok) {
+        finalEmbed = new EmbedBuilder()
+          .setColor(0xe74c3c)
+          .setTitle('⛔ Paiement refusé')
+          .setDescription(
+            `Raison : **${pay.reason || 'inconnue'}**` +
+            (pay.missingEnv ? `\nVariable manquante : **${pay.missingEnv}**` : '')
+          )
+          .setFooter({ text: 'OTW Économie' });
+      } else {
+        // Ajout au stock
+        incrementStock(shopId, 'armes', name, 1);
 
-    // 6) Ajout au stock
-    incrementStock(shopId, 'armes', name, 1);
-
-    // 7) Confirmation à l’utilisateur
-    await sel.update({
-      embeds: [
-        new EmbedBuilder()
+        finalEmbed = new EmbedBuilder()
           .setColor(0x2ecc71)
           .setTitle('✅ Import confirmé')
           .setDescription(`**${name}** importée pour **$${price}**.\nAjoutée au stock **${shopId}** (armes).`)
-          .setFooter({ text: 'OTW Économie' })
-      ],
-      components: []
-    });
+          .setFooter({ text: 'OTW Économie' });
 
-    // 8) Log dans le salon d’import (si défini)
-    if (IMPORT_CHANNEL_ID) {
-      interaction.client.channels.fetch(IMPORT_CHANNEL_ID)
-        .then(ch => {
-          ch?.send({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(0x2ecc71)
-                .setTitle('📥 Import Arme')
-                .setDescription(`**${interaction.member}** a importé **${name}** pour **$${price}**\nBoutique: **${shopId}**`)
-                .setTimestamp()
-                .setFooter({ text: 'OTW Économie' })
-            ]
-          }).catch(() => {});
-        })
-        .catch(() => {});
+        // Log dans le salon d’import (si défini)
+        if (IMPORT_CHANNEL_ID) {
+          interaction.client.channels.fetch(IMPORT_CHANNEL_ID)
+            .then(ch => {
+              ch?.send({
+                embeds: [
+                  new EmbedBuilder()
+                    .setColor(0x2ecc71)
+                    .setTitle('📥 Import Arme')
+                    .setDescription(`**${interaction.member}** a importé **${name}** pour **$${price}**\nBoutique: **${shopId}**`)
+                    .setTimestamp()
+                    .setFooter({ text: 'OTW Économie' })
+                ]
+              }).catch(() => {});
+            })
+            .catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.error('import_arme error:', e);
+      finalEmbed = new EmbedBuilder()
+        .setColor(0xe74c3c)
+        .setTitle('⛔ Erreur pendant l’import')
+        .setDescription('Une erreur est survenue. Réessaie.')
+        .setFooter({ text: 'OTW Économie' });
     }
+
+    // Édite la réponse initiale (après deferUpdate)
+    await interaction.editReply({ embeds: [finalEmbed], components: [] });
   }
 };
