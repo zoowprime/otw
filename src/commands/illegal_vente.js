@@ -6,7 +6,7 @@ const {
 } = require('discord.js');
 
 const {
-  getIllegalStock, decrementIllegalStock, getIllegalPrice, creditIllegalBank
+  getIllegalStock, decrementIllegalStock, getIllegalPrice
 } = require('../data/illegalData');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 const { addItem } = require('../data/inventoryData');
@@ -19,18 +19,30 @@ const GERANT_IDS = [
   process.env.ILLEGAL_GERANT_USER_ID_4,
 ].filter(Boolean);
 
+// Débite le client (banque puis liquide)
 function debitPlayerCourant(userId, amount){
   const acc = getOrCreateAccount(userId);
   acc.courant ||= { liquide:0, banque:0 };
   const total = (acc.courant.banque||0) + (acc.courant.liquide||0);
   if (total < amount) return { ok:false };
-  // Prioriser banque? tu voulais prélèvement sur banque uniquement pour achats d'import,
-  // ici pour la vente on peut accepter banque+liquide (comme le /vente classique).
   let rest = amount;
   if (acc.courant.banque >= rest){ acc.courant.banque -= rest; rest = 0; }
-  else { rest -= acc.courant.banque; acc.courant.banque = 0; acc.courant.liquide = Math.max(0, acc.courant.liquide - rest); rest = 0; }
+  else {
+    rest -= acc.courant.banque;
+    acc.courant.banque = 0;
+    acc.courant.liquide = Math.max(0, acc.courant.liquide - rest);
+    rest = 0;
+  }
   updateAccount(userId, acc);
   return { ok:true };
+}
+
+// Crédite le vendeur en LIQUIDE
+function creditSellerLiquid(userId, amount){
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide:0, banque:0 };
+  acc.courant.liquide = (acc.courant.liquide || 0) + amount;
+  updateAccount(userId, acc);
 }
 
 module.exports = {
@@ -48,12 +60,10 @@ module.exports = {
     if (!target || target.bot) return interaction.reply({ content:'Client invalide.', ephemeral:true });
 
     const stock = getIllegalStock();
-    // flatten armes + autres (we sell only armes + kit etc)
-    const items = Object.entries(stock.armes || {}).concat(Object.entries(stock.autres || {})).map(([name,qty])=>{
-      const cat = (stock.armes && stock.armes[name] !== undefined) ? 'armes' : 'autres';
-      return { name, qty, cat };
-    }).filter(Boolean);
-
+    const items = [
+      ...Object.entries(stock.armes || {}).map(([name, qty]) => ({ name, qty, cat:'armes' })),
+      ...Object.entries(stock.autres || {}).map(([name, qty]) => ({ name, qty, cat:'autres' })),
+    ];
     if (!items.length) return interaction.reply({ content:'📦 Stock illégal vide.', ephemeral:true });
 
     const menu = new StringSelectMenuBuilder()
@@ -67,9 +77,12 @@ module.exports = {
       })));
 
     await interaction.reply({
-      embeds:[ new EmbedBuilder().setTitle('🧾 Vente illégale').setDescription(`Sélectionne l'item à vendre à **${target.username}**`).setColor(0xd35400) ],
+      embeds:[ new EmbedBuilder()
+        .setTitle('🧾 Vente illégale')
+        .setDescription(`Sélectionne l'item à vendre à **${target.username}**.`)
+        .setColor(0xd35400) ],
       components: [ new ActionRowBuilder().addComponents(menu) ],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
 
     const msg = await interaction.fetchReply();
@@ -79,101 +92,102 @@ module.exports = {
     const { name, cat } = JSON.parse(sel.values[0]);
     const unitPrice = getIllegalPrice(cat, name);
     if (!unitPrice) {
-      return sel.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Pas de prix défini').setDescription('Définis un prix d’abord.') ], components: [] });
+      return sel.update({
+        embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Pas de prix défini').setDescription('Définis un prix d’abord avec /illegal_prix.') ],
+        components: []
+      });
     }
 
-    // propose au client par DM + en message de canal
-    const acceptBtn = new ButtonBuilder().setCustomId('illegal_sale_accept').setLabel('Accepter').setStyle(ButtonStyle.Success);
-    const refuseBtn = new ButtonBuilder().setCustomId('illegal_sale_refuse').setLabel('Refuser').setStyle(ButtonStyle.Danger);
-    const rowBtns = new ActionRowBuilder().addComponents(acceptBtn, refuseBtn);
+    // Message public de confirmation dans le salon courant (pas de MP)
+    const acceptBtn = new ButtonBuilder().setCustomId('illegal_sale_accept').setLabel('Accepter').setStyle(ButtonStyle.Success).setEmoji('✅');
+    const refuseBtn = new ButtonBuilder().setCustomId('illegal_sale_refuse').setLabel('Refuser').setStyle(ButtonStyle.Danger).setEmoji('❌');
 
     const saleEmbed = new EmbedBuilder()
       .setTitle('🧾 Proposition de vente illégale')
       .setColor(0xf39c12)
       .setDescription(
-        `Vendeur: **${interaction.user.username}**\nArticle: **${name}**\nPrix: **$${unitPrice.toFixed(2)}**\n\nCliquez **Accepter** pour confirmer l'achat.`
+        `Vendeur : **${interaction.user.username}**\n`+
+        `Client : ${target}\n`+
+        `Article : **${name}**\n`+
+        `Prix : **$${unitPrice.toFixed(2)}**\n\n`+
+        `👉 ${target}, cliquez sur **Accepter** pour confirmer l'achat.`
       );
 
-    // DM client
-    const dm = await interaction.client.users.fetch(target.id).catch(()=>null);
-    if (dm) await dm.send({ embeds:[saleEmbed], components:[rowBtns] }).catch(()=>{});
+    // Envoie public (non éphémère) pour que le client puisse cliquer
+    const promptMsg = await interaction.channel.send({
+      embeds:[saleEmbed],
+      components:[ new ActionRowBuilder().addComponents(acceptBtn, refuseBtn) ]
+    });
 
+    // Désactive la vue éphémère du vendeur
     await sel.update({
-      embeds:[ new EmbedBuilder().setColor(0xf39c12).setTitle('🔔 Offre envoyée').setDescription(`Proposition envoyée à **${target.username}**.`) ],
+      embeds:[ new EmbedBuilder().setColor(0xf39c12).setTitle('🔔 Offre envoyée').setDescription(`Proposition envoyée à **${target.username}** dans ce salon.`) ],
       components: []
     });
 
-    // collector for buttons - listen in the channel where DM sent or original channel
-    const collectorTarget = dm ? (await dm.createDM()).messages.fetch({ limit:1 }).catch(()=>null) : null;
-    // we'll simply listen on the bot's client for the next button with customId illegal_sale_accept/refuse and user = target
-    const collector = interaction.channel.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120000 });
+    const collector = promptMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120000 });
+    let completed = false;
 
-    let done = false;
     collector.on('collect', async (i) => {
       if (!['illegal_sale_accept','illegal_sale_refuse'].includes(i.customId)) return;
       if (i.user.id !== target.id) return i.reply({ content:'⛔ Seul le client peut répondre.', ephemeral:true });
-      collector.stop('answered');
 
       if (i.customId === 'illegal_sale_refuse') {
-        done = true;
+        completed = true;
+        collector.stop('refused');
         await i.update({ embeds:[ new EmbedBuilder().setColor(0x95a5a6).setTitle('❌ Vente refusée') ], components: [] });
-        return interaction.followUp({ content:`❌ ${target.username} a refusé l'achat.`, ephemeral:true });
+        return;
       }
 
-      // paiement du client (courant banque+liquide)
-      const pay = debitPlayerCourant(target.id, unitPrice = unitPrice);
+      // Accepté → paiement client
+      const pay = debitPlayerCourant(target.id, unitPrice);
       if (!pay.ok) {
-        done = true;
-        await i.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Paiement refusé').setDescription('Fonds insuffisants.') ], components: [] });
-        return interaction.followUp({ content:'⛔ Le client n’a pas assez de fonds.', ephemeral:true });
+        completed = true;
+        collector.stop('nofunds');
+        return i.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Paiement refusé').setDescription('Fonds insuffisants.') ], components: [] });
       }
-
-      // créditer la banque de l'organisation illégale
-      creditIllegalBank(unitPrice);
 
       // MAJ stock
       try {
         decrementIllegalStock(cat, name, 1);
-      } catch (e){
-        await i.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Stock insuffisant') ], components: [] });
-        return;
+      } catch {
+        completed = true;
+        collector.stop('nostock');
+        return i.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Stock insuffisant') ], components: [] });
       }
 
-      // ajout au inventaire du client
-      try { addItem(target.id, cat, name, 1); } catch (e){}
+      // Ajout dans l’inventaire du client (kit → "autres")
+      const invCat = (name === 'Kit de crochetage') ? 'autres' : cat;
+      try { addItem(target.id, invCat, name, 1); } catch {}
 
-      done = true;
-      await i.update({ embeds:[ new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Achat validé').setDescription(`Tu as reçu **${name}**.`) ], components: [] });
+      // Créditer le vendeur en LIQUIDE
+      creditSellerLiquid(uid, unitPrice);
 
-      // annonce publique non éphémère
-      try {
-        const logCh = process.env.LOG_CHANNEL_ID || process.env.STOCK_CHANNEL;
-        if (logCh){
-          const ch = await interaction.client.channels.fetch(logCh).catch(()=>null);
-          if (ch?.isTextBased()) {
-            await ch.send({ content:`💬 ${interaction.user} a vendu **${name}** à ${target} pour **$${unitPrice.toFixed(2)}**.` }).catch(()=>{});
-          }
+      completed = true;
+      collector.stop('sold');
+
+      await i.update({
+        embeds:[ new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Achat validé').setDescription(`Tu as reçu **${name}**.`) ],
+        components: []
+      });
+
+      // Annonce publique
+      const logChId = process.env.LOG_CHANNEL_ID || process.env.STOCK_CHANNEL;
+      if (logChId) {
+        const logCh = await interaction.client.channels.fetch(logChId).catch(()=>null);
+        if (logCh?.isTextBased()) {
+          await logCh.send(`💬 ${interaction.user} a vendu **${name}** à ${target} pour **$${unitPrice.toFixed(2)}** (vendeur crédité en liquide).`).catch(()=>{});
         }
-      } catch (e){}
+      }
     });
 
     collector.on('end', async (_col, reason) => {
-      if (!done && reason !== 'answered') {
-        await interaction.followUp({ content:'⏱️ La demande a expiré.', ephemeral:true });
+      if (!completed && promptMsg.editable) {
+        await promptMsg.edit({ components: [] }).catch(()=>{});
+        if (reason !== 'sold' && reason !== 'refused') {
+          await interaction.followUp({ content:'⏱️ La demande a expiré.', ephemeral:true }).catch(()=>{});
+        }
       }
     });
-
-    // helper: debit player courant used above
-    function debitPlayerCourant(userId, amount){
-      const acc = getOrCreateAccount(userId);
-      acc.courant ||= { liquide:0, banque:0 };
-      const total = (acc.courant.banque||0) + (acc.courant.liquide||0);
-      if (total < amount) return { ok:false };
-      let rest = amount;
-      if (acc.courant.banque >= rest){ acc.courant.banque -= rest; rest = 0; }
-      else { rest -= acc.courant.banque; acc.courant.banque = 0; acc.courant.liquide = Math.max(0, acc.courant.liquide - rest); rest = 0; }
-      updateAccount(userId, acc);
-      return { ok:true };
-    }
   }
 };
