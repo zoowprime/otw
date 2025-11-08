@@ -6,85 +6,70 @@ const { getOrCreateAccount, updateAccount } = require('../economyData');
 const FILE_STOCK  = 'shops_stock.json';
 const FILE_PRICES = 'shops_prices.json';
 
-// catégories prises en charge
+// catégories gérées par les shops
 const CATS = ['armes','chevaux','charrettes','autres','minerais'];
 
-// rôles => shopId (issus du .env)
-const roleToShop = {
-  [process.env.ARMURERIE_SD_ROLE]:     'armurerie_sd',
-  [process.env.ARMURERIE_RHODES_ROLE]: 'armurerie_rhodes',
-  [process.env.ARMURERIE_AB_ROLE]:     'armurerie_ab',
-  [process.env.ECURIE_SD_ROLE]:        'ecurie_sd',
-  [process.env.ECURIE_RHODES_ROLE]:    'ecurie_rhodes',
-  [process.env.ECURIE_VH_ROLE]:        'ecurie_vh',
+/**
+ * Mapping des rôles vers les shops, avec un "kind" explicite
+ * kind: 'armurerie' | 'ecurie'
+ */
+const roleToShop = [
+  { roleId: process.env.ARMURERIE_SD_ROLE,     shopId: 'armurerie_sd',     kind: 'armurerie' },
+  { roleId: process.env.ARMURERIE_RHODES_ROLE, shopId: 'armurerie_rhodes', kind: 'armurerie' },
+  { roleId: process.env.ARMURERIE_AB_ROLE,     shopId: 'armurerie_ab',     kind: 'armurerie' },
+
+  { roleId: process.env.ECURIE_SD_ROLE,        shopId: 'ecurie_sd',        kind: 'ecurie' },
+  { roleId: process.env.ECURIE_RHODES_ROLE,    shopId: 'ecurie_rhodes',    kind: 'ecurie' },
+  { roleId: process.env.ECURIE_VH_ROLE,        shopId: 'ecurie_vh',        kind: 'ecurie' },
+];
+
+/**
+ * shopId => variable d'env du patron (user id) pour message d’erreur
+ * (sert uniquement à afficher l’ENV manquante dans les embeds)
+ */
+const shopToOwnerEnv = {
+  armurerie_sd:     'PATRON_ARMURERIE_SD_USER_ID',
+  armurerie_rhodes: 'PATRON_ARMURERIE_RHODES_USER_ID',
+  armurerie_ab:     'PATRON_ARMURERIE_AB_USER_ID',
+  ecurie_sd:        'PATRON_ECURIE_SD_USER_ID',
+  ecurie_rhodes:    'PATRON_ECURIE_RHODES_USER_ID',
+  ecurie_vh:        'PATRON_ECURIE_VH_USER_ID',
 };
 
-// ⚠️ IMPORTANT : les *noms* ci-dessous DOIVENT correspondre à ton .env
-// (tu as bien mis ..._USER_ID avec cet underscore).
-function _trimOrNull(v) {
-  if (typeof v !== 'string') return null;
-  const t = v.trim();
-  return t.length ? t : null;
-}
-
-// shopId => owner userId (patron) — LIT EXACTEMENT *_USER_ID du .env
+/**
+ * shopId => owner userId (patron)
+ * ⚠️ On lit bien les variables *_USER_ID (utilisateurs, pas rôles)
+ */
 const shopOwner = {
-  armurerie_sd:     _trimOrNull(process.env.PATRON_ARMURERIE_SD_USER_ID),
-  armurerie_rhodes: _trimOrNull(process.env.PATRON_ARMURERIE_RHODES_USER_ID),
-  armurerie_ab:     _trimOrNull(process.env.PATRON_ARMURERIE_AB_USER_ID),
-  ecurie_sd:        _trimOrNull(process.env.PATRON_ECURIE_SD_USER_ID),
-  ecurie_rhodes:    _trimOrNull(process.env.PATRON_ECURIE_RHODES_USER_ID),
-  ecurie_vh:        _trimOrNull(process.env.PATRON_ECURIE_VH_USER_ID),
+  armurerie_sd:     process.env.PATRON_ARMURERIE_SD_USER_ID || null,
+  armurerie_rhodes: process.env.PATRON_ARMURERIE_RHODES_USER_ID || null,
+  armurerie_ab:     process.env.PATRON_ARMURERIE_AB_USER_ID || null,
+  ecurie_sd:        process.env.PATRON_ECURIE_SD_USER_ID || null,
+  ecurie_rhodes:    process.env.PATRON_ECURIE_RHODES_USER_ID || null,
+  ecurie_vh:        process.env.PATRON_ECURIE_VH_USER_ID || null,
 };
 
-// 🔎 Auto-diagnostic au chargement (console) pour vérifier ce que voit le bot
-(function debugOwnersOnce(){
-  try {
-    // Ne loggue qu’une fois : utile quand on hot-reload
-    if (global.__OTW_SHOPS_DEBUGGED__) return;
-    global.__OTW_SHOPS_DEBUGGED__ = true;
-
-    console.log('[shopsData] Mapping role->shop :');
-    for (const [roleId, shopId] of Object.entries(roleToShop)) {
-      if (!roleId) continue;
-      console.log(`  role ${roleId} -> ${shopId}`);
+/**
+ * Ne renvoie qu’un shop correspondant au "kind" demandé.
+ * kind peut être 'armurerie', 'ecurie' ou null (dans ce cas, n’importe quel shop matché).
+ */
+function getShopIdFromMember(member, kind = null){
+  for (const entry of roleToShop) {
+    if (!entry.roleId) continue;                 // role non configuré
+    if (kind && entry.kind !== kind) continue;   // filtrage par type
+    if (member.roles.cache.has(entry.roleId)) {
+      return entry.shopId;
     }
-
-    console.log('[shopsData] Patrons (user ids) :');
-    for (const [shopId, uid] of Object.entries(shopOwner)) {
-      console.log(`  ${shopId} -> ${uid || '(absent)'}`);
-    }
-
-    // Aide explicite si manquant
-    const neededVars = {
-      armurerie_sd:     'PATRON_ARMURERIE_SD_USER_ID',
-      armurerie_rhodes: 'PATRON_ARMURERIE_RHODES_USER_ID',
-      armurerie_ab:     'PATRON_ARMURERIE_AB_USER_ID',
-      ecurie_sd:        'PATRON_ECURIE_SD_USER_ID',
-      ecurie_rhodes:    'PATRON_ECURIE_RHODES_USER_ID',
-      ecurie_vh:        'PATRON_ECURIE_VH_USER_ID',
-    };
-    for (const [shopId, varName] of Object.entries(neededVars)) {
-      if (!shopOwner[shopId]) {
-        console.warn(`[shopsData] ⚠️ Aucun patron pour ${shopId}. Défini ${varName} dans ton .env`);
-      }
-    }
-  } catch {}
-})();
-
-function getShopIdFromMember(member){
-  for (const [roleId, shopId] of Object.entries(roleToShop)) {
-    if (!roleId) continue;
-    if (member.roles.cache.has(roleId)) return shopId;
   }
   return null;
 }
-function getOwnerId(shopId){ return shopOwner[shopId] || null; }
 
+function getOwnerId(shopId){ return shopOwner[shopId] || null; }
+function getOwnerEnvVarName(shopId){ return shopToOwnerEnv[shopId] || 'PATRON_*_USER_ID'; }
+
+// ----------------------- Stock -----------------------
 function _stock(){ return loadJSON(FILE_STOCK, {}); }
 function _saveStock(db){ saveJSON(FILE_STOCK, db); }
-function _prices(){ return loadJSON(FILE_PRICES, {}); }
-function _savePrices(db){ saveJSON(FILE_PRICES, db); }
 
 function ensureShopStock(shopId){
   const db = _stock();
@@ -114,7 +99,10 @@ function decrementStock(shopId, category, itemName, qty=1){
 }
 function getShopStock(shopId){ ensureShopStock(shopId); return _stock()[shopId]; }
 
-// PRIX
+// ----------------------- Prix -----------------------
+function _prices(){ return loadJSON(FILE_PRICES, {}); }
+function _savePrices(db){ saveJSON(FILE_PRICES, db); }
+
 function setPrice(shopId, category, itemName, price){
   const p = _prices();
   p[shopId] ||= {}; p[shopId][category] ||= {};
@@ -128,10 +116,14 @@ function getPrice(shopId, category, itemName){
 function getAllPrices(shopId){ return _prices()?.[shopId] || {}; }
 function resetPrices(shopId){ const p = _prices(); delete p[shopId]; _savePrices(p); }
 
-// Paiement (entreprise patron) : banque puis liquide
+// ----------------------- Paiements -----------------------
+/**
+ * Débit sur le compte entreprise du patron:
+ * d’abord banque, puis liquide.
+ */
 function debitOwnerEnterprise(shopId, amount){
   const ownerId = getOwnerId(shopId);
-  if (!ownerId) return { ok:false, reason:`Aucun patron défini pour ${shopId}` };
+  if (!ownerId) return { ok:false, reason:'Aucun patron défini.' };
   const acc = getOrCreateAccount(ownerId);
   const cur = acc.entreprise || { liquide:0, banque:0 };
   const total = (cur.banque||0)+(cur.liquide||0);
@@ -148,7 +140,7 @@ function debitOwnerEnterprise(shopId, amount){
 
 function creditOwnerEnterpriseBank(shopId, amount){
   const ownerId = getOwnerId(shopId);
-  if (!ownerId) return { ok:false, reason:`Aucun patron défini pour ${shopId}` };
+  if (!ownerId) return { ok:false, reason:'Aucun patron défini.' };
   const acc = getOrCreateAccount(ownerId);
   acc.entreprise ||= { liquide:0, banque:0 };
   acc.entreprise.banque = (acc.entreprise.banque||0) + amount;
@@ -157,9 +149,24 @@ function creditOwnerEnterpriseBank(shopId, amount){
 }
 
 module.exports = {
-  getShopIdFromMember, getOwnerId,
-  incrementStock, decrementStock, getShopStock,
-  setPrice, getPrice, getAllPrices, resetPrices,
-  debitOwnerEnterprise, creditOwnerEnterpriseBank,
-  CATS
+  // util
+  CATS,
+  getShopIdFromMember,
+  getOwnerId,
+  getOwnerEnvVarName,
+
+  // stock
+  incrementStock,
+  decrementStock,
+  getShopStock,
+
+  // prix
+  setPrice,
+  getPrice,
+  getAllPrices,
+  resetPrices,
+
+  // paiements
+  debitOwnerEnterprise,
+  creditOwnerEnterpriseBank,
 };
