@@ -1,194 +1,245 @@
 // src/commands/inventaire.js
 const {
-  SlashCommandBuilder, EmbedBuilder, AttachmentBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  StringSelectMenuBuilder, UserSelectMenuBuilder,
-  ComponentType, MessageFlags
-} = require("discord.js");
+  SlashCommandBuilder,
+  EmbedBuilder,
+  AttachmentBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+} = require('discord.js');
 
-const { renderInventoryGrid } = require("../utils/inventoryRenderer");
-const { bar } = require("../utils/progressBars");
-const {
-  getUser, totalWeight, transferItem, consumeItem, removeItem
-} = require("../data/inventoryStore");
-const catalog = require("../data/itemCatalog");
+const path = require('path');
+const fs   = require('fs');
+
+// Inventaire (nouveau store)
+const { getUser, totalWeight, getVitals } = require('../data/inventoryStore');
+const catalog = require('../data/itemCatalog');
+
+// ─────────────────────────────────────────────────────────────
+// Canvas (composition 1024x1024)
+let createCanvas, loadImage, registerFont, CANVAS_AVAILABLE = false;
+try {
+  ({ createCanvas, loadImage, registerFont } = require('canvas'));
+  CANVAS_AVAILABLE = true;
+} catch {
+  CANVAS_AVAILABLE = false;
+}
+
+// (optionnel) Police custom si dispos — place ta TTF dans src/assets/fonts/ et décommente
+// try {
+//   const FONT_PATH = path.join(__dirname, '..', 'assets', 'fonts', 'RedDead.ttf');
+//   if (fs.existsSync(FONT_PATH)) {
+//     registerFont(FONT_PATH, { family: 'OTW' });
+//   }
+// } catch {}
+
+// ─────────────────────────────────────────────────────────────
+// chemins assets
+const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png');
+const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
+
+// ─────────────────────────────────────────────────────────────
+// PARAMÈTRES UI (faciles à ajuster)
+const GRID = {
+  COLS: 5,
+  ROWS: 5,
+  SLOT_W: 96,
+  SLOT_H: 120,
+
+  // coin haut-gauche du 1er slot sur l'image Sacoche.png
+  LEFT: 170,     // ↔️ augmente = pousse à droite
+  TOP:  220,     // ↕️ augmente = descend
+
+  // espacement entre slots
+  XGAP: 35,
+  YGAP: 28,
+};
+
+// position du texte "X.XX / 60.00" dans la barre du haut
+const WEIGHT_TEXT = {
+  X: 470,              // plus grand = plus à droite
+  Y: 78,               // plus grand = plus bas
+  FONT: '26px Arial',  // remplace par '26px OTW' si tu enregistres une police
+  COLOR: '#EDEDED',
+  SHADOW: 'rgba(0,0,0,0.75)',
+};
+
+// polices dans les cases
+const FONTS = {
+  NAME:  '14px Arial', // ou '14px OTW'
+  META:  '12px Arial',
+  COLOR: '#FFFFFF',
+  SHADOW:'rgba(0,0,0,0.65)',
+};
+
+// DEBUG: dessiner les cadres des 25 slots (utile pour caler LEFT/TOP/GAPs)
+const DEBUG_GRID = false;
+
+// ─────────────────────────────────────────────────────────────
+// Helpers texte
+
+function truncateTo(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) {
+    t = t.slice(0, -1);
+  }
+  return t + '…';
+}
+
+function drawShadowText(ctx, text, x, y, align = 'left', color = FONTS.COLOR, shadow = FONTS.SHADOW) {
+  ctx.textAlign   = align;
+  ctx.textBaseline= 'alphabetic';
+  ctx.fillStyle   = color;
+  ctx.shadowColor = shadow;
+  ctx.shadowBlur  = 4;
+  ctx.fillText(text, x, y);
+  ctx.shadowBlur  = 0;
+}
+
+// barre ascii (pour description embed)
+function bar(pct) {
+  const blocks = 20;
+  const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
+  return '█'.repeat(filled) + '░'.repeat(blocks - filled);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Rendu principal 1024x1024
+
+async function renderInventoryImage(userId) {
+  if (!CANVAS_AVAILABLE) return null;
+
+  const canvas = createCanvas(1024, 1024);
+  const ctx = canvas.getContext('2d');
+
+  // fond
+  const bg = await loadImage(BAG_BG);
+  ctx.drawImage(bg, 0, 0, 1024, 1024);
+
+  // poids total dans la barre du haut
+  const st = getUser(userId);
+  const tw = totalWeight(st);
+  ctx.font = WEIGHT_TEXT.FONT;
+  drawShadowText(ctx, `${tw.toFixed(2)} / 60.00`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
+
+  // debug slots (facultatif)
+  if (DEBUG_GRID) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    for (let r = 0; r < GRID.ROWS; r++) {
+      for (let c = 0; c < GRID.COLS; c++) {
+        const slotX = GRID.LEFT + c * (GRID.SLOT_W + GRID.XGAP);
+        const slotY = GRID.TOP  + r * (GRID.SLOT_H + GRID.YGAP);
+        ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
+      }
+    }
+  }
+
+  // items (centrés dans chaque slot)
+  const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
+
+  for (let i = 0; i < items.length; i++) {
+    const it  = items[i];
+    const id  = it.name || it.id;
+    const qty = typeof it.quantity === 'number' ? it.quantity : 1;
+
+    const col = i % GRID.COLS;
+    const row = Math.floor(i / GRID.COLS);
+
+    const slotX = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP);
+    const slotY = GRID.TOP  + row * (GRID.SLOT_H + GRID.YGAP);
+
+    const cx = slotX + GRID.SLOT_W / 2;
+    const cy = slotY + GRID.SLOT_H / 2;
+
+    // icône centrée si dispo
+    const iconPath = path.join(ICONS_DIR, `${id}.png`);
+    if (fs.existsSync(iconPath)) {
+      try {
+        const img = await loadImage(iconPath);
+        const scale = Math.min(GRID.SLOT_W / img.width, GRID.SLOT_H / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+      } catch {
+        // ignore
+      }
+    } else if (!DEBUG_GRID) {
+      // cadre discret si pas d’icône et pas en mode debug
+      ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+      ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
+    }
+
+    // textes overlay
+    const meta   = catalog[id] || {};
+    const weight = (meta.weight ?? 0);
+
+    // qty en haut-gauche si stackable et qty > 1
+    if ((meta.stackable ?? true) && qty > 1) {
+      ctx.font = FONTS.META;
+      drawShadowText(ctx, `x${qty}`, slotX + 6, slotY + 14, 'left');
+    }
+
+    // poids en haut-droit
+    ctx.font = FONTS.META;
+    drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + GRID.SLOT_W - 6, slotY + 14, 'right');
+
+    // nom centré en bas, tronqué
+    ctx.font = FONTS.NAME;
+    const label = truncateTo(ctx, (meta.label || id).replace(/_/g, ' '), GRID.SLOT_W - 10);
+    drawShadowText(ctx, label, cx, slotY + GRID.SLOT_H - 10, 'center');
+  }
+
+  const buf = canvas.toBuffer('image/png');
+  return new AttachmentBuilder(buf, { name: 'inventory.png' });
+}
+
+// ─────────────────────────────────────────────────────────────
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("inventaire")
-    .setDescription("Ouvre ta sacoche : visuel + faim/soif + Donner / Utiliser / Jeter"),
-
+    .setName('inventaire')
+    .setDescription('Affiche ta sacoche et tes besoins vitaux'),
   async execute(interaction) {
-    const uid = interaction.user.id;
-    const state = getUser(uid);
-    const weight = totalWeight(state.items);
+    const userId = interaction.user.id;
 
-    const buffer = await renderInventoryGrid(state.items);
-    const file = new AttachmentBuilder(buffer, { name: "sacoche_render.png" });
+    // vitaux (décroissance appliquée côté store)
+    const { hunger, thirst } = getVitals(userId);
+    const tw = totalWeight(userId);
 
-    const hungerLine = `🍖 **Faim**  : ${bar(state.hunger, 20)}`;
-    const thirstLine = `💧 **Soif** : ${bar(state.thirst, 20)}`;
-    const weightLine = `**Weight:** ${weight.toFixed(2)} / 60.00`;
+    // image 1024x1024
+    const file = await renderInventoryImage(userId).catch(() => null);
 
     const emb = new EmbedBuilder()
-      .setColor(0x2b1c10)
-      .setTitle(`Sacoche de <@${uid}>`)
-      .setDescription(`${weightLine}\n\n${hungerLine}\n${thirstLine}`)
-      .setImage("attachment://sacoche_render.png")
-      .setFooter({ text: "OTW • Inventaire" });
+      .setColor(0x3b2f2f)
+      .setTitle(`Sacoche de <@${userId}>`)
+      .setDescription(
+        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` +
+        `🍖 **Faim** : \`${bar(hunger)}\`\n${hunger}%\n` +
+        `💧 **Soif** : \`${bar(thirst)}\`\n${thirst}%\n`
+      )
+      .setFooter({ text: 'OTW — Inventaire' });
+
+    if (file) {
+      emb.setImage('attachment://inventory.png');
+    } else {
+      emb.addFields({
+        name: 'Affichage graphique désactivé',
+        value: 'Installe `canvas` (`npm i canvas`) pour afficher la sacoche en 1024×1024 avec les icônes centrées.'
+      });
+    }
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`inv_give:${uid}`).setStyle(ButtonStyle.Success).setLabel("Donner").setEmoji("🟩"),
-      new ButtonBuilder().setCustomId(`inv_use:${uid}`).setStyle(ButtonStyle.Primary).setLabel("Utiliser").setEmoji("🟦"),
-      new ButtonBuilder().setCustomId(`inv_drop:${uid}`).setStyle(ButtonStyle.Danger).setLabel("Jeter").setEmoji("🟥"),
+      new ButtonBuilder().setCustomId('inv_give').setLabel('Donner').setStyle(ButtonStyle.Success).setEmoji('🟩'),
+      new ButtonBuilder().setCustomId('inv_use').setLabel('Utiliser').setStyle(ButtonStyle.Primary).setEmoji('🟦'),
+      new ButtonBuilder().setCustomId('inv_drop').setLabel('Jeter').setStyle(ButtonStyle.Danger).setEmoji('🟥'),
     );
 
-    await interaction.reply({ embeds:[emb], files:[file], components:[row] });
-
-    const msg = await interaction.fetchReply();
-    const collector = msg.createMessageComponentCollector({ time: 60_000 });
-
-    collector.on("collect", async (i) => {
-      const ownerId = i.customId.split(":")[1];
-      if (ownerId !== uid) {
-        return i.reply({ content:"Ce panneau ne t'appartient pas.", flags: MessageFlags.Ephemeral });
-      }
-
-      // Donner
-      if (i.customId.startsWith("inv_give:")) {
-        const st = getUser(uid);
-        if (!st.items.length) return i.reply({ content:"Ta sacoche est vide.", flags: MessageFlags.Ephemeral });
-
-        const options = st.items.map(it => ({
-          label: (catalog[it.name]?.label || it.name).slice(0, 100),
-          value: it.name,
-          description: `x${it.quantity ?? 1} • ${(catalog[it.name]?.weight ?? it.weight ?? 0)}kg`
-        })).slice(0, 25);
-
-        const rowSel = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`give_select:${uid}`)
-            .setPlaceholder("Sélectionne un item à donner")
-            .addOptions(options)
-        );
-        await i.reply({ content:"Choisis l’item à donner :", components:[rowSel], flags: MessageFlags.Ephemeral });
-
-        const menuInt = await i.fetchReply();
-        const sel = await menuInt.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 30_000 }).catch(()=>null);
-        if (!sel) return;
-        const itemName = sel.values[0];
-
-        const userRow = new ActionRowBuilder().addComponents(
-          new UserSelectMenuBuilder().setCustomId(`give_user:${uid}:${itemName}`).setPlaceholder("Choisir le joueur cible").setMaxValues(1)
-        );
-        await sel.update({ content:`Item: **${catalog[itemName]?.label || itemName}**. Choisis le joueur cible :`, components:[userRow] });
-
-        const sel2 = await menuInt.awaitMessageComponent({ componentType: ComponentType.UserSelect, time: 30_000 }).catch(()=>null);
-        if (!sel2) return;
-        const targetId = sel2.values[0];
-
-        const it = getUser(uid).items.find(x => x.name === itemName);
-        const qMax = it?.quantity ?? 1;
-
-        let qty = 1;
-        if ((catalog[itemName]?.stackable ?? true) && qMax > 1) {
-          const qtyOpts = Array.from({length: Math.min(qMax, 25)}, (_,k)=>({ label:`x${k+1}`, value:String(k+1) }));
-          const rowQ = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId(`give_qty:${uid}:${itemName}:${targetId}`).setPlaceholder("Quantité à donner").addOptions(qtyOpts)
-          );
-          await sel2.update({ content:`Combien donner ? (max ${qMax})`, components:[rowQ] });
-          const selQ = await menuInt.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 30_000 }).catch(()=>null);
-          if (!selQ) return;
-          qty = parseInt(selQ.values[0], 10);
-          await selQ.update({ content:`Transfert en cours…`, components:[] });
-        } else {
-          await sel2.update({ content:`Transfert en cours…`, components:[] });
-        }
-
-        const res = transferItem(uid, targetId, itemName, qty);
-        if (!res.ok) return i.followUp({ content:`❌ ${res.reason}`, flags: MessageFlags.Ephemeral });
-        return i.followUp({ content:`✅ Donné **x${res.qty} ${catalog[itemName]?.label || itemName}** à <@${targetId}>.`, flags: MessageFlags.Ephemeral });
-      }
-
-      // Utiliser
-      if (i.customId.startsWith("inv_use:")) {
-        const st = getUser(uid);
-        const consumables = st.items.filter(it => catalog[it.name]?.consumable);
-        if (!consumables.length) return i.reply({ content:"Tu n’as aucun consommable.", flags: MessageFlags.Ephemeral });
-
-        const options = consumables.map(it => {
-          const meta = catalog[it.name];
-          return { label: `${meta.emoji || ""} ${(meta.label || it.name)}`.trim().slice(0, 100), value: it.name, description: `x${it.quantity ?? 1}` };
-        }).slice(0,25);
-
-        const rowSel = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId(`use_select:${uid}`).setPlaceholder("Choisis ce que tu veux consommer").addOptions(options)
-        );
-        await i.reply({ content:"Choisis un consommable :", components:[rowSel], flags: MessageFlags.Ephemeral });
-
-        const menuInt = await i.fetchReply();
-        const sel = await menuInt.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 30_000 }).catch(()=>null);
-        if (!sel) return;
-        const itemName = sel.values[0];
-
-        const res = consumeItem(uid, itemName, 1);
-        if (!res.ok) return sel.update({ content:`❌ ${res.reason}`, components:[] });
-
-        const meta = catalog[itemName];
-        const emb = new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setTitle(`${meta.emoji || "✅"} ${meta.label || itemName}`)
-          .setDescription(
-            meta.effect?.thirstDelta ? "Vous prenez une gorgée de votre bouteille. La gorge se réchauffe, l’esprit s’éclaircit." :
-            meta.effect?.hungerDelta ? "Vous ouvrez la conserve et mangez calmement. L’estomac se remplit." :
-            "Vous utilisez l’objet avec soin."
-          );
-        return sel.update({ content:"", embeds:[emb], components:[] });
-      }
-
-      // Jeter
-      if (i.customId.startsWith("inv_drop:")) {
-        const st = getUser(uid);
-        if (!st.items.length) return i.reply({ content:"Ta sacoche est vide.", flags: MessageFlags.Ephemeral });
-
-        const options = st.items.map(it => ({
-          label: (catalog[it.name]?.label || it.name).slice(0, 100),
-          value: it.name,
-          description: `x${it.quantity ?? 1}`
-        })).slice(0, 25);
-
-        const rowSel = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId(`drop_select:${uid}`).setPlaceholder("Quel objet jeter ?").addOptions(options)
-        );
-        await i.reply({ content:"Sélectionne l’objet à jeter :", components:[rowSel], flags: MessageFlags.Ephemeral });
-
-        const menuInt = await i.fetchReply();
-        const sel = await menuInt.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 30_000 }).catch(()=>null);
-        if (!sel) return;
-        const itemName = sel.values[0];
-        const it = getUser(uid).items.find(x => x.name === itemName);
-        const qMax = it?.quantity ?? 1;
-
-        let qty = 1;
-        if ((catalog[itemName]?.stackable ?? true) && qMax > 1) {
-          const qtyOpts = Array.from({length: Math.min(qMax, 25)}, (_,k)=>({ label:`x${k+1}`, value:String(k+1) }));
-          const rowQ = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId(`drop_qty:${uid}:${itemName}`).setPlaceholder("Quantité à jeter").addOptions(qtyOpts)
-          );
-          await sel.update({ content:`Combien jeter ? (max ${qMax})`, components:[rowQ] });
-          const selQ = await menuInt.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 30_000 }).catch(()=>null);
-          if (!selQ) return;
-          qty = parseInt(selQ.values[0], 10);
-          await selQ.update({ content:`…`, components:[] });
-        } else {
-          await sel.update({ content:`…`, components:[] });
-        }
-
-        const r = removeItem(uid, itemName, qty);
-        if (!r.ok) return i.followUp({ content:`❌ ${r.reason}`, flags: MessageFlags.Ephemeral });
-        const label = catalog[itemName]?.label || itemName;
-        return i.followUp({ content:`🗑️ Vous avez jeté **x${qty} ${label}** au sol.`, flags: MessageFlags.Ephemeral });
-      }
-    });
+    if (file) {
+      await interaction.reply({ embeds: [emb], files: [file], components: [row] });
+    } else {
+      await interaction.reply({ embeds: [emb], components: [row], flags: MessageFlags.Ephemeral });
+    }
   }
 };
