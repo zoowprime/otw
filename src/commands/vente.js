@@ -9,7 +9,10 @@ const {
   getPrice, creditOwnerEnterpriseBank, incrementStock
 } = require('../data/shopsData');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
-const { addItem } = require('../data/inventoryData');
+
+// Nouveau inventaire
+const { addItem }       = require('../data/inventoryStore');
+const { resolveItemId } = require('../data/itemNameResolver');
 
 function debitPlayerCourant(userId, amount) {
   const acc = getOrCreateAccount(userId);
@@ -26,6 +29,17 @@ function debitPlayerCourant(userId, amount) {
   }
   updateAccount(userId, acc);
   return { ok: true };
+}
+
+// Ajoute l'item selon label → id ; si inconnu (ex: cheval), on laisse passer la vente.
+function addToInventorySafe(userId, humanLabel, qty = 1) {
+  try {
+    const itemId = resolveItemId(humanLabel);
+    const res = addItem(userId, itemId, qty);
+    return res.ok ? { ok: true } : { ok: false, reason: res.reason || 'STORE_FAIL' };
+  } catch {
+    return { ok: false, reason: 'UNKNOWN_ITEM' };
+  }
 }
 
 module.exports = {
@@ -180,14 +194,36 @@ module.exports = {
       // Décrémenter le stock puis ajouter à l’inventaire — avec rollback si addItem échoue
       try {
         decrementStock(shopId, cat, itemName, 1);
-        try {
-          // sécurité inventaire (cat toujours existante)
-          addItem(target.id, cat, itemName, 1);
-        } catch (e) {
-          // rollback stock si inventaire a échoué
+
+        const invRes = addToInventorySafe(target.id, itemName, 1);
+
+        // Si l'ajout inventaire échoue pour raison "STORE_FAIL" (ex: poids), rollback stock
+        if (!invRes.ok && invRes.reason !== 'UNKNOWN_ITEM') {
           incrementStock(shopId, cat, itemName, 1);
-          throw e;
+          throw new Error('INVENTORY_STORE_FAIL');
         }
+
+        // UI confirmation
+        const line =
+          invRes.ok ? `— **${itemName}** a été ajouté à l’inventaire.` :
+          (invRes.reason === 'UNKNOWN_ITEM'
+            ? `— Aucun objet ajouté (type non inventorié : souvent le cas des **chevaux**).`
+            : `— Objet non ajouté (poids/stock).`);
+        await confirmMsg.edit({
+          embeds: [ new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle('✅ Achat validé')
+            .setDescription(`${target} a reçu **${itemName}**.\n${line}`)
+            .setFooter({ text: 'OTW Économie' })
+          ],
+          components: [disabledRow]
+        });
+
+        // Annonce publique (non éphémère)
+        await interaction.channel.send(
+          `✅ **${interaction.user.username}** a vendu **${itemName}** à **${target.username}** pour **$${unitPrice.toFixed(2)}**.`
+        );
+
       } catch (e) {
         finished = true;
         await confirmMsg.edit({
@@ -196,22 +232,6 @@ module.exports = {
         });
         return;
       }
-
-      // UI de confirmation
-      await confirmMsg.edit({
-        embeds: [ new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setTitle('✅ Achat validé')
-          .setDescription(`${target} a reçu **${itemName}** dans son inventaire.`)
-          .setFooter({ text: 'OTW Économie' })
-        ],
-        components: [disabledRow]
-      });
-
-      // Annonce publique (non éphémère)
-      await interaction.channel.send(
-        `✅ **${interaction.user.username}** a vendu **${itemName}** à **${target.username}** pour **$${unitPrice.toFixed(2)}**.`
-      );
 
       finished = true;
     });
