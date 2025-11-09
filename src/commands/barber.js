@@ -11,13 +11,15 @@ const {
 } = require('discord.js');
 
 const { getOrCreateAccount, updateAccount } = require('../economyData');
-const { addItem } = require('../data/inventoryData');
+const { addItem, setBag } = require('../data/inventoryData');
 
 // ========= Config / ENV =========
-const STAFF_ROLE_ID   = process.env.STAFF_ROLE_ID || null;
-const BARBER_ROLE_ID  = process.env.BARBER_ROLE_ID || null;
-const BARBER_USER_ID  = process.env.BARBER_USER_ID || null;
-const BARBER_IMAGE_URL = process.env.BARBER_IMAGE_URL || 'https://raw.githubusercontent.com/zoowprime/otw/main/src/assets/enflure.jpg';
+const STAFF_ROLE_ID     = process.env.STAFF_ROLE_ID || null;
+const BARBER_ROLE_ID    = process.env.BARBER_ROLE_ID || null;
+const BARBER_USER_ID    = process.env.BARBER_USER_ID || null;
+// Image par défaut (remplaçable par ENV)
+const BARBER_IMAGE_URL  = process.env.BARBER_IMAGE_URL
+  || 'https://raw.githubusercontent.com/zoowprime/otw/main/src/assets/enflure.jpg';
 
 // ========= Catalogues =========
 const CATALOG = {
@@ -83,16 +85,17 @@ const CATALOG = {
   couleur: [
     ['Coloration (tout type)', 30]
   ],
+  // NB: Sacoche n’est plus un item ajouté. On toggle la sacoche via setBag().
   autres: [
     ['Pommade pour cheveux (unité)', 10, 'autres'],
-    ['Sacoche', 30, 'autres'],
+    ['Sacoche', 30, 'SACOCHE_SPECIAL']
   ],
 };
 
 // ========= Helpers =========
 function isAuthorized(member) {
-  const byRole = BARBER_ROLE_ID && member.roles.cache.has(BARBER_ROLE_ID);
-  const byStaff = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
+  const byRole   = BARBER_ROLE_ID && member.roles.cache.has(BARBER_ROLE_ID);
+  const byStaff  = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
   const byUserId = BARBER_USER_ID && (member.id === BARBER_USER_ID);
   return Boolean(byRole || byStaff || byUserId);
 }
@@ -170,16 +173,16 @@ function buildItemsSelect(catKey) {
   );
 }
 
-async function runProgress(message, title, totalSec, withImage = true) {
+function progressBar(pct) {
+  const blocks = 20;
+  const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
+  return `**[${'█'.repeat(filled)}${'░'.repeat(blocks - filled)}] ${pct}%**`;
+}
+
+async function runProgress(message, title, totalSec) {
   const start = Date.now();
   const end = start + totalSec * 1000;
   let lastPct = -1;
-
-  const bar = (pct) => {
-    const blocks = 20;
-    const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
-    return `**[${'█'.repeat(filled)}${'░'.repeat(blocks - filled)}] ${pct}%**`;
-  };
 
   return new Promise((resolve) => {
     const interval = setInterval(async () => {
@@ -190,8 +193,8 @@ async function runProgress(message, title, totalSec, withImage = true) {
         const emb = new EmbedBuilder()
           .setColor(0x9B59B6)
           .setTitle(title)
-          .setDescription(`${bar(pct)}`);
-        if (withImage && BARBER_IMAGE_URL) emb.setImage(BARBER_IMAGE_URL);
+          .setDescription(progressBar(pct))
+          .setImage(BARBER_IMAGE_URL);
 
         await message.edit({ embeds: [emb], components: [] }).catch(() => {});
       }
@@ -203,6 +206,7 @@ async function runProgress(message, title, totalSec, withImage = true) {
   });
 }
 
+// ========= Commande =========
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('barber')
@@ -354,14 +358,16 @@ module.exports = {
       // Créditer le barber (compte entreprise liquide)
       creditEntrepriseLiquide(interaction.user.id, Number(price));
 
-      // Si "Autres": ajoute l’objet dans l’inventaire et termine
+      // Si "Autres": Pommade (ajout inventaire) / Sacoche (toggle bag)
       if (catKey === 'autres') {
         const found = CATALOG.autres.find(([n]) => n === name);
-        const invCat = (found && found[2]) || 'autres';
-        try {
-          addItem(target.id, invCat, name, 1);
-        } catch {
-          // si jamais l'inventaire plante, on ne bloque pas la preuve
+        const marker = found ? found[2] : 'autres';
+
+        if (marker === 'SACOCHE_SPECIAL') {
+          // active la sacoche
+          setBag(target.id, true);
+        } else {
+          try { addItem(target.id, 'autres', name, 1); } catch {}
         }
 
         return payClick.update({
@@ -371,7 +377,9 @@ module.exports = {
               .setTitle('✅ Achat confirmé')
               .setDescription(
                 `**${target.username}** a acheté **${name}** pour **${fmtPrice(price)}**.\n` +
-                `L’objet a été ajouté dans son inventaire *(catégorie: ${invCat})*.`
+                (marker === 'SACOCHE_SPECIAL'
+                  ? `La **sacoche** est maintenant **Oui** dans son inventaire.`
+                  : `L’objet a été ajouté dans son inventaire (catégorie **Autres**).`)
               )
           ],
           components: []
@@ -390,29 +398,39 @@ module.exports = {
         components: []
       });
 
-      // Éphémères
+      // Éphémères (feedback rapide)
       interaction.followUp({ content: '✂️ Vous êtes en train de coiffer votre client…', flags: MessageFlags.Ephemeral }).catch(()=>{});
-      msg.channel.send({ content: `<@${target.id}> 💈 Votre barber est en train de vous coiffer…`, allowedMentions: { users: [target.id] } }).then(m=>{
-        setTimeout(()=> m.delete().catch(()=>{}), 5000);
-      }).catch(()=>{});
+      interaction.followUp({ content: `💈 ${target}, votre barber s’occupe de vous…`, allowedMentions: { users: [target.id] }, flags: MessageFlags.Ephemeral }).catch(()=>{});
 
-      await runProgress(msg, `✂️ Prestation — ${name}`, 25, true);
+      // Progression réelle 25s (0→100) AVEC image
+      await runProgress(msg, `✂️ Prestation — ${name}`, 25);
 
-      // Preuve publique finale
-      await msg.edit({
+      // Preuve publique finale + reçu
+      const finalEmbed = new EmbedBuilder()
+        .setColor(0x2ECC71)
+        .setTitle('✅ Prestation terminée')
+        .setDescription(
+          `Barber: **${interaction.user.username}**\n` +
+          `Client: **${target.username}**\n` +
+          `Service: **${name}**\n` +
+          `Montant payé: **${fmtPrice(price)}**\n\n` +
+          `**Transaction effectuée** (débit liquide du client → crédit entreprise.liquide du barber).`
+        );
+
+      await msg.edit({ embeds: [finalEmbed], components: [] }).catch(()=>{});
+
+      // Reçu séparé (message public)
+      await msg.channel.send({
         embeds: [
           new EmbedBuilder()
-            .setColor(0x2ECC71)
-            .setTitle('✅ Prestation terminée')
+            .setColor(0x1ABC9C)
+            .setTitle('🧾 Reçu de prestation')
             .setDescription(
-              `Barber: **${interaction.user.username}**\n` +
-              `Client: **${target.username}**\n` +
-              `Service: **${name}**\n` +
-              `Montant payé: **${fmtPrice(price)}**\n\n` +
-              `**Transaction effectuée** (débit liquide du client → crédit entreprise.liquide du barber).`
+              `**${interaction.user.username}** a coiffé **${target.username}**\n` +
+              `Prestation: **${name}** — **${fmtPrice(price)}**\n` +
+              `Merci pour votre confiance !`
             )
-        ],
-        components: []
+        ]
       }).catch(()=>{});
 
       // Revenir au menu principal pour enchaîner si besoin
