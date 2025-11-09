@@ -60,7 +60,7 @@ const GRID = {
 // ⇣ Ajustée pour tomber au niveau de l’encadré rouge
 const WEIGHT_TEXT = {
   X: 448,             // plus grand = plus à droite
-  Y: 125,             // plus grand = plus bas
+  Y: 170,             // plus grand = plus bas
   FONT: '26px Arial', // remplace par '26px OTW' si tu enregistres une police
   COLOR: '#EDEDED',
   SHADOW: 'rgba(0,0,0,0.75)',
