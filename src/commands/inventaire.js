@@ -56,7 +56,7 @@ const GRID = {
   YGAP: 28,
 };
 
-// position du texte "X.XX / 60.00" dans la barre du haut
+// position du texte du poids **actuel uniquement** (le “/ 60.00” est déjà sur ton fond)
 const WEIGHT_TEXT = {
   X: 470,              // plus grand = plus à droite
   Y: 78,               // plus grand = plus bas
@@ -106,8 +106,6 @@ function bar(pct) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Rendu principal 1024x1024
-
 async function renderInventoryImage(userId) {
   if (!CANVAS_AVAILABLE) return null;
 
@@ -118,11 +116,11 @@ async function renderInventoryImage(userId) {
   const bg = await loadImage(BAG_BG);
   ctx.drawImage(bg, 0, 0, 1024, 1024);
 
-  // poids total dans la barre du haut
+  // poids actuel UNIQUEMENT (le “/ 60.00” est sur le fond)
   const st = getUser(userId);
   const tw = totalWeight(st);
   ctx.font = WEIGHT_TEXT.FONT;
-  drawShadowText(ctx, `${tw.toFixed(2)} / 60.00`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
+  drawShadowText(ctx, `${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
 
   // debug slots (facultatif)
   if (DEBUG_GRID) {
@@ -215,7 +213,7 @@ module.exports = {
       .setColor(0x3b2f2f)
       .setTitle(`Sacoche de <@${userId}>`)
       .setDescription(
-        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` +
+        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` + // ← description inchangée
         `🍖 **Faim** : \`${bar(hunger)}\`\n${hunger}%\n` +
         `💧 **Soif** : \`${bar(thirst)}\`\n${thirst}%\n`
       )
