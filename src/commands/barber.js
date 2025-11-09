@@ -11,7 +11,10 @@ const {
 } = require('discord.js');
 
 const { getOrCreateAccount, updateAccount } = require('../economyData');
-const { addItem, setBag } = require('../data/inventoryData');
+
+// Nouveau inventaire
+const { addItem } = require('../data/inventoryStore');
+const { resolveItemId } = require('../data/itemNameResolver');
 
 // ========= Config / ENV =========
 const STAFF_ROLE_ID     = process.env.STAFF_ROLE_ID || null;
@@ -85,10 +88,10 @@ const CATALOG = {
   couleur: [
     ['Coloration (tout type)', 30]
   ],
-  // NB: Sacoche n’est plus un item ajouté. On toggle la sacoche via setBag().
+  // NB: “Sacoche” n’est pas un item inventaire (c’est l’UI). On confirme juste l’achat.
   autres: [
-    ['Pommade pour cheveux (unité)', 10, 'autres'],
-    ['Sacoche', 30, 'SACOCHE_SPECIAL']
+    ['Pommade pour cheveux (unité)', 10, 'ADD_TO_INVENTORY'],
+    ['Sacoche', 30, 'SACOCHE_UI_ONLY']
   ],
 };
 
@@ -358,32 +361,56 @@ module.exports = {
       // Créditer le barber (compte entreprise liquide)
       creditEntrepriseLiquide(interaction.user.id, Number(price));
 
-      // Si "Autres": Pommade (ajout inventaire) / Sacoche (toggle bag)
+      // Catégorie "Autres" : cas Pommade et Sacoche
       if (catKey === 'autres') {
         const found = CATALOG.autres.find(([n]) => n === name);
-        const marker = found ? found[2] : 'autres';
+        const marker = found ? found[2] : 'ADD_TO_INVENTORY';
 
-        if (marker === 'SACOCHE_SPECIAL') {
-          // active la sacoche
-          setBag(target.id, true);
-        } else {
-          try { addItem(target.id, 'autres', name, 1); } catch {}
+        if (marker === 'SACOCHE_UI_ONLY') {
+          // Sacoche = UI, pas un item inventaire dans le nouveau système
+          return payClick.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle('✅ Achat confirmé')
+                .setDescription(
+                  `**${target.username}** a acheté **${name}** pour **${fmtPrice(price)}**.\n` +
+                  `La sacoche est un **visuel d’interface** : rien à ajouter dans l’inventaire.`
+                )
+            ],
+            components: []
+          }).catch(()=>{});
         }
 
-        return payClick.update({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x2ECC71)
-              .setTitle('✅ Achat confirmé')
-              .setDescription(
-                `**${target.username}** a acheté **${name}** pour **${fmtPrice(price)}**.\n` +
-                (marker === 'SACOCHE_SPECIAL'
-                  ? `La **sacoche** est maintenant **Oui** dans son inventaire.`
-                  : `L’objet a été ajouté dans son inventaire (catégorie **Autres**).`)
-              )
-          ],
-          components: []
-        }).catch(()=>{});
+        // Pommade → ajouter dans l’inventaire du client (id: "pommade")
+        try {
+          const itemId = resolveItemId('Pommade pour cheveux');
+          const added = addItem(target.id, itemId, 1);
+          const line = added.ok
+            ? `L’objet **${name}** a été ajouté dans l’inventaire du client.`
+            : `⚠️ L’objet n’a pas pu être ajouté (poids ?).`;
+          return payClick.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle('✅ Achat confirmé')
+                .setDescription(
+                  `**${target.username}** a acheté **${name}** pour **${fmtPrice(price)}**.\n${line}`
+                )
+            ],
+            components: []
+          }).catch(()=>{});
+        } catch {
+          return payClick.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle('✅ Achat confirmé (inventaire inchangé)')
+                .setDescription(`**${target.username}** a acheté **${name}** pour **${fmtPrice(price)}**.`)
+            ],
+            components: []
+          }).catch(()=>{});
+        }
       }
 
       // Sinon : prestation (25s) + messages éphémères aux deux
@@ -398,11 +425,10 @@ module.exports = {
         components: []
       });
 
-      // Éphémères (feedback rapide)
       interaction.followUp({ content: '✂️ Vous êtes en train de coiffer votre client…', flags: MessageFlags.Ephemeral }).catch(()=>{});
       interaction.followUp({ content: `💈 ${target}, votre barber s’occupe de vous…`, allowedMentions: { users: [target.id] }, flags: MessageFlags.Ephemeral }).catch(()=>{});
 
-      // Progression réelle 25s (0→100) AVEC image
+      // Progression 25s (0→100) avec image
       await runProgress(msg, `✂️ Prestation — ${name}`, 25);
 
       // Preuve publique finale + reçu
@@ -419,7 +445,7 @@ module.exports = {
 
       await msg.edit({ embeds: [finalEmbed], components: [] }).catch(()=>{});
 
-      // Reçu séparé (message public)
+      // Reçu public
       await msg.channel.send({
         embeds: [
           new EmbedBuilder()
@@ -433,7 +459,7 @@ module.exports = {
         ]
       }).catch(()=>{});
 
-      // Revenir au menu principal pour enchaîner si besoin
+      // Retour menu principal (enchaîner)
       setTimeout(() => {
         msg.edit({
           embeds: [buildMainEmbed(interaction, target)],
