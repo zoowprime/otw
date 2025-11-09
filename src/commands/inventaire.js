@@ -12,7 +12,7 @@ const {
 const path = require('path');
 const fs   = require('fs');
 
-// Inventaire (nouveau store)
+// Inventaire (store)
 const { getUser, totalWeight, getVitals } = require('../data/inventoryStore');
 const catalog = require('../data/itemCatalog');
 
@@ -26,7 +26,7 @@ try {
   CANVAS_AVAILABLE = false;
 }
 
-// (optionnel) Police custom si dispos — place ta TTF dans src/assets/fonts/ et décommente
+// (optionnel) Police custom — décommente si tu ajoutes une TTF
 // try {
 //   const FONT_PATH = path.join(__dirname, '..', 'assets', 'fonts', 'RedDead.ttf');
 //   if (fs.existsSync(FONT_PATH)) {
@@ -40,41 +40,36 @@ const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
-// PARAMÈTRES UI (faciles à ajuster)
+// PARAMÈTRES UI
 const GRID = {
   COLS: 5,
   ROWS: 5,
   SLOT_W: 96,
   SLOT_H: 120,
-
-  // coin haut-gauche du 1er slot sur l'image Sacoche.png
-  LEFT: 170,     // ↔️ augmente = pousse à droite
-  TOP:  220,     // ↕️ augmente = descend
-
-  // espacement entre slots
+  LEFT: 170,   // origine 1er slot
+  TOP:  220,
   XGAP: 35,
   YGAP: 28,
 };
 
-// position du texte du poids **actuel uniquement** (le “/ 60.00” est déjà sur ton fond)
-// ⇣ Ajustée pour tomber au niveau de l’encadré rouge
+// position du texte du poids **actuel uniquement**
 const WEIGHT_TEXT = {
-  X: 448,             // plus grand = plus à droite
-  Y: 170,             // plus grand = plus bas
-  FONT: '26px Arial', // remplace par '26px OTW' si tu enregistres une police
+  X: 448,
+  Y: 118,
+  FONT: '26px Arial', // ou '26px OTW' si police enregistrée
   COLOR: '#EDEDED',
   SHADOW: 'rgba(0,0,0,0.75)',
 };
 
-// polices dans les cases
+// polices slots
 const FONTS = {
-  NAME:  '14px Arial', // ou '14px OTW'
+  NAME:  '14px Arial',
   META:  '12px Arial',
   COLOR: '#FFFFFF',
   SHADOW:'rgba(0,0,0,0.65)',
 };
 
-// DEBUG: dessiner les cadres des 25 slots (utile pour caler LEFT/TOP/GAPs)
+// DEBUG: dessiner les cadres des 25 slots
 const DEBUG_GRID = false;
 
 // ─────────────────────────────────────────────────────────────
@@ -123,7 +118,7 @@ async function renderInventoryImage(userId) {
   ctx.font = WEIGHT_TEXT.FONT;
   drawShadowText(ctx, `${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
 
-  // debug slots (facultatif)
+  // debug slots
   if (DEBUG_GRID) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     for (let r = 0; r < GRID.ROWS; r++) {
@@ -135,7 +130,7 @@ async function renderInventoryImage(userId) {
     }
   }
 
-  // items (centrés dans chaque slot)
+  // items (centrés)
   const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
 
   for (let i = 0; i < items.length; i++) {
@@ -152,7 +147,7 @@ async function renderInventoryImage(userId) {
     const cx = slotX + GRID.SLOT_W / 2;
     const cy = slotY + GRID.SLOT_H / 2;
 
-    // icône centrée si dispo
+    // icône
     const iconPath = path.join(ICONS_DIR, `${id}.png`);
     if (fs.existsSync(iconPath)) {
       try {
@@ -161,11 +156,8 @@ async function renderInventoryImage(userId) {
         const w = img.width * scale;
         const h = img.height * scale;
         ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
-      } catch {
-        // ignore
-      }
+      } catch {/* ignore */}
     } else if (!DEBUG_GRID) {
-      // cadre discret si pas d’icône et pas en mode debug
       ctx.strokeStyle = 'rgba(255,255,255,0.20)';
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
     }
@@ -174,17 +166,17 @@ async function renderInventoryImage(userId) {
     const meta   = catalog[id] || {};
     const weight = (meta.weight ?? 0);
 
-    // qty en haut-gauche si stackable et qty > 1
+    // qty
     if ((meta.stackable ?? true) && qty > 1) {
       ctx.font = FONTS.META;
       drawShadowText(ctx, `x${qty}`, slotX + 6, slotY + 14, 'left');
     }
 
-    // poids en haut-droit
+    // poids unitaire
     ctx.font = FONTS.META;
     drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + GRID.SLOT_W - 6, slotY + 14, 'right');
 
-    // nom centré en bas, tronqué
+    // nom
     ctx.font = FONTS.NAME;
     const label = truncateTo(ctx, (meta.label || id).replace(/_/g, ' '), GRID.SLOT_W - 10);
     drawShadowText(ctx, label, cx, slotY + GRID.SLOT_H - 10, 'center');
@@ -202,19 +194,20 @@ module.exports = {
     .setDescription('Affiche ta sacoche et tes besoins vitaux'),
   async execute(interaction) {
     const userId = interaction.user.id;
+    const displayName = interaction.member?.displayName || interaction.user.username;
 
     // vitaux (décroissance appliquée côté store)
     const { hunger, thirst } = getVitals(userId);
-    const tw = totalWeight(userId);
+    // const tw = totalWeight(userId); // plus nécessaire dans la description
 
     // image 1024x1024
     const file = await renderInventoryImage(userId).catch(() => null);
 
     const emb = new EmbedBuilder()
       .setColor(0x3b2f2f)
-      .setTitle(`Sacoche de <@${userId}>`)
+      .setTitle(`Sacoche de ${displayName}`)
       .setDescription(
-        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` +
+        // Poids retiré de l'embed : il est déjà sur l'image
         `🍖 **Faim** : \`${bar(hunger)}\`\n${hunger}%\n` +
         `💧 **Soif** : \`${bar(thirst)}\`\n${thirst}%\n`
       )
