@@ -57,10 +57,11 @@ const GRID = {
 };
 
 // position du texte du poids **actuel uniquement** (le “/ 60.00” est déjà sur ton fond)
+// ⇣ Ajustée pour tomber au niveau de l’encadré rouge
 const WEIGHT_TEXT = {
-  X: 470,              // plus grand = plus à droite
-  Y: 78,               // plus grand = plus bas
-  FONT: '26px Arial',  // remplace par '26px OTW' si tu enregistres une police
+  X: 448,             // plus grand = plus à droite
+  Y: 118,             // plus grand = plus bas
+  FONT: '26px Arial', // remplace par '26px OTW' si tu enregistres une police
   COLOR: '#EDEDED',
   SHADOW: 'rgba(0,0,0,0.75)',
 };
@@ -213,7 +214,7 @@ module.exports = {
       .setColor(0x3b2f2f)
       .setTitle(`Sacoche de <@${userId}>`)
       .setDescription(
-        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` + // ← description inchangée
+        `**Weight:** ${tw.toFixed(2)} / 60.00\n\n` +
         `🍖 **Faim** : \`${bar(hunger)}\`\n${hunger}%\n` +
         `💧 **Soif** : \`${bar(thirst)}\`\n${thirst}%\n`
       )
