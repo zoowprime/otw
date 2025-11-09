@@ -9,7 +9,10 @@ const {
   getIllegalStock, decrementIllegalStock, getIllegalPrice
 } = require('../data/illegalData');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
-const { addItem } = require('../data/inventoryData');
+
+// Nouveau inventaire
+const { addItem }       = require('../data/inventoryStore');
+const { resolveItemId } = require('../data/itemNameResolver');
 
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 const GERANT_IDS = [
@@ -43,6 +46,18 @@ function creditSellerLiquid(userId, amount){
   acc.courant ||= { liquide:0, banque:0 };
   acc.courant.liquide = (acc.courant.liquide || 0) + amount;
   updateAccount(userId, acc);
+}
+
+// Tentative d'ajout dans l'inventaire via label → id.
+// Retourne {ok:true} si ajouté, {ok:false, reason:'UNKNOWN_ITEM'|'STORE_FAIL'}
+function addToInventorySafe(userId, humanLabel, qty = 1) {
+  try {
+    const itemId = resolveItemId(humanLabel); // ex. "Dynamites" → "dynamite"
+    const res = addItem(userId, itemId, qty);
+    return res.ok ? { ok: true } : { ok: false, reason: res.reason || 'STORE_FAIL' };
+  } catch {
+    return { ok: false, reason: 'UNKNOWN_ITEM' };
+  }
 }
 
 module.exports = {
@@ -156,9 +171,8 @@ module.exports = {
         return i.update({ embeds:[ new EmbedBuilder().setColor(0xe74c3c).setTitle('⛔ Stock insuffisant') ], components: [] });
       }
 
-      // Ajout dans l’inventaire du client (kit → "autres")
-      const invCat = (name === 'Kit de crochetage') ? 'autres' : cat;
-      try { addItem(target.id, invCat, name, 1); } catch {}
+      // Ajout inventaire du client via mapping label → id (si connu)
+      const invRes = addToInventorySafe(target.id, name, 1);
 
       // Créditer le vendeur en LIQUIDE
       creditSellerLiquid(uid, unitPrice);
@@ -166,8 +180,13 @@ module.exports = {
       completed = true;
       collector.stop('sold');
 
+      const line =
+        invRes.ok ? `Tu as reçu **${name}** dans ta sacoche.` :
+        (invRes.reason === 'UNKNOWN_ITEM'
+          ? `Aucun objet n’a été ajouté (type non inventorié).`
+          : `L’objet n’a pas pu être ajouté (poids/stock).`);
       await i.update({
-        embeds:[ new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Achat validé').setDescription(`Tu as reçu **${name}**.`) ],
+        embeds:[ new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Achat validé').setDescription(line) ],
         components: []
       });
 
