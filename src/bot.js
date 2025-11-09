@@ -1,4 +1,4 @@
-// bot.js
+// src/bot.js
 require('dotenv').config({ path: './id.env' });
 const {
   Client,
@@ -21,8 +21,10 @@ const { getOrCreateAccount, updateAccount }  = require('./economyData');
 const { handleSessionButtons }               = require('./commands/session');
 // Agriculture (récolte / transformation / livraison)
 const agriRuntime                            = require('./agri/agriRuntime');
-// Inventaire (nouveau système : donner/voler via menus)
-const { handleInventoryInteractions }        = require('./interaction/inventoryInteraction');
+
+// Nouveau système d'inventaire (pour ajout direct si besoin)
+const { addItem }                            = require('./data/inventoryStore');
+const { resolveItemId }                      = require('./data/itemNameResolver');
 
 // ─────────────────────────────────────────────────────────────
 // IDs pour les boutiques simples (optionnel)
@@ -88,8 +90,7 @@ require('./events/passiveRevenue')(client);
 require('./events/trainMerch')(client);
 
 // ─────────────────────────────────────────────────────────────
-// ❌ Nettoyage : on supprime les anciens systèmes (catalogues Kinuma/Hockley/stockInteraction)
-// (donc PAS de require('./events/catalogueWeapons'), './events/kinumaStable', './events/hockleyStable')
+// ❌ Nettoyage : pas d'anciens catalogues / stocks legacy
 
 // ─────────────────────────────────────────────────────────────
 // Chargement des commandes slash
@@ -97,8 +98,16 @@ client.commands = new Collection();
 const commandsPath  = path.join(__dirname, 'commands');
 const commandFiles  = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
-  const cmd = require(path.join(commandsPath, file));
-  if (cmd.data && cmd.execute) client.commands.set(cmd.data.name, cmd);
+  const full = path.join(commandsPath, file);
+  try {
+    const cmd = require(full);
+    if (cmd?.data && cmd?.execute) {
+      client.commands.set(cmd.data.name, cmd);
+    }
+  } catch (e) {
+    console.error(`Erreur au chargement de ${file}:`, e);
+    logger.sendError(e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -111,7 +120,6 @@ client.once('ready', async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
   logger.sendLog(`✅ Connecté en tant que ${client.user.tag}`);
 
-  // Statut d’activité configurable (env: BOT_ACTIVITY_TEXT, BOT_ACTIVITY_TYPE)
   const activityText = process.env.BOT_ACTIVITY_TEXT || 'Old Town Western V.3';
   const activityTypeEnv = (process.env.BOT_ACTIVITY_TYPE || 'PLAYING').toUpperCase();
   const activityType =
@@ -146,24 +154,28 @@ client.once('ready', async () => {
 
   // Panel de ticket
   const panelChannelId = process.env.ID_DU_CANAL_POUR_TICKET;
-  try {
-    const panelChannel = await client.channels.fetch(panelChannelId);
-    if (panelChannel && typeof ticketModule.sendTicketPanel === 'function') {
-      await ticketModule.sendTicketPanel(panelChannel);
-      console.log('🎟️ Panel de ticket envoyé.');
-      logger.sendLog('🎟️ Panel de ticket envoyé.');
+  if (panelChannelId) {
+    try {
+      const panelChannel = await client.channels.fetch(panelChannelId);
+      if (panelChannel && typeof ticketModule.sendTicketPanel === 'function') {
+        await ticketModule.sendTicketPanel(panelChannel);
+        console.log('🎟️ Panel de ticket envoyé.');
+        logger.sendLog('🎟️ Panel de ticket envoyé.');
+      }
+    } catch (err) {
+      console.error('Erreur envoi panel ticket :', err);
+      logger.sendError(err);
     }
-  } catch (err) {
-    console.error('Erreur envoi panel ticket :', err);
-    logger.sendError(err);
   }
 });
 
 // ─────────────────────────────────────────────────────────────
 // Gestion des interactions
 client.on('interactionCreate', async interaction => {
-  console.log('Interaction reçue:', interaction.customId || interaction.commandName);
-  logger.sendLog(`Interaction: ${interaction.customId || interaction.commandName}`);
+  try {
+    console.log('Interaction reçue:', interaction.customId || interaction.commandName);
+    logger.sendLog(`Interaction: ${interaction.customId || interaction.commandName}`);
+  } catch {}
 
   // Slash commands
   if (interaction.isChatInputCommand()) {
@@ -201,6 +213,7 @@ client.on('interactionCreate', async interaction => {
     if ((buyer.courant?.banque ?? 0) < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
+    // paiement
     buyer.courant.banque -= it.price;
     updateAccount(buyerId, buyer);
     if (SHOP_OWNER_ID) {
@@ -208,7 +221,11 @@ client.on('interactionCreate', async interaction => {
       seller.courant.banque += it.price;
       updateAccount(SHOP_OWNER_ID, seller);
     }
-    return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.`);
+    // (optionnel) dépôt direct dans inventaire si item existe dans notre catalog/icône
+    const maybeId = resolveItemId(it.name);
+    const added = addItem(buyerId, maybeId, 1);
+    const suffix = added.ok ? `\n🎒 L’objet a été ajouté à votre sacoche.` : '';
+    return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.${suffix}`);
   }
 
   // Boutique illégale (menus)
@@ -224,6 +241,7 @@ client.on('interactionCreate', async interaction => {
     if ((buyer.courant?.banque ?? 0) < it.price) {
       return interaction.editReply('❌ Fonds insuffisants.');
     }
+    // paiement
     buyer.courant.banque -= it.price;
     updateAccount(buyerId, buyer);
     if (ILLEGAL_SHOP_OWNER_ID) {
@@ -231,26 +249,22 @@ client.on('interactionCreate', async interaction => {
       seller.courant.banque += it.price;
       updateAccount(ILLEGAL_SHOP_OWNER_ID, seller);
     }
-    await interaction.editReply(`🤝 ${interaction.user} a acheté **${it.name}** pour **$${it.price}**.`);
-    await interaction.followUp({
-      content: `💵 Transféré à <@${ILLEGAL_SHOP_OWNER_ID}>.`,
-      allowedMentions: { users: [] }
-    });
+
+    // ajout inventaire (si l’id/poids existe, sinon ignore proprement)
+    const maybeId = resolveItemId(it.name);
+    const added = addItem(buyerId, maybeId, 1);
+
+    await interaction.editReply(`🤝 ${interaction.user} a acheté **${it.name}** pour **$${it.price}**.${added.ok ? '\n🎒 L’objet a été ajouté à votre sacoche.' : ''}`);
+    if (ILLEGAL_SHOP_OWNER_ID) {
+      await interaction.followUp({
+        content: `💵 Transféré à <@${ILLEGAL_SHOP_OWNER_ID}>.`,
+        allowedMentions: { users: [] }
+      }).catch(()=>{});
+    }
     return;
   }
 
-  // Inventaire (nouveau système : donner/voler via menus)
-  if (interaction.isButton() || interaction.isStringSelectMenu()) {
-    try {
-      await handleInventoryInteractions(interaction);
-    } catch (err) {
-      console.error('Erreur inventaire:', err);
-      logger.sendError(err);
-      if (!interaction.replied) {
-        await interaction.reply({ content: '❗ Erreur.', flags: MessageFlags.Ephemeral }).catch(() => {});
-      }
-    }
-  }
+  // (Le nouveau /inventaire gère ses propres interactions dans son fichier)
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -260,8 +274,10 @@ client.on('messageCreate', async message => {
   if (processedMessageIds.has(message.id)) return;
   processedMessageIds.add(message.id);
 
-  console.log(`📩 Msg reçu: "${message.content}"`);
-  logger.sendLog(`📩 Msg reçu: "${message.content}"`);
+  try {
+    console.log(`📩 Msg reçu: "${message.content}"`);
+    logger.sendLog(`📩 Msg reçu: "${message.content}"`);
+  } catch {}
 
   if (message.content.startsWith('!')) {
     await handleEconomyCommand(message);
@@ -269,7 +285,7 @@ client.on('messageCreate', async message => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Anti-crash doux (utile sur Render worker)
+// Anti-crash doux
 process.on('unhandledRejection', (err) => {
   console.error('UnhandledRejection:', err);
   logger.sendError(err);
@@ -281,4 +297,3 @@ process.on('uncaughtException', (err) => {
 
 // ─────────────────────────────────────────────────────────────
 client.login(process.env.BOT_TOKEN);
-
