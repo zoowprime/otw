@@ -9,7 +9,8 @@ const {
   ComponentType,
 } = require('discord.js');
 
-const { getInventory, removeItem } = require('../data/inventoryData');
+const { getUser, removeItem } = require('../data/inventoryStore');
+const { resolveItemId }       = require('../data/itemNameResolver');
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 const { isUserHeistActive, startHeist, endHeist } = require('../data/heistData');
 
@@ -18,18 +19,18 @@ const CROCHETAGE_GIF = 'https://raw.githubusercontent.com/zoowprime/otw/main/src
 
 // 🎛️ Paramétrage des lieux (durées, intervalles, fourchettes de gains)
 const PLACES = [
-  { key: 'bank_sd',     label: '🏦 Banque Winchester Saint-Denis', kind: 'bank',    totalSec: 300, tickSec: 15,  min: 2000, max: 3000, color: 0xf1c40f },
-  { key: 'bank_rhodes', label: '🏦 Banque de Rhodes',               kind: 'bank',    totalSec: 300, tickSec: 15,  min: 1000, max: 1800, color: 0xf1c40f },
-  { key: 'saloon_rhodes',label:'🍺 Saloon de Rhodes',               kind: 'saloon',  totalSec: 180, tickSec: 8,   min: 100,  max: 650,  color: 0x9b59b6 },
-  { key: 'saloon_sd',   label: '🍷 Saloon miteux de Saint-Denis',   kind: 'saloon',  totalSec: 180, tickSec: 8,   min: 100,  max: 950,  color: 0x9b59b6 },
-  { key: 'post_sd',     label: '📮 Bureau de poste de Saint-Denis', kind: 'post',    totalSec: 180, tickSec: 8,   min: 300,  max: 700,  color: 0x3498db },
-  { key: 'post_rhodes', label: '📬 Bureau de poste de Rhodes',      kind: 'post',    totalSec: 180, tickSec: 8,   min: 100,  max: 500,  color: 0x3498db },
-  { key: 'post_annes',  label: '📨 Bureau de poste d’Annesburg',    kind: 'post',    totalSec: 180, tickSec: 8,   min: 100,  max: 350,  color: 0x3498db },
+  { key: 'bank_sd',      label: '🏦 Banque Winchester Saint-Denis', kind: 'bank',   totalSec: 300, tickSec: 15,  min: 2000, max: 3000, color: 0xf1c40f },
+  { key: 'bank_rhodes',  label: '🏦 Banque de Rhodes',               kind: 'bank',   totalSec: 300, tickSec: 15,  min: 1000, max: 1800, color: 0xf1c40f },
+  { key: 'saloon_rhodes',label: '🍺 Saloon de Rhodes',               kind: 'saloon', totalSec: 180, tickSec: 8,   min: 100,  max: 650,  color: 0x9b59b6 },
+  { key: 'saloon_sd',    label: '🍷 Saloon miteux de Saint-Denis',   kind: 'saloon', totalSec: 180, tickSec: 8,   min: 100,  max: 950,  color: 0x9b59b6 },
+  { key: 'post_sd',      label: '📮 Bureau de poste de Saint-Denis', kind: 'post',   totalSec: 180, tickSec: 8,   min: 300,  max: 700,  color: 0x3498db },
+  { key: 'post_rhodes',  label: '📬 Bureau de poste de Rhodes',      kind: 'post',   totalSec: 180, tickSec: 8,   min: 100,  max: 500,  color: 0x3498db },
+  { key: 'post_annes',   label: '📨 Bureau de poste d’Annesburg',    kind: 'post',   totalSec: 180, tickSec: 8,   min: 100,  max: 350,  color: 0x3498db },
 ];
 
-// 🧰 Noms exacts attendus dans l’inventaire
-const ITEM_DYNAMITE = 'Dynamites';           // catégorie: "armes"
-const ITEM_KIT      = 'Kit de crochetage';   // catégorie: "autres"
+// 🧰 Noms “humains” attendus auparavant (on les résout → ids)
+const ITEM_DYNAMITE_HUMAN = 'Dynamites';
+const ITEM_KIT_HUMAN      = 'Kit de crochetage';
 
 // 🧠 Helpers
 function randInt(min, max) {
@@ -60,7 +61,6 @@ async function runProgress(message, title, color, totalSec, prefix = '') {
           .setColor(color)
           .setTitle(title)
           .setDescription(`${prefix}\n${progressBar(pct)}`);
-
         await message.edit({ embeds: [embed], components: [] }).catch(() => {});
       }
       if (now >= end) {
@@ -88,8 +88,7 @@ async function runProgressWithImage(message, title, color, totalSec, prefix = ''
           .setTitle(title)
           .setDescription(`${prefix}\n${progressBar(pct)}`);
         if (imageUrl) embed.setImage(imageUrl);
-        if (footer) embed.setFooter({ text: footer });
-
+        if (footer)   embed.setFooter({ text: footer });
         await message.edit({ embeds: [embed] }).catch(() => {});
       }
       if (now >= end) {
@@ -100,16 +99,27 @@ async function runProgressWithImage(message, title, color, totalSec, prefix = ''
   });
 }
 
-// Vérifie si l’utilisateur a X quantité d’un item dans une catégorie
-function hasItem(inv, category, itemName, qty = 1) {
-  const arr = inv.sections?.[category] || [];
-  const it = arr.find(e => e.name === itemName);
-  return it && it.qty >= qty;
+/* ======== Inventaire (nouveau format) ========
+   L’ancien code utilisait getInventory() avec sections[category].
+   Désormais on utilise getUser(userId) => { items: [{name,id,quantity}] }
+   On garde la logique métier : exiger 1x dynamite / 1x kit, puis retirer 1.
+*/
+
+// true si le joueur possède au moins `qty` de l’item (par id)
+function hasItemById(state, itemId, qty = 1) {
+  const it = (state.items || []).find(e => e.name === itemId);
+  const q  = it ? (it.quantity ?? 1) : 0;
+  return q >= qty;
 }
 
-// Retire un item (lève une erreur si impossible)
-function takeItem(userId, category, itemName, qty = 1) {
-  removeItem(userId, category, itemName, qty);
+// retire `qty` de l’item (par id). Propage l’erreur du store si besoin.
+function takeItemById(userId, itemId, qty = 1) {
+  const res = removeItem(userId, itemId, qty);
+  if (!res.ok) {
+    const err = new Error(res.reason || 'removeItem failed');
+    err.code = 'INV_REMOVE_FAILED';
+    throw err;
+  }
 }
 
 // Créditer l’argent liquide
@@ -129,7 +139,10 @@ function buildPlaceMenu() {
       label: p.label,
       value: p.key,
       description: `Braquage: ${p.kind.toUpperCase()}`,
-      emoji: p.label.startsWith('🏦') ? '🏦' : (p.label.startsWith('📮') || p.label.startsWith('📬') || p.label.startsWith('📨')) ? '📮' : '🍷',
+      emoji:
+        p.label.startsWith('🏦') ? '🏦' :
+        (p.label.startsWith('📮') || p.label.startsWith('📬') || p.label.startsWith('📨')) ? '📮' :
+        '🍷',
     })));
 
   return new ActionRowBuilder().addComponents(menu);
@@ -208,8 +221,8 @@ module.exports = {
       .setTitle('💣 Ouverture du coffre/tiroir')
       .setDescription(
         `Choisis ta méthode :\n\n` +
-        `🧨 **Faire exploser** (nécessite 1x *Dynamites* dans **Armes**)\n` +
-        `🧰 **Crocheter** (nécessite 1x *Kit de crochetage* dans **Autres**)`
+        `🧨 **Faire exploser** (nécessite 1x *Dynamites*)\n` +
+        `🧰 **Crocheter** (nécessite 1x *Kit de crochetage*)`
       )
       .setFooter({ text: 'OTW • Méthode d’ouverture' });
 
@@ -232,26 +245,29 @@ module.exports = {
       }).catch(() => {});
     }
 
-    // Vérification inventaire selon la méthode
-    const inv = getInventory(userId);
+    // Résolution des ids d’items à partir des labels humains
+    const DYNAMITE_ID = resolveItemId(ITEM_DYNAMITE_HUMAN); // "dynamite"
+    const KIT_ID      = resolveItemId(ITEM_KIT_HUMAN);      // "kit_crochetage"
+
+    const invState = getUser(userId); // nouveau format { items: [{name,quantity}], ... }
 
     // === EXPLOSION ===
     if (methodClick.customId === 'heist_explode') {
-      if (!hasItem(inv, 'armes', ITEM_DYNAMITE, 1)) {
+      if (!hasItemById(invState, DYNAMITE_ID, 1)) {
         endHeist(userId);
         return methodClick.update({
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
               .setTitle('❌ Dynamite manquante')
-              .setDescription(`Il vous manque **1x ${ITEM_DYNAMITE}** dans **Armes** pour faire sauter le coffre.`)
+              .setDescription(`Il vous manque **1x ${ITEM_DYNAMITE_HUMAN}** pour faire sauter le coffre.`)
           ],
           components: []
         });
       }
 
       // Retire la dynamite
-      try { takeItem(userId, 'armes', ITEM_DYNAMITE, 1); }
+      try { takeItemById(userId, DYNAMITE_ID, 1); }
       catch {
         endHeist(userId);
         return methodClick.update({
@@ -278,21 +294,21 @@ module.exports = {
 
     // === CROCHETAGE (avec GIF + boutons par étape) ===
     if (methodClick.customId === 'heist_pick') {
-      if (!hasItem(inv, 'autres', ITEM_KIT, 1)) {
+      if (!hasItemById(invState, KIT_ID, 1)) {
         endHeist(userId);
         return methodClick.update({
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
               .setTitle('❌ Kit manquant')
-              .setDescription(`Il vous manque **1x ${ITEM_KIT}** dans **Autres** pour crocheter.`)
+              .setDescription(`Il vous manque **1x ${ITEM_KIT_HUMAN}** pour crocheter.`)
           ],
           components: []
         });
       }
 
       // Retire le kit
-      try { takeItem(userId, 'autres', ITEM_KIT, 1); }
+      try { takeItemById(userId, KIT_ID, 1); }
       catch {
         endHeist(userId);
         return methodClick.update({
