@@ -76,7 +76,6 @@ logger.setClient(client);
 require('./events/welcome.js')(client);
 require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
-require('./events/maladies')(client);
 require('./events/ferrure')(client);
 require('./events/armeAbimee')(client);
 require('./events/faimSoifSystem')(client);
@@ -282,3 +281,4 @@ process.on('uncaughtException', (err) => {
 
 // ─────────────────────────────────────────────────────────────
 client.login(process.env.BOT_TOKEN);
+
