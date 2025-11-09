@@ -54,8 +54,8 @@ const GRID = {
 
 // position du texte du poids **actuel uniquement**
 const WEIGHT_TEXT = {
-  X: 448,
-  Y: 118,
+  X: 463,
+  Y: 160,
   FONT: '26px Arial', // ou '26px OTW' si police enregistrée
   COLOR: '#EDEDED',
   SHADOW: 'rgba(0,0,0,0.75)',
