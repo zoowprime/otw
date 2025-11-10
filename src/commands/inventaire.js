@@ -1,11 +1,13 @@
 // src/commands/inventaire.js
 const {
   SlashCommandBuilder,
+  EmbedBuilder,
   AttachmentBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
+  ComponentType,
 } = require('discord.js');
 
 const path = require('path');
@@ -39,19 +41,30 @@ const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
-// PARAMÈTRES UI
+// PARAMÈTRES UI — COORDONNÉES DES CASES
+// Chaque case (slot) est calculée ainsi :
+//  slotX = LEFT + col * (SLOT_W + XGAP) + COL_NUDGE[col]
+//  slotY = TOP  + row * (SLOT_H + YGAP) + ROW_NUDGE[row]
+//  (col: 0..4, row: 0..4)
+//
+// Pour centrer une icône : on dessine au centre du slot :
+//  cx = slotX + SLOT_W/2
+//  cy = slotY + SLOT_H/2
+//
+// ↘ Si une colonne n'est pas parfaitement alignée dans ton image de fond,
+//    ajuste COL_NUDGE[indexCol]. Idem pour une rangée avec ROW_NUDGE[indexRow].
 const GRID = {
   COLS: 5,
   ROWS: 5,
   SLOT_W: 96,
   SLOT_H: 120,
-  LEFT: 170,   // origine 1er slot
+  LEFT: 170,   // origine 1er slot (coin haut-gauche)
   TOP:  220,
   XGAP: 35,
   YGAP: 28,
 };
 
-// Micro-corrections par colonne/ligne (pour compenser des cases du visuel non parfaitement régulières)
+// Micro-corrections par colonne/ligne (pour compenser des cases non régulières dans l'image)
 const COL_NUDGE = [0, 0, 4, 0, 0]; // ← 3e colonne (index 2) décalée de +4px vers la droite
 const ROW_NUDGE = [0, 0, 0, 0, 0]; // ajuste si une rangée “glisse” verticalement (+ = descend)
 
@@ -72,8 +85,9 @@ const FONTS = {
   SHADOW:'rgba(0,0,0,0.65)',
 };
 
-// DEBUG: dessiner les cadres des 25 slots
-const DEBUG_GRID = false;
+// DEBUG: dessiner les cadres et/ou l’index des cases (0–24)
+const DEBUG_GRID  = false;
+const DEBUG_INDEX = false;
 
 // ─────────────────────────────────────────────────────────────
 // Helpers texte
@@ -97,11 +111,18 @@ function drawShadowText(ctx, text, x, y, align = 'left', color = FONTS.COLOR, sh
   ctx.shadowBlur  = 0;
 }
 
-// barre ascii (pour description)
 function bar(pct) {
   const blocks = 20;
   const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
   return '█'.repeat(filled) + '░'.repeat(blocks - filled);
+}
+
+// ─────────────────────────────────────────────────────────────
+// ► UTILITAIRE : coordonnées exactes d’un slot (pour debug manuel)
+function getSlotRect(col, row) {
+  const x = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[col] || 0);
+  const y = GRID.TOP  + row * (GRID.SLOT_H + GRID.YGAP) + (ROW_NUDGE[row] || 0);
+  return { x, y, w: GRID.SLOT_W, h: GRID.SLOT_H, cx: x + GRID.SLOT_W/2, cy: y + GRID.SLOT_H/2 };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -121,14 +142,16 @@ async function renderInventoryImage(userId) {
   ctx.font = WEIGHT_TEXT.FONT;
   drawShadowText(ctx, `${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
 
-  // debug slots
-  if (DEBUG_GRID) {
+  // debug: cadres / index
+  if (DEBUG_GRID || DEBUG_INDEX) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillStyle   = 'rgba(255,255,255,0.55)';
+    ctx.font        = '12px Arial';
     for (let r = 0; r < GRID.ROWS; r++) {
       for (let c = 0; c < GRID.COLS; c++) {
-        const slotX = GRID.LEFT + c * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[c] || 0);
-        const slotY = GRID.TOP  + r * (GRID.SLOT_H + GRID.YGAP) + (ROW_NUDGE[r] || 0);
-        ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
+        const { x, y, w, h, cx, cy } = getSlotRect(c, r);
+        if (DEBUG_GRID)  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        if (DEBUG_INDEX) drawShadowText(ctx, String(r * GRID.COLS + c), cx, y + 14, 'center');
       }
     }
   }
@@ -144,25 +167,21 @@ async function renderInventoryImage(userId) {
     const col = i % GRID.COLS;
     const row = Math.floor(i / GRID.COLS);
 
-    const slotX = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[col] || 0);
-    const slotY = GRID.TOP  + row * (GRID.SLOT_H + GRID.YGAP) + (ROW_NUDGE[row] || 0);
-
-    const cx = slotX + GRID.SLOT_W / 2;
-    const cy = slotY + GRID.SLOT_H / 2;
+    const { x: slotX, y: slotY, w: slotW, h: slotH, cx, cy } = getSlotRect(col, row);
 
     // icône
     const iconPath = path.join(ICONS_DIR, `${id}.png`);
     if (fs.existsSync(iconPath)) {
       try {
         const img = await loadImage(iconPath);
-        const scale = Math.min(GRID.SLOT_W / img.width, GRID.SLOT_H / img.height);
+        const scale = Math.min(slotW / img.width, slotH / img.height);
         const w = img.width * scale;
         const h = img.height * scale;
         ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
-      } catch { /* ignore */ }
+      } catch {/* ignore */}
     } else if (!DEBUG_GRID) {
       ctx.strokeStyle = 'rgba(255,255,255,0.20)';
-      ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
+      ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
     }
 
     // textes overlay
@@ -177,12 +196,12 @@ async function renderInventoryImage(userId) {
 
     // poids unitaire
     ctx.font = FONTS.META;
-    drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + GRID.SLOT_W - 6, slotY + 14, 'right');
+    drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + slotW - 6, slotY + 14, 'right');
 
     // nom
     ctx.font = FONTS.NAME;
-    const label = truncateTo(ctx, (meta.label || id).replace(/_/g, ' '), GRID.SLOT_W - 10);
-    drawShadowText(ctx, label, cx, slotY + GRID.SLOT_H - 10, 'center');
+    const label = truncateTo(ctx, (meta.label || id).replace(/_/g, ' '), slotW - 10);
+    drawShadowText(ctx, label, cx, slotY + slotH - 10, 'center');
   }
 
   const buf = canvas.toBuffer('image/png');
@@ -205,12 +224,22 @@ module.exports = {
     // image 1024x1024
     const file = await renderInventoryImage(userId).catch(() => null);
 
-    const contentLines = [
-      `**Sacoche de ${displayName}**`,
-      `🍖 **Faim** : \`${bar(hunger)}\`  ${hunger}%`,
-      `💧 **Soif** : \`${bar(thirst)}\`  ${thirst}%`,
-      '', // ligne vide avant l'image
-    ].join('\n');
+    const emb = new EmbedBuilder()
+      .setColor(0x3b2f2f)
+      .setTitle(`Sacoche de ${displayName}`)
+      .setDescription(
+        `🍖 **Faim** : \`${bar(hunger)}\` ${hunger}%\n` +
+        `💧 **Soif** : \`${bar(thirst)}\` ${thirst}%\n`
+      )
+      .setFooter({ text: 'OTW — Inventaire' });
+
+    if (file) emb.setImage('attachment://inventory.png');
+    else {
+      emb.addFields({
+        name: 'Affichage graphique désactivé',
+        value: 'Installe `canvas` (`npm i canvas`) pour afficher la sacoche en 1024×1024 avec les icônes centrées.'
+      });
+    }
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('inv_give').setLabel('Donner').setStyle(ButtonStyle.Success).setEmoji('🟩'),
@@ -218,23 +247,40 @@ module.exports = {
       new ButtonBuilder().setCustomId('inv_drop').setLabel('Jeter').setStyle(ButtonStyle.Danger).setEmoji('🟥'),
     );
 
-    if (file) {
-      // Message sans embed pour un affichage GRAND de l’image
-      await interaction.reply({
-        content: contentLines,
-        files: [file],
-        components: [row],
-        allowedMentions: { users: [] },
-      });
-    } else {
-      // fallback si canvas indispo
-      await interaction.reply({
-        content:
-          `${contentLines}\n*(Affichage graphique indisponible. Installe \`canvas\` pour voir la sacoche.)*`,
-        components: [row],
-        flags: MessageFlags.Ephemeral,
-        allowedMentions: { users: [] },
-      });
-    }
+    await interaction.reply({
+      embeds: [emb],
+      files: file ? [file] : [],
+      components: [row],
+      allowedMentions: { users: [] },
+    });
+
+    // ─────────────────────────────────────────────────────────
+    // Anti-timeout 3s sur les boutons : collector local
+    const msg = await interaction.fetchReply();
+    const collector = msg.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      time: 60_000
+    });
+
+    collector.on('collect', async (i) => {
+      // On sécurise la réponse immédiate pour éviter l'échec 3s
+      await i.deferUpdate().catch(()=>{});
+
+      // Fallback minimal : message éphémère court pour confirmer la prise en charge.
+      // Si ton handleInventoryInteractions fait déjà ces actions,
+      // tu peux COMMENTER la ligne ci-dessous pour éviter un double message.
+      i.followUp({
+        content: (i.customId === 'inv_give')
+          ? '🟩 Donner — interaction reçue. (Si rien ne s’ouvre, vérifie le module d’interactions inventaire.)'
+          : (i.customId === 'inv_use')
+            ? '🟦 Utiliser — interaction reçue.'
+            : '🟥 Jeter — interaction reçue.',
+        flags: MessageFlags.Ephemeral
+      }).catch(()=>{});
+    });
+
+    collector.on('end', () => {
+      // (optionnel) on laisse les boutons actifs ; tu peux les désactiver ici si tu veux.
+    });
   }
 };
