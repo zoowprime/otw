@@ -5,15 +5,21 @@ const {
   AttachmentBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  UserSelectMenuBuilder,
   ComponentType,
+  MessageFlags,
 } = require('discord.js');
 
 const path = require('path');
 const fs   = require('fs');
 
 // Store inventaire + métadonnées items
-const { getUser, totalWeight, getVitals } = require('../data/inventoryStore');
+const {
+  getUser,
+  totalWeight,
+  getVitals,
+  addItem,
+  removeItem
+} = require('../data/inventoryStore');
 const catalog = require('../data/itemCatalog');
 
 // ─────────────────────────────────────────────────────────────
@@ -33,9 +39,6 @@ const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
 // COORDONNÉES DES CASES (grille 5×5)
-// Chaque case (slot) est calculée ainsi :
-//   slotX = LEFT + col * (SLOT_W + XGAP) + COL_NUDGE[col]
-//   slotY = TOP  + row * (SLOT_H  + YGAP) + ROW_NUDGE[row]
 const GRID = {
   COLS: 5,
   ROWS: 5,
@@ -46,27 +49,15 @@ const GRID = {
   XGAP: 35,   // espacement horizontal entre cases
   YGAP: 28,   // espacement vertical entre cases
 };
+// micro-ajustements (colonne 3 légèrement plus à droite chez toi)
+const COL_NUDGE = [0, 0, 6, 0, 0];
+const ROW_NUDGE = [0, 0, 0, 0, 0];
 
-// Micro-corrections si ton image n’est pas parfaitement régulière
-const COL_NUDGE = [0, 0, 6, 0, 0]; // colonne 3 (index 2) +6px vers la droite
-const ROW_NUDGE = [0, 0, 0, 0, 0]; // ajuste une rangée (+ = descend)
-
-// Position du texte du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
-const WEIGHT_TEXT = {
-  X: 463,
-  Y: 160,
-  FONT: '26px Arial',
-  COLOR: '#EDEDED',
-  SHADOW: 'rgba(0,0,0,0.75)',
-};
+// Position du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
+const WEIGHT_TEXT = { X: 463, Y: 160, FONT: '26px Arial', COLOR: '#EDEDED', SHADOW: 'rgba(0,0,0,0.75)' };
 
 // Polices overlays
-const FONTS = {
-  NAME:  '14px Arial',
-  META:  '12px Arial',
-  COLOR: '#FFFFFF',
-  SHADOW:'rgba(0,0,0,0.65)',
-};
+const FONTS = { NAME:'14px Arial', META:'12px Arial', COLOR:'#FFFFFF', SHADOW:'rgba(0,0,0,0.65)' };
 
 // DEBUG
 const DEBUG_GRID  = false;
@@ -101,24 +92,25 @@ function getSlotRect(col, row) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Rendu de l’inventaire en image
+// Rendu image inventaire
 async function renderInventoryImage(userId) {
   if (!CANVAS_AVAILABLE) return null;
 
   const canvas = createCanvas(1024, 1024);
   const ctx = canvas.getContext('2d');
 
-  // fond
   const bg = await loadImage(BAG_BG);
   ctx.drawImage(bg, 0, 0, 1024, 1024);
 
-  // poids actuel (le "/ 60.00" est sur l'image)
   const st = getUser(userId);
   const tw = totalWeight(st);
   ctx.font = WEIGHT_TEXT.FONT;
-  drawShadowText(ctx, `${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
+  ctx.shadowColor = WEIGHT_TEXT.SHADOW;
+  ctx.shadowBlur  = 4;
+  ctx.fillStyle = WEIGHT_TEXT.COLOR;
+  ctx.fillText(`${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y);
+  ctx.shadowBlur = 0;
 
-  // debug
   if (DEBUG_GRID || DEBUG_INDEX) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.fillStyle   = 'rgba(255,255,255,0.55)';
@@ -127,12 +119,11 @@ async function renderInventoryImage(userId) {
       for (let c = 0; c < GRID.COLS; c++) {
         const { x, y, w, h, cx } = getSlotRect(c, r);
         if (DEBUG_GRID)  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        if (DEBUG_INDEX) drawShadowText(ctx, String(r * GRID.COLS + c), cx, y + 14, 'center');
+        if (DEBUG_INDEX) ctx.fillText(String(r * GRID.COLS + c), cx - 4, y + 14);
       }
     }
   }
 
-  // items
   const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
   for (let i = 0; i < items.length; i++) {
     const it  = items[i];
@@ -143,7 +134,6 @@ async function renderInventoryImage(userId) {
     const row = Math.floor(i / GRID.COLS);
     const { x: slotX, y: slotY, w: slotW, h: slotH, cx, cy } = getSlotRect(col, row);
 
-    // icône
     const iconPath = path.join(ICONS_DIR, `${id}.png`);
     if (fs.existsSync(iconPath)) {
       try {
@@ -152,13 +142,12 @@ async function renderInventoryImage(userId) {
         const w = img.width * scale;
         const h = img.height * scale;
         ctx.drawImage(img, cx - w/2, cy - h/2, w, h);
-      } catch { /* ignore */ }
+      } catch {}
     } else if (!DEBUG_GRID) {
       ctx.strokeStyle = 'rgba(255,255,255,0.20)';
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
     }
 
-    // overlay
     const meta   = catalog[id] || {};
     const weight = (meta.weight ?? 0);
 
@@ -186,7 +175,7 @@ function buildActionMenu() {
       .setCustomId('inv_action')
       .setPlaceholder('Choisir une action…')
       .addOptions([
-        { label: 'Donner',   value: 'give', emoji: '🟩', description: 'Donner un objet à un joueur' },
+        { label: 'Donner',   value: 'give', emoji: '🟩', description: 'Donner un objet à un joueur (mention)' },
         { label: 'Utiliser', value: 'use',  emoji: '🟦', description: 'Utiliser / consommer un objet' },
         { label: 'Jeter',    value: 'drop', emoji: '🟥', description: 'Jeter un objet au sol' }
       ])
@@ -202,6 +191,25 @@ function toOptionsFromItems(items) {
     return { label, value: id, description: desc };
   });
 }
+const niceName = (id) => (catalog[id]?.label || id).replace(/_/g, ' ');
+
+// Utilitaires
+async function buildEmbedWithImage(userId, displayName) {
+  const { hunger, thirst } = getVitals(userId);
+  const file = await renderInventoryImage(userId).catch(() => null);
+
+  const emb = new EmbedBuilder()
+    .setColor(0x3b2f2f)
+    .setTitle(`Sacoche de ${displayName}`)
+    .setDescription(
+      `🍖 **Faim** : \`${bar(hunger)}\` ${hunger}%\n` +
+      `💧 **Soif** : \`${bar(thirst)}\` ${thirst}%\n`
+    )
+    .setFooter({ text: 'OTW — Inventaire' });
+
+  if (file) emb.setImage('attachment://inventory.png');
+  return { emb, file };
+}
 
 // ─────────────────────────────────────────────────────────────
 module.exports = {
@@ -213,22 +221,7 @@ module.exports = {
     const userId = interaction.user.id;
     const displayName = interaction.member?.displayName || interaction.user.username;
 
-    // vitaux
-    const { hunger, thirst } = getVitals(userId);
-
-    // image
-    const file = await renderInventoryImage(userId).catch(() => null);
-
-    const emb = new EmbedBuilder()
-      .setColor(0x3b2f2f)
-      .setTitle(`Sacoche de ${displayName}`)
-      .setDescription(
-        `🍖 **Faim** : \`${bar(hunger)}\` ${hunger}%\n` +
-        `💧 **Soif** : \`${bar(thirst)}\` ${thirst}%\n`
-      )
-      .setFooter({ text: 'OTW — Inventaire' });
-
-    if (file) emb.setImage('attachment://inventory.png');
+    const { emb, file } = await buildEmbedWithImage(userId, displayName);
 
     // envoi + menu d’action
     await interaction.reply({
@@ -239,50 +232,45 @@ module.exports = {
 
     const msg = await interaction.fetchReply();
 
-    // collector global (3 minutes)
+    // collector principal (actions)
     const collector = msg.createMessageComponentCollector({
       componentType: ComponentType.StringSelect,
       time: 180_000
     });
 
+    // état pour "donner"
+    let pendingGiveItemId = null;
+
     collector.on('collect', async (i) => {
-      // on traite uniquement l’auteur
       if (i.user.id !== userId) {
-        return i.reply({ content: '⛔ Seul le propriétaire peut utiliser ce menu.', ephemeral: true });
+        return i.reply({ content: '⛔ Seul le propriétaire peut utiliser ce menu.', flags: MessageFlags.Ephemeral });
       }
 
-      // action principale
+      // Sélection de l’action
       if (i.customId === 'inv_action') {
-        const action = i.values[0]; // 'give' | 'use' | 'drop'
+        const action = i.values[0];
         const st = getUser(userId);
         const items = Array.isArray(st.items) ? st.items : [];
 
         if (!items.length) {
-          return i.update({
-            embeds: [ new EmbedBuilder().setColor(0x7f8c8d).setTitle('📦 Inventaire vide') ],
-            components: [buildActionMenu()]
-          });
+          const { emb } = await buildEmbedWithImage(userId, displayName);
+          emb.addFields({ name: 'Info', value: '📦 Inventaire vide.' });
+          return i.update({ embeds: [emb], components: [buildActionMenu()] });
         }
 
         if (action === 'use') {
-          const consumables = items.filter(it => {
-            const id = it.name || it.id;
-            return catalog[id]?.consumable === true;
-          });
+          const consumables = items.filter(it => catalog[it.name || it.id]?.consumable === true);
           if (!consumables.length) {
-            return i.update({
-              embeds: [ new EmbedBuilder().setColor(0x7f8c8d).setTitle('Aucun consommable disponible') ],
-              components: [buildActionMenu()]
-            });
+            const { emb } = await buildEmbedWithImage(userId, displayName);
+            emb.addFields({ name: 'Info', value: 'Aucun consommable disponible.' });
+            return i.update({ embeds: [emb], components: [buildActionMenu()] });
           }
-
           const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
               .setCustomId('inv_use_item')
               .setPlaceholder('Sélectionner un consommable…')
               .addOptions(toOptionsFromItems(consumables))
           );
-
           return i.update({
             embeds: [ new EmbedBuilder().setColor(0x3498db).setTitle('Utiliser — Choix du consommable') ],
             components: [row]
@@ -296,88 +284,123 @@ module.exports = {
               .setPlaceholder('Sélectionner un objet à jeter…')
               .addOptions(toOptionsFromItems(items))
           );
-
           return i.update({
             embeds: [ new EmbedBuilder().setColor(0xe74c3c).setTitle('Jeter — Choix de l’objet') ],
             components: [row]
           });
         }
 
-        // action === 'give'
-        {
-          const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId('inv_give_item')
-              .setPlaceholder('Sélectionner un objet à donner…')
-              .addOptions(toOptionsFromItems(items))
-          );
-
-          return i.update({
-            embeds: [ new EmbedBuilder().setColor(0x2ecc71).setTitle('Donner — Choix de l’objet') ],
-            components: [row]
-          });
-        }
+        // action === 'give' : on choisit l’objet, PUIS on mentionne la cible dans le chat
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('inv_give_item')
+            .setPlaceholder('Sélectionner l’objet à donner…')
+            .addOptions(toOptionsFromItems(items))
+        );
+        return i.update({
+          embeds: [ new EmbedBuilder().setColor(0x2ecc71).setTitle('Donner — Choix de l’objet') ],
+          components: [row]
+        });
       }
 
-      // Utiliser — sélection d’item
+      // Utiliser — démo (pas de décrément ici pour l’instant)
       if (i.customId === 'inv_use_item') {
         const id = i.values[0];
-        const name = (catalog[id]?.label || id).replace(/_/g, ' ');
-
-        // Ici on ne modifie pas encore l’inventaire : on affiche juste la confirmation.
         return i.update({
-          embeds: [ new EmbedBuilder().setColor(0x3498db).setDescription(`✅ Tu as utilisé **${name}**.`) ],
+          embeds: [ new EmbedBuilder().setColor(0x3498db).setDescription(`✅ Tu as utilisé **${niceName(id)}**.`) ],
           components: [buildActionMenu()]
         });
       }
 
-      // Jeter — sélection d’item
+      // Jeter — retrait réel + re-render
       if (i.customId === 'inv_drop_item') {
         const id = i.values[0];
-        const name = (catalog[id]?.label || id).replace(/_/g, ' ');
+
+        try {
+          removeItem(userId, id, 1);
+        } catch (e) {
+          return i.update({
+            embeds: [ new EmbedBuilder().setColor(0xe74c3c).setDescription(`❌ Impossible de jeter **${niceName(id)}**.`) ],
+            components: [buildActionMenu()]
+          });
+        }
+
+        const { emb, file } = await buildEmbedWithImage(userId, displayName);
+        emb.addFields({ name: 'Action', value: `🗑️ Tu as jeté **${niceName(id)}**.` });
+
         return i.update({
-          embeds: [ new EmbedBuilder().setColor(0xe74c3c).setDescription(`🗑️ Tu as jeté **${name}**.`) ],
+          embeds: [emb],
+          files: file ? [file] : [],
           components: [buildActionMenu()]
         });
       }
 
-      // Donner — sélection d’item → sélection du joueur
+      // Donner — on mémorise l’item, puis on demandera une mention dans le chat
       if (i.customId === 'inv_give_item') {
-        const id = i.values[0];
-        const name = (catalog[id]?.label || id).replace(/_/g, ' ');
+        pendingGiveItemId = i.values[0];
 
-        const rowUser = new ActionRowBuilder().addComponents(
-          new UserSelectMenuBuilder()
-            .setCustomId(`inv_give_user:${id}`)
-            .setPlaceholder('Choisir le joueur cible…')
-            .setMinValues(1)
-            .setMaxValues(1)
-        );
-
-        return i.update({
-          embeds: [ new EmbedBuilder().setColor(0x2ecc71).setDescription(`Objet à donner : **${name}**\nSélectionne le joueur cible.`) ],
-          components: [rowUser]
+        const { emb } = await buildEmbedWithImage(userId, displayName);
+        emb.addFields({
+          name: 'Donner',
+          value: `Objet sélectionné : **${niceName(pendingGiveItemId)}**\n` +
+                 `👉 **Mentionne** maintenant le joueur cible dans le chat (ex: @Nom).`
         });
-      }
 
-      // Donner — sélection du joueur
-      if (i.customId.startsWith('inv_give_user:')) {
-        const id = i.customId.split(':')[1];
-        const name = (catalog[id]?.label || id).replace(/_/g, ' ');
-        const targetId = i.values[0];
-
-        return i.update({
-          embeds: [ new EmbedBuilder().setColor(0x2ecc71).setDescription(`🤝 Tu as donné **${name}** à <@${targetId}>.`) ],
-          components: [buildActionMenu()]
-        });
+        return i.update({ embeds: [emb], components: [buildActionMenu()] });
       }
     });
 
-    collector.on('end', async () => {
-      // à la fin, on laisse l’embed tel quel et on enlève les menus
+    // Collector de messages (pour récupérer la mention de la cible après choix de l’objet à donner)
+    const msgCollector = msg.channel.createMessageCollector({
+      time: 180_000,
+      filter: m => m.author.id === userId
+    });
+
+    msgCollector.on('collect', async (m) => {
+      if (!pendingGiveItemId) return; // on n’attend une mention que si un objet a été choisi
+      const target = m.mentions.users.first();
+      if (!target || target.bot) {
+        // pas de cible valide → on ignore gentiment
+        return m.reply({ content: '❌ Mention invalide. Réessaie en mentionnant la personne (@Nom).', allowedMentions: { users: [] } })
+          .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+          .catch(()=>{});
+      }
+
+      // transfert : -1 chez l’émetteur, +1 chez la cible
       try {
-        await msg.edit({ components: [] });
+        removeItem(userId, pendingGiveItemId, 1);
+        addItem(target.id, pendingGiveItemId, 1);
+      } catch (e) {
+        await m.reply({ content: '❌ Transfert impossible.', allowedMentions: { users: [] } }).catch(()=>{});
+        pendingGiveItemId = null;
+        return;
+      }
+
+      // re-render pour l’auteur
+      const { emb, file } = await buildEmbedWithImage(userId, displayName);
+      emb.addFields({ name: 'Donner', value: `🤝 Tu as donné **${niceName(pendingGiveItemId)}** à <@${target.id}>.` });
+
+      try {
+        await msg.edit({
+          embeds: [emb],
+          files: file ? [file] : [],
+          components: [buildActionMenu()]
+        });
       } catch {}
+
+      // petit accusé local et nettoyage du message de mention
+      await m.reply({ content: `✅ Transfert effectué à <@${target.id}>.`, allowedMentions: { users: [] } })
+        .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+        .catch(()=>{});
+      setTimeout(() => m.delete().catch(()=>{}), 2000);
+
+      pendingGiveItemId = null;
+    });
+
+    // Fin
+    collector.on('end', async () => {
+      try { await msg.edit({ components: [] }); } catch {}
+      msgCollector.stop('done');
     });
   }
 };
