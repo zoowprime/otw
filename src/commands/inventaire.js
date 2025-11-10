@@ -1,7 +1,6 @@
 // src/commands/inventaire.js
 const {
   SlashCommandBuilder,
-  EmbedBuilder,
   AttachmentBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -52,6 +51,10 @@ const GRID = {
   YGAP: 28,
 };
 
+// Micro-corrections par colonne/ligne (pour compenser des cases du visuel non parfaitement régulières)
+const COL_NUDGE = [0, 0, 4, 0, 0]; // ← 3e colonne (index 2) décalée de +4px vers la droite
+const ROW_NUDGE = [0, 0, 0, 0, 0]; // ajuste si une rangée “glisse” verticalement (+ = descend)
+
 // position du texte du poids **actuel uniquement**
 const WEIGHT_TEXT = {
   X: 463,
@@ -94,7 +97,7 @@ function drawShadowText(ctx, text, x, y, align = 'left', color = FONTS.COLOR, sh
   ctx.shadowBlur  = 0;
 }
 
-// barre ascii (pour description embed)
+// barre ascii (pour description)
 function bar(pct) {
   const blocks = 20;
   const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
@@ -123,8 +126,8 @@ async function renderInventoryImage(userId) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     for (let r = 0; r < GRID.ROWS; r++) {
       for (let c = 0; c < GRID.COLS; c++) {
-        const slotX = GRID.LEFT + c * (GRID.SLOT_W + GRID.XGAP);
-        const slotY = GRID.TOP  + r * (GRID.SLOT_H + GRID.YGAP);
+        const slotX = GRID.LEFT + c * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[c] || 0);
+        const slotY = GRID.TOP  + r * (GRID.SLOT_H + GRID.YGAP) + (ROW_NUDGE[r] || 0);
         ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
       }
     }
@@ -141,8 +144,8 @@ async function renderInventoryImage(userId) {
     const col = i % GRID.COLS;
     const row = Math.floor(i / GRID.COLS);
 
-    const slotX = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP);
-    const slotY = GRID.TOP  + row * (GRID.SLOT_H + GRID.YGAP);
+    const slotX = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[col] || 0);
+    const slotY = GRID.TOP  + row * (GRID.SLOT_H + GRID.YGAP) + (ROW_NUDGE[row] || 0);
 
     const cx = slotX + GRID.SLOT_W / 2;
     const cy = slotY + GRID.SLOT_H / 2;
@@ -156,7 +159,7 @@ async function renderInventoryImage(userId) {
         const w = img.width * scale;
         const h = img.height * scale;
         ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
-      } catch {/* ignore */}
+      } catch { /* ignore */ }
     } else if (!DEBUG_GRID) {
       ctx.strokeStyle = 'rgba(255,255,255,0.20)';
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, GRID.SLOT_W - 1, GRID.SLOT_H - 1);
@@ -198,29 +201,16 @@ module.exports = {
 
     // vitaux (décroissance appliquée côté store)
     const { hunger, thirst } = getVitals(userId);
-    // const tw = totalWeight(userId); // plus nécessaire dans la description
 
     // image 1024x1024
     const file = await renderInventoryImage(userId).catch(() => null);
 
-    const emb = new EmbedBuilder()
-      .setColor(0x3b2f2f)
-      .setTitle(`Sacoche de ${displayName}`)
-      .setDescription(
-        // Poids retiré de l'embed : il est déjà sur l'image
-        `🍖 **Faim** : \`${bar(hunger)}\`\n${hunger}%\n` +
-        `💧 **Soif** : \`${bar(thirst)}\`\n${thirst}%\n`
-      )
-      .setFooter({ text: 'OTW — Inventaire' });
-
-    if (file) {
-      emb.setImage('attachment://inventory.png');
-    } else {
-      emb.addFields({
-        name: 'Affichage graphique désactivé',
-        value: 'Installe `canvas` (`npm i canvas`) pour afficher la sacoche en 1024×1024 avec les icônes centrées.'
-      });
-    }
+    const contentLines = [
+      `**Sacoche de ${displayName}**`,
+      `🍖 **Faim** : \`${bar(hunger)}\`  ${hunger}%`,
+      `💧 **Soif** : \`${bar(thirst)}\`  ${thirst}%`,
+      '', // ligne vide avant l'image
+    ].join('\n');
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('inv_give').setLabel('Donner').setStyle(ButtonStyle.Success).setEmoji('🟩'),
@@ -229,9 +219,22 @@ module.exports = {
     );
 
     if (file) {
-      await interaction.reply({ embeds: [emb], files: [file], components: [row] });
+      // Message sans embed pour un affichage GRAND de l’image
+      await interaction.reply({
+        content: contentLines,
+        files: [file],
+        components: [row],
+        allowedMentions: { users: [] },
+      });
     } else {
-      await interaction.reply({ embeds: [emb], components: [row], flags: MessageFlags.Ephemeral });
+      // fallback si canvas indispo
+      await interaction.reply({
+        content:
+          `${contentLines}\n*(Affichage graphique indisponible. Installe \`canvas\` pour voir la sacoche.)*`,
+        components: [row],
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { users: [] },
+      });
     }
   }
 };
