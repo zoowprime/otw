@@ -7,7 +7,6 @@ const {
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
-  ComponentType,
 } = require('discord.js');
 
 const path = require('path');
@@ -28,43 +27,48 @@ try {
 }
 
 // ─────────────────────────────────────────────────────────────
-// chemins assets
+// Chemins assets
 const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png');
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
 // PARAMÈTRES UI — COORDONNÉES DES CASES
+//
 // Chaque case (slot) est calculée ainsi :
 //   slotX = LEFT + col * (SLOT_W + XGAP) + COL_NUDGE[col]
 //   slotY = TOP  + row * (SLOT_H + YGAP) + ROW_NUDGE[row]
-// Pour centrer une icône :
+//   (col: 0..4, row: 0..4)
+//
+// Pour centrer une icône dans sa case :
 //   cx = slotX + SLOT_W/2
 //   cy = slotY + SLOT_H/2
+//
+// ➜ Ajuste ici pour recaler toute la grille (global) :
 const GRID = {
   COLS: 5,
   ROWS: 5,
   SLOT_W: 96,
   SLOT_H: 120,
-  LEFT: 170,
-  TOP:  220,
-  XGAP: 35,
-  YGAP: 28,
+  LEFT: 170,   // origine X de la première case
+  TOP:  220,   // origine Y de la première case
+  XGAP: 35,    // espacement horizontal entre les cases
+  YGAP: 28,    // espacement vertical entre les cases
 };
 
-// Micro-corrections par colonne/ligne
-const COL_NUDGE = [0, 0, 6, 0, 0]; // 3e colonne (index 2) +6 px vers la droite
-const ROW_NUDGE = [0, 0, 0, 0, 0];
+// ➜ Micro-corrections par colonne/ligne si ton image n’est pas parfaitement régulière :
+const COL_NUDGE = [0, 0, 6, 0, 0]; // 3ᵉ colonne (index 2) décalée +6px vers la droite
+const ROW_NUDGE = [0, 0, 0, 0, 0]; // ajuste une rangée (+ = descend)
 
-// Position du texte du poids actuel uniquement (le “/ 60.00” est sur l’image)
+// Position du texte du poids ACTUEL uniquement (le “/ 60.00” est déjà sur l’image)
 const WEIGHT_TEXT = {
   X: 463,
   Y: 160,
-  FONT: '26px Arial',
+  FONT: '26px Arial',  // mets '26px OTW' si tu enregistres ta police
   COLOR: '#EDEDED',
   SHADOW: 'rgba(0,0,0,0.75)',
 };
 
-// Polices pour les overlays
+// Polices overlay (texte dans les cases)
 const FONTS = {
   NAME:  '14px Arial',
   META:  '12px Arial',
@@ -72,9 +76,9 @@ const FONTS = {
   SHADOW:'rgba(0,0,0,0.65)',
 };
 
-// DEBUG
-const DEBUG_GRID  = false; // dessine les cadres
-const DEBUG_INDEX = false; // dessine l’index 0–24
+// DEBUG (mets à true pour afficher cadres/indices et caler pixel-perfect)
+const DEBUG_GRID  = false; // dessine le contour de chaque case
+const DEBUG_INDEX = false; // écrit l’index 0–24 en haut de chaque case
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -96,6 +100,7 @@ function drawShadowText(ctx, text, x, y, align = 'left', color = FONTS.COLOR, sh
   ctx.shadowBlur  = 0;
 }
 
+// Barre ascii (pour Faim/Soif dans l’embed)
 function bar(pct) {
   const blocks = 20;
   const filled = Math.max(0, Math.min(blocks, Math.round((pct / 100) * blocks)));
@@ -116,17 +121,17 @@ async function renderInventoryImage(userId) {
   const canvas = createCanvas(1024, 1024);
   const ctx = canvas.getContext('2d');
 
-  // fond
+  // Fond
   const bg = await loadImage(BAG_BG);
   ctx.drawImage(bg, 0, 0, 1024, 1024);
 
-  // poids actuel
+  // Poids actuel (le “/ 60.00” est sur le fond)
   const st = getUser(userId);
   const tw = totalWeight(st);
   ctx.font = WEIGHT_TEXT.FONT;
   drawShadowText(ctx, `${tw.toFixed(2)}`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y, 'left', WEIGHT_TEXT.COLOR, WEIGHT_TEXT.SHADOW);
 
-  // debug
+  // Debug visuel
   if (DEBUG_GRID || DEBUG_INDEX) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.fillStyle   = 'rgba(255,255,255,0.55)';
@@ -140,7 +145,7 @@ async function renderInventoryImage(userId) {
     }
   }
 
-  // items
+  // Items (centrés dans chaque case)
   const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
   for (let i = 0; i < items.length; i++) {
     const it  = items[i];
@@ -152,7 +157,7 @@ async function renderInventoryImage(userId) {
 
     const { x: slotX, y: slotY, w: slotW, h: slotH, cx, cy } = getSlotRect(col, row);
 
-    // icône
+    // Icône
     const iconPath = path.join(ICONS_DIR, `${id}.png`);
     if (fs.existsSync(iconPath)) {
       try {
@@ -169,7 +174,7 @@ async function renderInventoryImage(userId) {
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
     }
 
-    // textes overlay
+    // Overlays : quantité / poids unitaire / nom
     const meta   = catalog[id] || {};
     const weight = (meta.weight ?? 0);
 
@@ -195,14 +200,15 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventaire')
     .setDescription('Affiche ta sacoche et tes besoins vitaux'),
+
   async execute(interaction) {
     const userId = interaction.user.id;
     const displayName = interaction.member?.displayName || interaction.user.username;
 
-    // vitaux
+    // Vitaux (décroissance appliquée côté store)
     const { hunger, thirst } = getVitals(userId);
 
-    // image
+    // Image 1024×1024
     const file = await renderInventoryImage(userId).catch(() => null);
 
     const emb = new EmbedBuilder()
@@ -234,22 +240,9 @@ module.exports = {
       files: file ? [file] : [],
       components: [row],
       allowedMentions: { users: [] },
+      flags: MessageFlags.None,
     });
 
-    // Anti-timeout 3s local : on capture le clic et on répond tout de suite
-    const msg = await interaction.fetchReply();
-    const collector = msg.createMessageComponentCollector({
-      componentType: ComponentType.Button,
-      time: 60_000,
-    });
-
-    collector.on('collect', async (i) => {
-      await i.deferUpdate().catch(() => {});
-      // ici: pas de followUp -> ton handler global prend la main
-    });
-
-    collector.on('end', () => {
-      // optionnel: laisser les boutons actifs
-    });
+    // ⚠️ Pas de collector local ici : les clics sont gérés par src/interaction/inventoryInteraction.js
   }
 };
