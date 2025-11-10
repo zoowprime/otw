@@ -269,16 +269,6 @@ module.exports = {
       // Fallback minimal : message éphémère court pour confirmer la prise en charge.
       // Si ton handleInventoryInteractions fait déjà ces actions,
       // tu peux COMMENTER la ligne ci-dessous pour éviter un double message.
-      i.followUp({
-        content: (i.customId === 'inv_give')
-          ? '🟩 Donner — interaction reçue. (Si rien ne s’ouvre, vérifie le module d’interactions inventaire.)'
-          : (i.customId === 'inv_use')
-            ? '🟦 Utiliser — interaction reçue.'
-            : '🟥 Jeter — interaction reçue.',
-        flags: MessageFlags.Ephemeral
-      }).catch(()=>{});
-    });
-
     collector.on('end', () => {
       // (optionnel) on laisse les boutons actifs ; tu peux les désactiver ici si tu veux.
     });
