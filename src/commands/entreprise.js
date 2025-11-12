@@ -319,35 +319,60 @@ module.exports = {
             emoji: ent.type === 'armurerie' ? '💵' : '🏷️'
           })))
       );
-      await interaction.reply({ embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')], components:[row], flags: MessageFlags.Ephemeral });
 
-      const msg = await interaction.fetchReply();
-      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
-      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
-
-      const targetId = sel.values[0];
-
-      // Petits presets (tu pourras remplacer par un Modal si tu veux un prix libre)
-      const presets = [5,10,25,50,100].map(v =>
-        new ButtonBuilder().setCustomId(`ent_price_${v}`).setLabel(`$${v}`).setStyle(ButtonStyle.Secondary)
-      );
-      const rowBtns = new ActionRowBuilder().addComponents(
-        ...presets,
-        new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger)
-      );
-
-      await sel.update({
-        embeds: [titleEmbed(ent, `Tarifer **${humanize(targetId)}** — choisis un preset`)],
-        components: [rowBtns]
+      // ✨ CORRECTION IMPORTANTE : on demande directement le Message via fetchReply: true
+      const replyMsg = await interaction.reply({
+        embeds: [titleEmbed(ent, '💵 Choisis l’article à tarifer')],
+        components: [row],
+        ephemeral: true,
+        fetchReply: true
       });
 
-      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 90_000 }).catch(()=>null);
-      if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
-      if (click.customId === 'ent_price_cancel') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+      try {
+        // On attend la sélection SUR CE MESSAGE (et uniquement l’auteur)
+        const sel = await replyMsg.awaitMessageComponent({
+          componentType: ComponentType.StringSelect,
+          time: 90_000,
+          filter: i => i.user.id === interaction.user.id
+        });
 
-      const val = Number(click.customId.replace('ent_price_', '')) || 0;
-      setPrice(ent.ownerId, targetId, val);
-      return click.update({ components:[], embeds:[ok(`✅ Prix défini: **${humanize(targetId)}** → **$${val.toFixed(2)}**`)] });
+        const targetId = sel.values[0];
+
+        // Presets de prix
+        const presets = [5,10,25,50,100].map(v =>
+          new ButtonBuilder().setCustomId(`ent_price_${v}`).setLabel(`$${v}`).setStyle(ButtonStyle.Secondary)
+        );
+        const rowBtns = new ActionRowBuilder().addComponents(
+          ...presets,
+          new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+        );
+
+        await sel.update({
+          embeds: [titleEmbed(ent, `Tarifer **${humanize(targetId)}** — choisis un preset`)],
+          components: [rowBtns]
+        });
+
+        const click = await replyMsg.awaitMessageComponent({
+          componentType: ComponentType.Button,
+          time: 90_000,
+          filter: i => i.user.id === interaction.user.id
+        }).catch(()=>null);
+
+        if (!click) {
+          return replyMsg.edit({ components: [], embeds: [ko('⌛ Temps écoulé.')] }).catch(() => {});
+        }
+        if (click.customId === 'ent_price_cancel') {
+          return click.update({ components: [], embeds: [info('❎ Annulé.')] });
+        }
+
+        const val = Number(click.customId.replace('ent_price_', '')) || 0;
+        setPrice(ent.ownerId, targetId, val);
+        return click.update({ components: [], embeds: [ok(`✅ Prix défini: **${humanize(targetId)}** → **$${val.toFixed(2)}**`)] });
+
+      } catch {
+        // Si l’utilisateur n’a pas cliqué à temps
+        return interaction.editReply({ components: [], embeds: [ko('⌛ Temps écoulé ou erreur d’interaction.')] }).catch(() => {});
+      }
     }
 
     // ──────────────────────────────────────────────────────
