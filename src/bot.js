@@ -11,7 +11,7 @@ const fs   = require('fs');
 const path = require('path');
 
 // ─────────────────────────────────────────────────────────────
-// Modules internes (conservés)
+// Modules internes
 const ticketModule                           = require('./ticket.js');
 const { handleEconomyCommand }               = require('./economy');
 const { transformSessions }                  = require('./transformSessions'); // si utilisé ailleurs
@@ -55,7 +55,7 @@ const client = new Client({
 logger.setClient(client);
 
 // ─────────────────────────────────────────────────────────────
-// Événements globaux conservés
+// Événements globaux
 require('./events/welcome.js')(client);
 require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
@@ -68,11 +68,6 @@ require('./events/candidature')(client);
 require('./events/starterPack')(client);
 require('./events/passiveRevenue')(client);
 require('./events/trainMerch')(client);
-
-// ─────────────────────────────────────────────────────────────
-// ❌ Nettoyage :
-// - Boutique illégale SUPPRIMÉE (constantes, handler, etc.)
-// - Ancien système agriculture SUPPRIMÉ (aucun agriRuntime)
 
 // ─────────────────────────────────────────────────────────────
 // Chargement des commandes slash
@@ -150,13 +145,15 @@ client.once('ready', async () => {
 
 // ─────────────────────────────────────────────────────────────
 // Gestion des interactions
-client.on('interactionCreate', async interaction => {
+client.on('interactionCreate', async (interaction) => {
+  // 1) Router d’abord le système de tickets (évite l’échec d’interaction)
   try {
-    console.log('Interaction reçue:', interaction.customId || interaction.commandName);
-    logger.sendLog(`Interaction: ${interaction.customId || interaction.commandName}`);
-  } catch {}
+    await ticketModule.handleTicketInteraction(interaction);
+  } catch (e) {
+    // on ignore si ce n’est pas une interaction de ticket
+  }
 
-  // Slash commands
+  // 2) Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -166,23 +163,20 @@ client.on('interactionCreate', async interaction => {
       console.error('Erreur slash:', err);
       logger.sendError(err);
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: '❗ Une erreur est survenue.',
-          flags: MessageFlags.Ephemeral
-        }).catch(() => {});
+        await interaction.reply({ content: '❗ Une erreur est survenue.', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
     return;
   }
 
-  // Boutons de /session
+  // 3) Boutons de /session
   try {
     await handleSessionButtons(interaction);
   } catch {
     // noop
   }
 
-  // Boutique légale (menus)
+  // 4) Boutique légale (menus)
   if (interaction.isStringSelectMenu() && interaction.customId === 'shop_buy') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const key = interaction.values[0], it = legalItems[key];
@@ -200,14 +194,12 @@ client.on('interactionCreate', async interaction => {
       seller.courant.banque += it.price;
       updateAccount(SHOP_OWNER_ID, seller);
     }
-    // (optionnel) dépôt direct dans inventaire si item résolvable
+    // ajout inventaire si résolvable
     const maybeId = resolveItemId(it.name);
     const added = addItem(buyerId, maybeId, 1);
     const suffix = added?.ok ? `\n🎒 L’objet a été ajouté à votre sacoche.` : '';
     return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.${suffix}`);
   }
-
-  // (Le nouveau /inventaire gère ses propres interactions dans son fichier)
 });
 
 // ─────────────────────────────────────────────────────────────
