@@ -55,11 +55,11 @@ const GRID = {
 
 // Micro-ajustements par colonne/ligne.
 // Ajuste ici si tu veux re-centrer précisément des colonnes/lignes entières :
-const COL_NUDGE = [ 0, 0, 6, 10, 14 ];   // <- j’ai avancé un peu les colonnes 3,4,5 vers la DROITE
+const COL_NUDGE = [ 0, 0, 8, 14, 20 ];   // <- j’ai avancé un peu les colonnes 3,4,5 vers la DROITE
 const ROW_NUDGE = [ 0, 0, 0, 0, 0 ];
 
 // Position du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
-const WEIGHT_TEXT = { X: 463, Y: 160, FONT: '26px Arial', COLOR: '#EDEDED', SHADOW: 'rgba(0,0,0,0.75)' };
+const WEIGHT_TEXT = { X: 470, Y: 165, FONT: '26px Arial', COLOR: '#EDEDED', SHADOW: 'rgba(0,0,0,0.75)' };
 
 // Polices overlays
 const FONTS = { NAME:'14px Arial', META:'12px Arial', COLOR:'#FFFFFF', SHADOW:'rgba(0,0,0,0.65)' };
