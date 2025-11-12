@@ -1,6 +1,9 @@
 // src/data/entreprisesData.js
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+
+// 🔗 Intégration économie (banque entreprise du patron)
+const { getOrCreateAccount, updateAccount } = require('../economyData');
 
 const DATA_DIR = '/data';
 const FILE = path.join(DATA_DIR, 'entreprises.json');
@@ -32,6 +35,13 @@ function ensure() {
   return db;
 }
 
+// Assure l’existence du portefeuille "entreprise" côté économie
+function ensureEnterpriseWallet(ownerId) {
+  const acc = getOrCreateAccount(ownerId);
+  acc.entreprise ||= { liquide: 0, banque: 0 };
+  return acc;
+}
+
 function createEnterprise(ownerId, name, type) {
   const db = ensure();
   if (db.enterprises[ownerId]) throw new Error('ALREADY_EXISTS');
@@ -42,15 +52,20 @@ function createEnterprise(ownerId, name, type) {
     name,
     type: kind, // 'armurerie' | 'ecurie'
     employees: [],
-    bank: 0,             // banque entreprise
+    bank: 0,             // (legacy - ignoré par la logique; conservé pour compat)
     revenues: 0,         // cumul ventes
     prices: {},          // { itemId: price }
     stock: kind === 'armurerie'
-      ? { weapons: {} }                // { id: qty }
-      : { horses: {}, carts: {} },     // { id: qty } / { id: qty }
+      ? { weapons: {} }              // { id: qty }
+      : { horses: {}, carts: {} },   // { id: qty } / { id: qty }
     createdAt: Date.now(),
   };
   save(db);
+
+  // Initialise aussi le wallet entreprise dans l’économie
+  const acc = ensureEnterpriseWallet(ownerId);
+  updateAccount(ownerId, acc);
+
   return db.enterprises[ownerId];
 }
 
@@ -96,19 +111,39 @@ function removeEmployee(ownerId, userId) {
   return e;
 }
 
+/* ──────────────────────────────────────────────────────────
+   Banque entreprise — via economyData (acc.entreprise.banque)
+   L’ancien champ e.bank est ignoré.
+────────────────────────────────────────────────────────── */
 function incBank(ownerId, amount) {
   const db = ensure();
   const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  e.bank = Math.max(0, (e.bank || 0) + Number(amount || 0));
-  save(db); return e.bank;
+
+  const acc = ensureEnterpriseWallet(ownerId);
+  const a = Number(amount || 0);
+  acc.entreprise.banque = Math.max(0, (acc.entreprise.banque || 0) + a);
+  updateAccount(ownerId, acc);
+  save(db); // conserve la structure
+  return acc.entreprise.banque;
 }
 function decBank(ownerId, amount) {
   const db = ensure();
   const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  if ((e.bank || 0) < amount) throw new Error('NO_FUNDS');
-  e.bank -= Number(amount || 0);
-  save(db); return e.bank;
+
+  const acc = ensureEnterpriseWallet(ownerId);
+  const a = Number(amount || 0);
+  if ((acc.entreprise.banque || 0) < a) throw new Error('NO_FUNDS');
+
+  acc.entreprise.banque -= a;
+  updateAccount(ownerId, acc);
+  save(db);
+  return acc.entreprise.banque;
 }
+function getEnterpriseBank(ownerId) {
+  const acc = ensureEnterpriseWallet(ownerId);
+  return acc.entreprise.banque || 0;
+}
+
 function addRevenue(ownerId, amount) {
   const db = ensure();
   const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
@@ -189,7 +224,7 @@ const SUPPLIER_WEAPONS = {
 };
 
 // ⚠️ IMPORTANT : ces IDs doivent exister dans ton catalogHorses.js
-// Noms en snake_case, sans accents (assets: src/assets/icones/<id>.png si tu as des icônes).
+// Noms en snake_case, sans accents.
 const SUPPLIER_HORSES = {
   // American Paint
   american_paint_tobiano: 45,
@@ -235,7 +270,7 @@ const SUPPLIER_HORSES = {
   polyvalent_champagne_ambre: 225,
   polyvalent_tovero_noir: 300,
   polyvalent_gris_pommele: 350,
-  polyvalent_isabelle_brinje: 350,  // "bringé"
+  polyvalent_isabelle_brinje: 350,
   polyvalent_noir_rouanne: 350,
 
   // Breton
@@ -250,7 +285,7 @@ const SUPPLIER_HORSES = {
   turkoman_bai_brun: 300,
   turkoman_argente: 350,
   turkoman_dore: 350,
-  turkoman_alzane: 400,   // "alezANe" → ici "alzane" pour id (harmonise avec ton catalogue)
+  turkoman_alzane: 400,
   turkoman_gris: 400,
   turkoman_noir: 430,
   turkoman_perlino: 400,
@@ -263,7 +298,7 @@ const SUPPLIER_HORSES = {
   criollo_frame_overo: 350,
   criollo_sabino_marmore: 350,
 
-  // Cob Gypsy (groupe "Pie" listé)
+  // Cob Gypsy (groupe "Pie")
   cob_gypsy_kentucky: 40,
   cob_gypsy_morgan: 40,
   cob_gypsy_tennessee_walker: 30,
@@ -314,7 +349,7 @@ module.exports = {
   getEnterpriseByOwner, getEnterpriseByMember,
   isOwner, isMember,
   addEmployee, removeEmployee,
-  incBank, decBank, addRevenue,
+  incBank, decBank, getEnterpriseBank, addRevenue,
   addStock, decStock,
   setPrice, getPrice,
   SUPPLIER_WEAPONS, SUPPLIER_HORSES, SUPPLIER_CARTS,
