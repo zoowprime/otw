@@ -38,7 +38,10 @@ const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
-// COORDONNÉES DES CASES (grille 5×5)
+// GRILLE (tu peux adapter ici facilement)
+// NOTE IMPORTANTE : les offsets de centrage sont par **colonne**
+// - COL_NUDGE[i] -> pousse toute la colonne i (0=col1) en px (positif = droite, négatif = gauche)
+// - ROW_NUDGE[j] -> pousse toute la ligne j (0=ligne1) en px (positif = bas, négatif = haut)
 const GRID = {
   COLS: 5,
   ROWS: 5,
@@ -49,9 +52,11 @@ const GRID = {
   XGAP: 35,   // espacement horizontal entre cases
   YGAP: 28,   // espacement vertical entre cases
 };
-// micro-ajustements (colonne 3 légèrement plus à droite chez toi)
-const COL_NUDGE = [0, 0, 6, 0, 0];
-const ROW_NUDGE = [0, 0, 0, 0, 0];
+
+// Micro-ajustements par colonne/ligne.
+// Ajuste ici si tu veux re-centrer précisément des colonnes/lignes entières :
+const COL_NUDGE = [ 0, 0, 6, 10, 14 ];   // <- j’ai avancé un peu les colonnes 3,4,5 vers la DROITE
+const ROW_NUDGE = [ 0, 0, 0, 0, 0 ];
 
 // Position du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
 const WEIGHT_TEXT = { X: 463, Y: 160, FONT: '26px Arial', COLOR: '#EDEDED', SHADOW: 'rgba(0,0,0,0.75)' };
@@ -59,12 +64,12 @@ const WEIGHT_TEXT = { X: 463, Y: 160, FONT: '26px Arial', COLOR: '#EDEDED', SHAD
 // Polices overlays
 const FONTS = { NAME:'14px Arial', META:'12px Arial', COLOR:'#FFFFFF', SHADOW:'rgba(0,0,0,0.65)' };
 
-// DEBUG
+// DEBUG (active si besoin)
 const DEBUG_GRID  = false;
 const DEBUG_INDEX = false;
 
 // ─────────────────────────────────────────────────────────────
-// Helpers graphiques
+// Helpers texte/coords
 function truncateTo(ctx, text, maxWidth) {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let t = text;
@@ -89,6 +94,46 @@ function getSlotRect(col, row) {
   const x = GRID.LEFT + col * (GRID.SLOT_W + GRID.XGAP) + (COL_NUDGE[col] || 0);
   const y = GRID.TOP  + row * (GRID.SLOT_H  + GRID.YGAP) + (ROW_NUDGE[row] || 0);
   return { x, y, w: GRID.SLOT_W, h: GRID.SLOT_H, cx: x + GRID.SLOT_W/2, cy: y + GRID.SLOT_H/2 };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Résolution d’icône robuste (corrige les cas "Mauser" vs "pistolet_mauser")
+const strip = (s) =>
+  (s || '')
+    .toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // enlève accents
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')                         // enlève ponctuation
+    .replace(/\s+/g, '_');                            // espaces -> underscore
+
+// index label->id (catalog)
+const labelIndex = (() => {
+  const idx = {};
+  for (const id of Object.keys(catalog)) {
+    const lab = catalog[id]?.label || id;
+    idx[strip(lab)] = id;
+  }
+  return idx;
+})();
+
+function resolveIconId(rawId) {
+  if (!rawId) return null;
+
+  // 1) essai direct (déjà un id)
+  const direct = path.join(ICONS_DIR, `${rawId}.png`);
+  if (fs.existsSync(direct)) return rawId;
+
+  // 2) essai via label => id (ex: "Mauser" -> "pistolet_mauser")
+  const byLabel = labelIndex[strip(rawId)];
+  if (byLabel && fs.existsSync(path.join(ICONS_DIR, `${byLabel}.png`))) return byLabel;
+
+  // 3) essai "normalisé" du rawId (ex: "Arc amélioré" -> "arc_ameliorer")
+  const normalized = strip(rawId).replace(/amelior[eé]/, 'ameliorer');
+  if (fs.existsSync(path.join(ICONS_DIR, `${normalized}.png`))) return normalized;
+
+  // 4) essai id catalog si le "rawId" est un label d’un item connu
+  // (déjà couvert par byLabel normalement)
+  return null; // pas trouvé
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -127,7 +172,8 @@ async function renderInventoryImage(userId) {
   const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
   for (let i = 0; i < items.length; i++) {
     const it  = items[i];
-    const id  = it.name || it.id;
+    const raw = it.name || it.id;                    // peut être "humain" (Mauser) ou un id (pistolet_mauser)
+    const id  = resolveIconId(raw) || raw;           // résout id d’icône si possible
     const qty = typeof it.quantity === 'number' ? it.quantity : 1;
 
     const col = i % GRID.COLS;
@@ -142,24 +188,34 @@ async function renderInventoryImage(userId) {
         const w = img.width * scale;
         const h = img.height * scale;
         ctx.drawImage(img, cx - w/2, cy - h/2, w, h);
-      } catch {}
+      } catch {
+        // pas grave, on passe au cadre
+        ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+        ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
+      }
     } else if (!DEBUG_GRID) {
       ctx.strokeStyle = 'rgba(255,255,255,0.20)';
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
     }
 
-    const meta   = catalog[id] || {};
+    // métadonnées (via id résolu si possible)
+    const meta   = catalog[id] || catalog[raw] || {};
     const weight = (meta.weight ?? 0);
 
+    // qty
     if ((meta.stackable ?? true) && qty > 1) {
       ctx.font = FONTS.META;
       drawShadowText(ctx, `x${qty}`, slotX + 6, slotY + 14, 'left');
     }
+
+    // poids unitaire
     ctx.font = FONTS.META;
     drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + slotW - 6, slotY + 14, 'right');
 
+    // nom
     ctx.font = FONTS.NAME;
-    const label = truncateTo(ctx, (meta.label || id).replace(/_/g, ' '), slotW - 10);
+    const labelSource = meta.label || raw;
+    const label = truncateTo(ctx, labelSource.replace(/_/g, ' '), slotW - 10);
     drawShadowText(ctx, label, cx, slotY + slotH - 10, 'center');
   }
 
@@ -183,12 +239,12 @@ function buildActionMenu() {
 }
 function toOptionsFromItems(items) {
   return items.slice(0, 25).map(it => {
-    const id = it.name || it.id;
-    const meta = catalog[id] || {};
+    const idGuess = resolveIconId(it.name || it.id) || (it.name || it.id);
+    const meta = catalog[idGuess] || catalog[it.name || it.id] || {};
     const qty  = typeof it.quantity === 'number' ? it.quantity : 1;
-    const label = (meta.label || id).replace(/_/g, ' ');
+    const label = (meta.label || it.name || it.id).replace(/_/g, ' ');
     const desc  = `x${qty}` + (meta.weight ? ` — ${meta.weight}kg` : '');
-    return { label, value: id, description: desc };
+    return { label, value: idGuess, description: desc };
   });
 }
 const niceName = (id) => (catalog[id]?.label || id).replace(/_/g, ' ');
@@ -259,7 +315,10 @@ module.exports = {
         }
 
         if (action === 'use') {
-          const consumables = items.filter(it => catalog[it.name || it.id]?.consumable === true);
+          const consumables = items.filter(it => {
+            const idGuess = resolveIconId(it.name || it.id) || (it.name || it.id);
+            return catalog[idGuess]?.consumable === true;
+          });
           if (!consumables.length) {
             const { emb } = await buildEmbedWithImage(userId, displayName);
             emb.addFields({ name: 'Info', value: 'Aucun consommable disponible.' });
@@ -303,9 +362,10 @@ module.exports = {
         });
       }
 
-      // Utiliser — démo (pas de décrément ici pour l’instant)
+      // Utiliser — démo (à brancher avec tes effets si besoin)
       if (i.customId === 'inv_use_item') {
         const id = i.values[0];
+        // ici tu peux décrémenter et appliquer l’effet si tu veux
         return i.update({
           embeds: [ new EmbedBuilder().setColor(0x3498db).setDescription(`✅ Tu as utilisé **${niceName(id)}**.`) ],
           components: [buildActionMenu()]
@@ -360,7 +420,6 @@ module.exports = {
       if (!pendingGiveItemId) return; // on n’attend une mention que si un objet a été choisi
       const target = m.mentions.users.first();
       if (!target || target.bot) {
-        // pas de cible valide → on ignore gentiment
         return m.reply({ content: '❌ Mention invalide. Réessaie en mentionnant la personne (@Nom).', allowedMentions: { users: [] } })
           .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
           .catch(()=>{});
@@ -388,7 +447,6 @@ module.exports = {
         });
       } catch {}
 
-      // petit accusé local et nettoyage du message de mention
       await m.reply({ content: `✅ Transfert effectué à <@${target.id}>.`, allowedMentions: { users: [] } })
         .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
         .catch(()=>{});
@@ -397,7 +455,6 @@ module.exports = {
       pendingGiveItemId = null;
     });
 
-    // Fin
     collector.on('end', async () => {
       try { await msg.edit({ components: [] }); } catch {}
       msgCollector.stop('done');
