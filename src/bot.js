@@ -19,18 +19,14 @@ const logger                                 = require('./logger');
 const { getOrCreateAccount, updateAccount }  = require('./economyData');
 // /session (boutons)
 const { handleSessionButtons }               = require('./commands/session');
-// Agriculture (récolte / transformation / livraison)
-const agriRuntime                            = require('./agri/agriRuntime');
 
-// Nouveau système d'inventaire (pour ajout direct si besoin)
+// Nouveau système d'inventaire (utilisé pour ajouter un objet après un achat légal)
 const { addItem }                            = require('./data/inventoryStore');
 const { resolveItemId }                      = require('./data/itemNameResolver');
 
 // ─────────────────────────────────────────────────────────────
-// IDs pour les boutiques simples (optionnel)
-const SHOP_OWNER_ID           = process.env.SHOP_OWNER_ID;
-const ILLEGAL_SHOP_OWNER_ID   = process.env.ILLEGAL_SHOP_OWNER_ID;
-const ILLEGAL_CONTACT_ROLE_ID = process.env.ILLEGAL_CONTACT_ROLE_ID;
+// IDs pour la boutique LÉGALE (optionnel)
+const SHOP_OWNER_ID = process.env.SHOP_OWNER_ID;
 
 // Articles boutique légale (exemple simple)
 const legalItems = {
@@ -42,21 +38,6 @@ const legalItems = {
   table_camp:      { name: 'Table de camp',            desc: 'Repas & réunions RP',      price: 20 },
   drapeaux:        { name: 'Drapeaux personnalisés',   desc: 'Identité du groupe',       price: 15 },
   eclairage:       { name: 'Éclairage (lanternes)',    desc: 'Lanternes suspendues',     price: 8 }
-};
-
-// Articles boutique illégale (exemple simple)
-const illegalItems = {
-  fusil_semi_auto:     { name: 'Fusil Semi-Automatique',    price: 650 },
-  mauser:              { name: 'Mauser',                    price: 750 },
-  fusil_double_canon:  { name: 'Fusil à Double Canon',      price: 750 },
-  fusil_pompe:         { name: 'Fusil à Pompe',             price: 550 },
-  fusil_canon_scie:    { name: 'Fusil à Canon Scié',        price: 550 },
-  fusil_semi_auto2:    { name: 'Fusil Semi-Automatique II', price: 450 },
-  fusil_repetition:    { name: 'Fusil à Répétition',        price: 350 },
-  fusil_carcano:       { name: 'Fusil Carcano',             price: 425 },
-  dynamites:           { name: 'Dynamites',                 price: 250 },
-  bouteilles_incendie: { name: 'Bouteilles Incendiaires',   price: 50  },
-  tomahawk:            { name: 'Tomahawk',                  price: 150 }
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -80,7 +61,6 @@ require('./events/levelSystem')(client);
 require('./events/missionSystem')(client);
 require('./events/ferrure')(client);
 require('./events/armeAbimee')(client);
-require('./events/faimSoifSystem')(client);
 require('./events/raidProtect')(client);
 require('./events/qcmNoCmd')(client);
 require('./events/heistSessions')(client);
@@ -90,7 +70,9 @@ require('./events/passiveRevenue')(client);
 require('./events/trainMerch')(client);
 
 // ─────────────────────────────────────────────────────────────
-// ❌ Nettoyage : pas d'anciens catalogues / stocks legacy
+// ❌ Nettoyage :
+// - Boutique illégale SUPPRIMÉE (constantes, handler, etc.)
+// - Ancien système agriculture SUPPRIMÉ (aucun agriRuntime)
 
 // ─────────────────────────────────────────────────────────────
 // Chargement des commandes slash
@@ -138,9 +120,6 @@ client.once('ready', async () => {
     console.error('Erreur setPresence:', e);
     logger.sendError(e);
   }
-
-  // Branche le runtime agriculture (timers, updates)
-  agriRuntime.setClient(client);
 
   // Debug /data
   try {
@@ -221,47 +200,11 @@ client.on('interactionCreate', async interaction => {
       seller.courant.banque += it.price;
       updateAccount(SHOP_OWNER_ID, seller);
     }
-    // (optionnel) dépôt direct dans inventaire si item existe dans notre catalog/icône
+    // (optionnel) dépôt direct dans inventaire si item résolvable
     const maybeId = resolveItemId(it.name);
     const added = addItem(buyerId, maybeId, 1);
-    const suffix = added.ok ? `\n🎒 L’objet a été ajouté à votre sacoche.` : '';
+    const suffix = added?.ok ? `\n🎒 L’objet a été ajouté à votre sacoche.` : '';
     return interaction.editReply(`✅ Vous avez acheté **${it.name}** pour **$${it.price}**.${suffix}`);
-  }
-
-  // Boutique illégale (menus)
-  if (interaction.isStringSelectMenu() && interaction.customId === 'shop_illegal_buy') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!interaction.member.roles.cache.has(ILLEGAL_CONTACT_ROLE_ID)) {
-      return interaction.editReply('❌ Vous n’êtes pas contact illégal.');
-    }
-    const key = interaction.values[0], it = illegalItems[key];
-    if (!it) return interaction.editReply('❌ Article introuvable.');
-    const buyerId = interaction.user.id;
-    const buyer   = getOrCreateAccount(buyerId);
-    if ((buyer.courant?.banque ?? 0) < it.price) {
-      return interaction.editReply('❌ Fonds insuffisants.');
-    }
-    // paiement
-    buyer.courant.banque -= it.price;
-    updateAccount(buyerId, buyer);
-    if (ILLEGAL_SHOP_OWNER_ID) {
-      const seller = getOrCreateAccount(ILLEGAL_SHOP_OWNER_ID);
-      seller.courant.banque += it.price;
-      updateAccount(ILLEGAL_SHOP_OWNER_ID, seller);
-    }
-
-    // ajout inventaire (si l’id/poids existe, sinon ignore proprement)
-    const maybeId = resolveItemId(it.name);
-    const added = addItem(buyerId, maybeId, 1);
-
-    await interaction.editReply(`🤝 ${interaction.user} a acheté **${it.name}** pour **$${it.price}**.${added.ok ? '\n🎒 L’objet a été ajouté à votre sacoche.' : ''}`);
-    if (ILLEGAL_SHOP_OWNER_ID) {
-      await interaction.followUp({
-        content: `💵 Transféré à <@${ILLEGAL_SHOP_OWNER_ID}>.`,
-        allowedMentions: { users: [] }
-      }).catch(()=>{});
-    }
-    return;
   }
 
   // (Le nouveau /inventaire gère ses propres interactions dans son fichier)
