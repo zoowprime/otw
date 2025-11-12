@@ -1,343 +1,509 @@
-// src/data/entreprisesData.js
-const fs = require('fs');
-const path = require('path');
+// src/commands/entreprise.js
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  MessageFlags,
+} = require('discord.js');
 
-const DATA_DIR = '/data';
-const FILE = path.join(DATA_DIR, 'entreprises.json');
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-// --- économie centrale (banque / liquide entreprise du patron)
-const { getOrCreateAccount, updateAccount } = require('../economyData');
-
-// ─────────────────────────────────────────────────────────────
-// I/O JSON (structure des entreprises : patron, employés, stock, prix, etc.)
-function load() {
-  try {
-    if (!fs.existsSync(FILE)) return { enterprises: {} };
-    const raw = fs.readFileSync(FILE, 'utf8');
-    const json = JSON.parse(raw || '{}');
-    if (!json.enterprises) json.enterprises = {};
-    return json;
-  } catch {
-    return { enterprises: {} };
-  }
-}
-function save(db) {
-  try { fs.writeFileSync(FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {}
-}
-function ensure() {
-  const db = load();
-  save(db);
-  return db;
-}
-function normalizeType(t) {
-  return (String(t || '').toLowerCase() === 'armurerie') ? 'armurerie' : 'ecurie';
-}
-
-// ─────────────────────────────────────────────────────────────
-// CRUD entreprises (aucune banque stockée ici)
-function createEnterprise(ownerId, name, type) {
-  const db = ensure();
-  if (db.enterprises[ownerId]) throw new Error('ALREADY_EXISTS');
-  const kind = normalizeType(type);
-
-  db.enterprises[ownerId] = {
-    ownerId,
-    name,
-    type: kind,                 // 'armurerie' | 'ecurie'
-    employees: [],
-    revenues: 0,                // cumul ventes
-    prices: {},                 // { itemId: price }
-    stock: kind === 'armurerie' // stocks par type
-      ? { weapons: {} }         // { id: qty }
-      : { horses: {}, carts: {} }, // { id: qty } / { id: qty }
-    createdAt: Date.now(),
-  };
-  save(db);
-  return db.enterprises[ownerId];
-}
-function deleteEnterprise(ownerId) {
-  const db = ensure();
-  delete db.enterprises[ownerId];
-  save(db);
-}
-function getEnterpriseByOwner(ownerId) {
-  const db = ensure();
-  return db.enterprises[ownerId] || null;
-}
-function getEnterpriseByMember(userId) {
-  const db = ensure();
-  for (const e of Object.values(db.enterprises)) {
-    if (e.ownerId === userId) return e;
-    if (e.employees?.includes(userId)) return e;
-  }
-  return null;
-}
-function isOwner(e, userId) { return e?.ownerId === userId; }
-function isMember(e, userId) { return e?.ownerId === userId || e?.employees?.includes(userId); }
-
-// ─────────────────────────────────────────────────────────────
-// Employés
-function addEmployee(ownerId, userId) {
-  const db = ensure();
-  const e = db.enterprises[ownerId];
-  if (!e) throw new Error('NOT_FOUND');
-  if (e.employees.length >= 4) throw new Error('MAX_EMP');
-  if (e.employees.includes(userId)) throw new Error('ALREADY_EMP');
-  e.employees.push(userId);
-  save(db);
-  return e;
-}
-function removeEmployee(ownerId, userId) {
-  const db = ensure();
-  const e = db.enterprises[ownerId];
-  if (!e) throw new Error('NOT_FOUND');
-  e.employees = e.employees.filter(id => id !== userId);
-  save(db);
-  return e;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Banque / liquide d'entreprise (dans economyData du PATRON)
-function getBank(ownerId) {
-  const acc = getOrCreateAccount(ownerId);
-  acc.entreprise = acc.entreprise || { liquide: 0, banque: 0 };
-  return Number(acc.entreprise.banque || 0);
-}
-function incBank(ownerId, amount) {
-  const acc = getOrCreateAccount(ownerId);
-  acc.entreprise = acc.entreprise || { liquide: 0, banque: 0 };
-  acc.entreprise.banque = Number(acc.entreprise.banque || 0) + Number(amount || 0);
-  updateAccount(ownerId, acc);
-  return acc.entreprise.banque;
-}
-function decBank(ownerId, amount) {
-  const acc = getOrCreateAccount(ownerId);
-  acc.entreprise = acc.entreprise || { liquide: 0, banque: 0 };
-  const a = Number(amount || 0);
-  if (Number(acc.entreprise.banque || 0) < a) throw new Error('NO_FUNDS');
-  acc.entreprise.banque = Number(acc.entreprise.banque || 0) - a;
-  updateAccount(ownerId, acc);
-  return acc.entreprise.banque;
-}
-function getCash(ownerId) {
-  const acc = getOrCreateAccount(ownerId);
-  acc.entreprise = acc.entreprise || { liquide: 0, banque: 0 };
-  return Number(acc.entreprise.liquide || 0);
-}
-
-// Revenus cumulés (restent dans entreprises.json)
-function addRevenue(ownerId, amount) {
-  const db = ensure();
-  const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  e.revenues = (e.revenues || 0) + Number(amount || 0);
-  save(db); return e.revenues;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Stock helpers
-function addStock(ownerId, itemId, qty, bucket = null) {
-  const db = ensure();
-  const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  if (e.type === 'armurerie') {
-    const b = e.stock.weapons;
-    b[itemId] = (b[itemId] || 0) + qty;
-  } else {
-    if (bucket === 'horses') e.stock.horses[itemId] = (e.stock.horses[itemId] || 0) + qty;
-    else e.stock.carts[itemId] = (e.stock.carts[itemId] || 0) + qty;
-  }
-  save(db);
-}
-function decStock(ownerId, itemId, qty, bucket = null) {
-  const db = ensure();
-  const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  if (e.type === 'armurerie') {
-    const b = e.stock.weapons;
-    if ((b[itemId] || 0) < qty) throw new Error('NO_STOCK');
-    b[itemId] -= qty; if (b[itemId] <= 0) delete b[itemId];
-  } else {
-    const box = bucket === 'horses' ? e.stock.horses : e.stock.carts;
-    if ((box[itemId] || 0) < qty) throw new Error('NO_STOCK');
-    box[itemId] -= qty; if (box[itemId] <= 0) delete box[itemId];
-  }
-  save(db);
-}
-
-// ─────────────────────────────────────────────────────────────
-// Tarifs
-function setPrice(ownerId, itemId, price) {
-  const db = ensure();
-  const e = db.enterprises[ownerId]; if (!e) throw new Error('NOT_FOUND');
-  e.prices[itemId] = Number(price || 0);
-  save(db);
-}
-function getPrice(ownerId, itemId) {
-  const e = getEnterpriseByOwner(ownerId);
-  return e?.prices?.[itemId] || null;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Catalogues fournisseurs (IDs = ceux utilisés dans tes catalogues / assets)
-const SUPPLIER_WEAPONS = {
-  revolver_cattleman: 18,
-  revolver_navy: 18.50,
-  revolver_double_action: 19,
-  revolver_schofield: 20.50,
-  revolver_lemat: 25.25,
-  pistolet_volcanic: 26.50,
-  carabine_litchfield: 30,
-  carabine_evans: 32.25,
-  carabine_lancaster: 28,
-  carabine_repetition: 23,
-  fusil_a_petit_gibier: 15,
-  fusil_springfield: 35,
-  fusil_verrou: 35.50,
-  couteau_de_lancer: 3,
-  lasso: 2,
-  arc: 9,
-  arc_ameliorer: 14,
-  couteau: 3,
-  cisaille: 3.50,
-  couteau_de_chasse: 5,
-  marteau: 6,
-  hachette: 8,
-  hache: 10,
-  machette: 12,
-};
-
-// ⚠️ IDs à synchroniser avec ton catalogHorses.js (snake_case, sans accents)
-const SUPPLIER_HORSES = {
-  // American Paint
-  american_paint_tobiano: 45,
-  american_paint_overo: 45,
-  american_paint_balzane: 50,
-  american_paint_overo_gris: 60,
-
-  // Appaloosa
-  appaloosa_cape_leopard: 45,
-  appaloosa_capee: 45,
-  appaloosa_leopard: 60,
-  appaloosa_leopard_brun: 60,
-
-  // Hollandais à Sang Chaud
-  hollandais_sang_chaud_isabelle_sooty: 90,
-  hollandais_sang_chaud_noir_pangare: 90,
-  hollandais_sang_chaud_rouan_chocolat: 100,
-
-  // Chevaux de Guerre — Ardennais
-  ardennais_bai_rouanne: 65,
-  ardennais_rouan_fraise: 65,
-
-  // Chevaux de Guerre — Andalou
-  andalou_bai_brun: 70,
-  andalou_alezan_grisonnant: 70,
-  andalou_perlino: 70,
-
-  // Demi-Sang Hongrois
-  demi_sang_hongrois_alezan_crins_laves: 60,
-  demi_sang_hongrois_pie_tobiano: 60,
-
-  // Mustang
-  mustang_bai_sauvage: 25,
-  mustang_grullo: 25,
-  mustang_bai_tigre: 30,
-  mustang_isabelle: 105,
-  mustang_tovero_alezan: 105,
-  mustang_overo_alezan_dun: 110,
-  mustang_overo_noir: 115,
-
-  // Chevaux Polyvalents
-  polyvalent_pinto_pommele_silver: 225,
-  polyvalent_champagne_ambre: 225,
-  polyvalent_tovero_noir: 300,
-  polyvalent_gris_pommele: 350,
-  polyvalent_isabelle_brinje: 350,
-  polyvalent_noir_rouanne: 350,
-
-  // Breton
-  breton_oseille: 35,
-  breton_rubican: 35,
-  breton_grullo: 105,
-  breton_pangare: 105,
-  breton_bai_pommele_pangare: 350,
-  breton_gris_fer: 350,
-
-  // Turkoman
-  turkoman_bai_brun: 300,
-  turkoman_argente: 350,
-  turkoman_dore: 350,
-  turkoman_alzane: 400,
-  turkoman_gris: 400,
-  turkoman_noir: 430,
-  turkoman_perlino: 400,
-
-  // Criollo
-  criollo_dun: 25,
-  criollo_noir_rouanne: 25,
-  criollo_bai_brinje: 105,
-  criollo_overo_oseille: 105,
-  criollo_frame_overo: 350,
-  criollo_sabino_marmore: 350,
-
-  // Cob Gypsy
-  cob_gypsy_kentucky: 40,
-  cob_gypsy_morgan: 40,
-  cob_gypsy_tennessee_walker: 30,
-
-  // Chevaux de Trait
-  trait_belge: 70,
-  trait_shire: 70,
-  trait_suffolk_punch: 65,
-  trait_pie: 30,
-  trait_blagdon_blanc: 30,
-  trait_skewbald: 105,
-  trait_blagdon_palomino: 105,
-  trait_bai_balzan: 350,
-  trait_pie_balzan: 350,
-
-  // Chevaux de Course
-  course_noir_rouanne: 100,
-  course_rouan_blanc: 100,
-  course_rouan_pommele_inverse: 100,
-
-  // Pur-Sang
-  pur_sang_bai_acajou: 135,
-  pur_sang_bringee: 135,
-  pur_sang_gris_pommele: 135,
-
-  // Trotteur Américain
-  trotteur_americain_isabelle: 135,
-  trotteur_americain_noir: 135,
-  trotteur_americain_palomino_pommele: 135,
-  trotteur_americain_isabelle_queue_argentee: 135,
-  trotteur_americain_gris_pommele_fonce: 85,
-
-  // Pur-Sang Arabe
-  pur_sang_arabe_noir: 480,
-  pur_sang_arabe_blanc: 450,
-  pur_sang_arabe_rouge: 400,
-};
-
-// Charrettes
-const SUPPLIER_CARTS = {
-  charrette_prime: 480,     // Chasseur de prime
-  charrette_commerce: 270,  // Charrette de commerce
-};
-
-// ─────────────────────────────────────────────────────────────
-module.exports = {
-  load, save, ensure,
+const {
   createEnterprise, deleteEnterprise,
   getEnterpriseByOwner, getEnterpriseByMember,
   isOwner, isMember,
   addEmployee, removeEmployee,
-  // banque centrale (entreprise)
-  getBank, incBank, decBank, getCash,
-  // revenus + stock + prix
-  addRevenue,
+  incBank, decBank, addRevenue, getBank,
   addStock, decStock,
   setPrice, getPrice,
-  // catalogues fournisseur
   SUPPLIER_WEAPONS, SUPPLIER_HORSES, SUPPLIER_CARTS,
+  load: loadEnterprises,
+} = require('../data/entreprisesData');
+
+const { getOrCreateAccount, updateAccount } = require('../economyData');
+const { addItem } = require('../data/inventoryStore');
+
+// Ids env
+const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
+const WINCHESTER_USER_ID = process.env.WINCHESTER_USER_ID || null;
+
+// Helpers d’embed
+const ok   = (t) => new EmbedBuilder().setColor(0x2ecc71).setDescription(t);
+const ko   = (t) => new EmbedBuilder().setColor(0xe74c3c).setDescription(t);
+const info = (t) => new EmbedBuilder().setColor(0x95a5a6).setDescription(t);
+
+const THEME = {
+  armurerie: 0xc0392b, // rouge foncé
+  ecurie:    0x145a32, // vert sapin
+};
+
+const humanize = (id) =>
+  String(id).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+// Débit / crédit (économie joueurs)
+function debitCourant(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  if ((acc.courant.liquide || 0) < amount) return false;
+  acc.courant.liquide -= amount;
+  updateAccount(userId, acc);
+  return true;
+}
+function creditCourant(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  acc.courant.liquide += amount;
+  updateAccount(userId, acc);
+  return true;
+}
+function creditBanque(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  acc.courant.banque += amount;
+  updateAccount(userId, acc);
+  return true;
+}
+
+// Entête entreprise avec solde via getBank()
+function titleEmbed(ent, subtitle) {
+  const bank = getBank(ent.ownerId);
+  const revenues = ent.revenues || 0;
+  return new EmbedBuilder()
+    .setColor(THEME[ent.type])
+    .setTitle(`${ent.name} — ${ent.type === 'armurerie' ? 'Armurerie 🔫' : 'Écurie 🐴'}`)
+    .setDescription(subtitle || '')
+    .setFooter({ text: `Banque: $${bank.toFixed(2)} • Revenus: $${revenues.toFixed(2)}` });
+}
+
+function listStock(ent) {
+  if (ent.type === 'armurerie') {
+    const lines = Object.entries(ent.stock.weapons || {})
+      .sort()
+      .map(([id, q]) => `• ${humanize(id)} — **x${q}**`);
+    return lines.length ? lines.join('\n') : '_Aucun article en stock_';
+  } else {
+    const h = Object.entries(ent.stock.horses || {}).map(([id,q]) => `• 🐎 ${humanize(id)} — **x${q}**`);
+    const c = Object.entries(ent.stock.carts  || {}).map(([id,q]) => `• 🚚 ${humanize(id)} — **x${q}**`);
+    const lines = [...h, ...c];
+    return lines.length ? lines.join('\n') : '_Aucun article en stock_';
+  }
+}
+
+// Options fournisseurs
+function supplierOptionsArmurerie() {
+  return Object.entries(SUPPLIER_WEAPONS)
+    .map(([id, p]) => ({
+      label: humanize(id).slice(0, 100),
+      value: id,
+      description: `$${p.toFixed(2)}`,
+      emoji: '🔫',
+    }))
+    .slice(0, 25);
+}
+function supplierOptionsEcurie() {
+  const H = Object.entries(SUPPLIER_HORSES).map(([id,p]) => ({
+    label: humanize(id).slice(0, 100),
+    value: `h:${id}`, description: `$${p.toFixed(2)}`, emoji: '🐎'
+  }));
+  const C = Object.entries(SUPPLIER_CARTS).map(([id,p]) => ({
+    label: humanize(id).slice(0, 100),
+    value: `c:${id}`, description: `$${p.toFixed(2)}`, emoji: '🛒'
+  }));
+  return [...H, ...C].slice(0, 25);
+}
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('entreprise')
+    .setDescription('Gestion des entreprises Armurerie / Écurie')
+    .addSubcommand(sc => sc.setName('créer').setDescription('Créer une entreprise (STAFF)')
+      .addUserOption(o => o.setName('propriétaire').setDescription('Patron').setRequired(true))
+      .addStringOption(o => o.setName('nom').setDescription('Nom de l’entreprise').setRequired(true))
+      .addStringOption(o => o.setName('type').setDescription('Type')
+        .addChoices(
+          { name: 'Armurerie 🔫', value: 'armurerie' },
+          { name: 'Écurie 🐴',   value: 'ecurie' }
+        ).setRequired(true))
+    )
+    .addSubcommand(sc => sc.setName('recruter').setDescription('Recruter un employé')
+      .addUserOption(o => o.setName('membre').setDescription('Membre à recruter').setRequired(true)))
+    .addSubcommand(sc => sc.setName('virer').setDescription('Renvoyer un employé')
+      .addUserOption(o => o.setName('membre').setDescription('Membre à renvoyer').setRequired(true)))
+    .addSubcommand(sc => sc.setName('stock').setDescription('Voir le stock de mon entreprise'))
+    .addSubcommand(sc => sc.setName('voir').setDescription('Voir la fiche entreprise (patron)'))
+    .addSubcommand(sc => sc.setName('commander').setDescription('Commander auprès du fournisseur'))
+    .addSubcommand(sc => sc.setName('définirprix').setDescription('Définir le prix de vente d’un item'))
+    .addSubcommand(sc => sc.setName('modifierprix').setDescription('Modifier le prix d’un item'))
+    .addSubcommand(sc => sc.setName('vendre').setDescription('Vendre un item à un client'))
+    .addSubcommand(sc => sc.setName('supprimer').setDescription('Supprimer une entreprise (STAFF)')),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+
+    // ──────────────────────────────────────────────────────
+    // /entreprise créer — STAFF ONLY
+    if (sub === 'créer') {
+      if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
+        return interaction.reply({ embeds:[ko('⛔ Réservé au staff.')], flags: MessageFlags.Ephemeral });
+      }
+      const owner = interaction.options.getUser('propriétaire');
+      const name  = interaction.options.getString('nom').trim();
+      const type  = interaction.options.getString('type');
+
+      if (!owner || owner.bot) {
+        return interaction.reply({ embeds:[ko('❌ Propriétaire invalide.')], flags: MessageFlags.Ephemeral });
+      }
+      if (getEnterpriseByOwner(owner.id)) {
+        return interaction.reply({ embeds:[ko('❌ Ce joueur possède déjà une entreprise.')], flags: MessageFlags.Ephemeral });
+      }
+
+      try {
+        const ent = createEnterprise(owner.id, name, type);
+        const emb = titleEmbed(ent, `👤 Patron: <@${ent.ownerId}>\n🏷️ Créée avec succès.`);
+        return interaction.reply({ embeds:[emb] });
+      } catch {
+        return interaction.reply({ embeds:[ko('❌ Erreur création.')], flags: MessageFlags.Ephemeral });
+      }
+    }
+
+    // Entreprise de l’utilisateur (patron ou employé)
+    const ent = getEnterpriseByMember(interaction.user.id);
+    if (!ent) {
+      return interaction.reply({ embeds:[ko('❌ Tu ne fais partie d’aucune entreprise.')], flags: MessageFlags.Ephemeral });
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'recruter') {
+      if (!isOwner(ent, interaction.user.id)) {
+        return interaction.reply({ embeds:[ko('⛔ Seul le patron peut recruter.')], flags: MessageFlags.Ephemeral });
+      }
+      const member = interaction.options.getUser('membre');
+      if (!member || member.bot) {
+        return interaction.reply({ embeds:[ko('❌ Membre invalide.')], flags: MessageFlags.Ephemeral });
+      }
+      try {
+        addEmployee(ent.ownerId, member.id);
+        return interaction.reply({
+          embeds:[ok(`🤝 <@${member.id}> rejoint l’équipe (**${getEnterpriseByOwner(ent.ownerId).employees.length}/4**).`)],
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (e) {
+        const msg =
+          e.message === 'MAX_EMP'    ? '❌ Limite atteinte (4).' :
+          e.message === 'ALREADY_EMP'? '❌ Déjà employé.' :
+                                        '❌ Erreur.';
+        return interaction.reply({ embeds:[ko(msg)], flags: MessageFlags.Ephemeral });
+      }
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'virer') {
+      if (!isOwner(ent, interaction.user.id)) {
+        return interaction.reply({ embeds:[ko('⛔ Seul le patron peut renvoyer.')], flags: MessageFlags.Ephemeral });
+      }
+      const member = interaction.options.getUser('membre');
+      if (!member) return interaction.reply({ embeds:[ko('❌ Membre invalide.')], flags: MessageFlags.Ephemeral });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ent_kick_yes').setStyle(ButtonStyle.Success).setEmoji('🟩').setLabel('Confirmer'),
+        new ButtonBuilder().setCustomId('ent_kick_no').setStyle(ButtonStyle.Danger).setEmoji('🟥').setLabel('Annuler')
+      );
+      await interaction.reply({ embeds:[info(`Voulez-vous renvoyer **${member.username}** ?`)], components:[row], flags: MessageFlags.Ephemeral });
+
+      const msg = await interaction.fetchReply();
+      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 60_000 }).catch(()=>null);
+      if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      if (click.customId === 'ent_kick_no') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+
+      try {
+        removeEmployee(ent.ownerId, member.id);
+        return click.update({ components:[], embeds:[ok(`✅ ${member} a été renvoyé.`)] });
+      } catch {
+        return click.update({ components:[], embeds:[ko('❌ Erreur.')] });
+      }
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'stock') {
+      const emb = titleEmbed(ent, '📦 Stock actuel')
+        .addFields({ name: 'Inventaire', value: listStock(ent) });
+      return interaction.reply({ embeds:[emb], flags: MessageFlags.Ephemeral });
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'voir') {
+      if (!isOwner(ent, interaction.user.id)) {
+        return interaction.reply({ embeds:[ko('⛔ Réservé au patron.')], flags: MessageFlags.Ephemeral });
+      }
+      const bank = getBank(ent.ownerId);
+      const emb = new EmbedBuilder()
+        .setColor(THEME[ent.type])
+        .setTitle(`${ent.name} — ${ent.type === 'armurerie' ? 'Armurerie 🔫' : 'Écurie 🐴'}`)
+        .addFields(
+          { name: 'Patron', value: `<@${ent.ownerId}>`, inline: true },
+          { name: 'Solde banque', value: `$${bank.toFixed(2)}`, inline: true },
+          { name: 'Employés', value: ent.employees.length ? ent.employees.map(id=>`<@${id}>`).join(' • ') : '_Aucun_', inline: false },
+          { name: 'Stock', value: listStock(ent) },
+        )
+        .setFooter({ text: `ID interne: ${ent.ownerId} • Revenus $${(ent.revenues||0).toFixed(2)}` });
+      return interaction.reply({ embeds:[emb], flags: MessageFlags.Ephemeral });
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'commander') {
+      if (!isMember(ent, interaction.user.id)) {
+        return interaction.reply({ embeds:[ko('⛔ Non autorisé.')], flags: MessageFlags.Ephemeral });
+      }
+
+      const opts = ent.type === 'armurerie' ? supplierOptionsArmurerie() : supplierOptionsEcurie();
+      if (!opts.length) return interaction.reply({ embeds:[info('Aucun article fournisseur configuré.')], flags: MessageFlags.Ephemeral });
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_order_item')
+          .setPlaceholder('Choisis un article à commander…')
+          .addOptions(opts)
+      );
+      await interaction.reply({ embeds:[titleEmbed(ent, '🧾 Sélectionne un article fournisseur')], components:[row], flags: MessageFlags.Ephemeral });
+
+      const msg = await interaction.fetchReply();
+      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const choice = sel.values[0];
+      let priceUnit = 0, bucket = null, itemId = null;
+
+      if (ent.type === 'armurerie') {
+        priceUnit = SUPPLIER_WEAPONS[choice] || 0;
+        itemId = choice;
+      } else {
+        if (choice.startsWith('h:')) { bucket = 'horses'; itemId = choice.slice(2); priceUnit = SUPPLIER_HORSES[itemId] || 0; }
+        else { bucket = 'carts'; itemId = choice.slice(2); priceUnit = SUPPLIER_CARTS[itemId] || 0; }
+      }
+
+      const qty = 1; // par défaut
+      const total = priceUnit * qty;
+      const solde = getBank(ent.ownerId);
+      if (solde < total) {
+        return sel.update({ components:[], embeds:[ko(`❌ Fonds insuffisants en banque entreprise. Requis: $${total.toFixed(2)}`)] });
+      }
+
+      try {
+        decBank(ent.ownerId, total);                  // débit entreprise (économie du patron)
+        if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total); // crédit fournisseur
+        addStock(ent.ownerId, itemId, qty, bucket);   // stock +
+        return sel.update({ components:[], embeds:[ok(`✅ Commandé **${humanize(itemId)}** x${qty} pour **$${total.toFixed(2)}**.`)] });
+      } catch {
+        return sel.update({ components:[], embeds:[ko('❌ Erreur commande.')] });
+      }
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'définirprix' || sub === 'modifierprix') {
+      const entries = ent.type === 'armurerie'
+        ? Object.keys(ent.stock.weapons || {})
+        : [...Object.keys(ent.stock.horses || {}), ...Object.keys(ent.stock.carts || {})];
+      if (!entries.length) return interaction.reply({ embeds:[info('📦 Stock vide.')], flags: MessageFlags.Ephemeral });
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_setprice_item')
+          .setPlaceholder('Sélectionne l’article à tarifer…')
+          .addOptions(entries.slice(0,25).map(id => ({
+            label: humanize(id),
+            value: id,
+            description: `Prix actuel: ${getPrice(ent.ownerId, id) ?? '—'}`,
+            emoji: ent.type === 'armurerie' ? '💵' : '🏷️'
+          })))
+      );
+      await interaction.reply({ embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')], components:[row], flags: MessageFlags.Ephemeral });
+
+      const msg = await interaction.fetchReply();
+      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const targetId = sel.values[0];
+
+      // Petits presets (tu pourras remplacer par un Modal si tu veux un prix libre)
+      const presets = [5,10,25,50,100].map(v =>
+        new ButtonBuilder().setCustomId(`ent_price_${v}`).setLabel(`$${v}`).setStyle(ButtonStyle.Secondary)
+      );
+      const rowBtns = new ActionRowBuilder().addComponents(
+        ...presets,
+        new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+      );
+
+      await sel.update({
+        embeds: [titleEmbed(ent, `Tarifer **${humanize(targetId)}** — choisis un preset`)],
+        components: [rowBtns]
+      });
+
+      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 90_000 }).catch(()=>null);
+      if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+      if (click.customId === 'ent_price_cancel') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+
+      const val = Number(click.customId.replace('ent_price_', '')) || 0;
+      setPrice(ent.ownerId, targetId, val);
+      return click.update({ components:[], embeds:[ok(`✅ Prix défini: **${humanize(targetId)}** → **$${val.toFixed(2)}**`)] });
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'vendre') {
+      if (!isMember(ent, interaction.user.id)) {
+        return interaction.reply({ embeds:[ko('⛔ Non autorisé.')], flags: MessageFlags.Ephemeral });
+      }
+
+      // Build liste des items vendables (>0)
+      let items = [];
+      if (ent.type === 'armurerie') {
+        items = Object.entries(ent.stock.weapons || {})
+          .filter(([,q]) => q>0)
+          .map(([id,q]) => ({ id, qty:q, emoji:'🔫' }));
+      } else {
+        items = [
+          ...Object.entries(ent.stock.horses || {}).filter(([,q])=>q>0).map(([id,q]) => ({ id, qty:q, emoji:'🐎', bucket:'horses' })),
+          ...Object.entries(ent.stock.carts  || {}).filter(([,q])=>q>0).map(([id,q]) => ({ id, qty:q, emoji:'🛒', bucket:'carts'  })),
+        ];
+      }
+      if (!items.length) return interaction.reply({ embeds:[info('📦 Aucun article vendable en stock.')], flags: MessageFlags.Ephemeral });
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_sell_item')
+          .setPlaceholder('Choisis l’objet à vendre…')
+          .addOptions(items.slice(0,25).map(it => ({
+            label: humanize(it.id), value: JSON.stringify(it),
+            description: `Stock: ${it.qty} • Prix: $${(getPrice(ent.ownerId, it.id) ?? 0).toFixed(2)}`,
+            emoji: it.emoji
+          })))
+      );
+      await interaction.reply({
+        embeds:[titleEmbed(ent, '🧾 Sélectionne l’article à vendre')],
+        components:[row],
+        flags: MessageFlags.Ephemeral
+      });
+
+      const msg = await interaction.fetchReply();
+      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const picked = JSON.parse(sel.values[0]);
+      const price = getPrice(ent.ownerId, picked.id) || 0;
+      if (!price) return sel.update({ components:[], embeds:[ko('❌ Aucun prix défini.')] });
+
+      // Demander la mention du client
+      await sel.update({ components:[], embeds:[info('👉 Mentionne maintenant le client dans ce salon (ex: @Nom).')] });
+
+      const mention = await interaction.channel.awaitMessages({
+        max: 1, time: 90_000, filter: m => m.author.id === interaction.user.id
+      }).catch(()=>null);
+      const m = mention?.first();
+      const client = m?.mentions?.users?.first();
+      if (!client || client.bot) {
+        if (m) m.delete().catch(()=>{});
+        return msg.edit({ embeds:[ko('❌ Mention invalide.')], components:[] });
+      }
+      if (m) m.delete().catch(()=>{});
+
+      // Confirmation côté client
+      const confirm = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ent_buy_yes').setLabel('Accepter').setEmoji('✅').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ent_buy_no').setLabel('Refuser').setEmoji('❌').setStyle(ButtonStyle.Danger),
+      );
+      const prompt = await interaction.channel.send({
+        content: `${client}`,
+        allowedMentions: { users: [client.id] },
+        embeds: [new EmbedBuilder()
+          .setColor(THEME[ent.type])
+          .setTitle('Confirmation d’achat')
+          .setDescription(`Voulez-vous acheter **${humanize(picked.id)}** pour **$${price.toFixed(2)}** ?`)
+        ],
+        components: [confirm]
+      });
+
+      const click = await prompt.awaitMessageComponent({
+        componentType: ComponentType.Button, time: 120_000,
+        filter: i => i.user.id === client.id
+      }).catch(()=>null);
+
+      if (!click) {
+        await prompt.edit({ components: [] }).catch(()=>{});
+        return msg.edit({ embeds:[info('⌛ Demande expirée.')], components:[] });
+      }
+      if (click.customId === 'ent_buy_no') {
+        await click.update({ components:[], embeds:[info('❎ Achat refusé.')] });
+        return;
+      }
+
+      // Paiement
+      if (!debitCourant(client.id, price)) {
+        await click.update({ components:[], embeds:[ko('❌ Fonds insuffisants.')] });
+        return;
+      }
+      incBank(ent.ownerId, price);
+      addRevenue(ent.ownerId, price);
+
+      // Décrément stock + Attribution
+      try {
+        if (ent.type === 'armurerie') {
+          decStock(ent.ownerId, picked.id, 1);
+          addItem(client.id, picked.id, 1); // ajout inventaire
+        } else {
+          decStock(ent.ownerId, picked.id, 1, picked.bucket);
+          // La “carte grise” sera gérée/affichée via /écurie
+        }
+      } catch {
+        // rollback paiement si erreur stock
+        creditCourant(client.id, price);
+        // re-crédite la banque entreprise (en annulant la décrémentation précédent incBank)
+        decBank(ent.ownerId, -price);
+        return click.update({ components:[], embeds:[ko('❌ Erreur stock/attribution.')] });
+      }
+
+      await click.update({ components:[], embeds:[ok(`✅ Vente confirmée : **${humanize(picked.id)}** à ${client} pour **$${price.toFixed(2)}**.`)] });
+      return;
+    }
+
+    // ──────────────────────────────────────────────────────
+    if (sub === 'supprimer') {
+      if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
+        return interaction.reply({ embeds:[ko('⛔ Réservé au staff.')], flags: MessageFlags.Ephemeral });
+      }
+      const allOwnerIds = Object.keys(loadEnterprises().enterprises || {});
+      if (!allOwnerIds.length) {
+        return interaction.reply({ embeds:[info('Aucune entreprise.')], flags: MessageFlags.Ephemeral });
+      }
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_del_owner')
+          .setPlaceholder('Choisis l’entreprise à supprimer (par patron)…')
+          .addOptions(allOwnerIds.slice(0,25).map(id => ({
+            label: `Patron ${id}`, value: id, description: 'Supprimer définitivement', emoji: '🗑️'
+          })))
+      );
+      await interaction.reply({ embeds:[info('Sélectionne l’entreprise à supprimer')], components:[row], flags: MessageFlags.Ephemeral });
+
+      const msg = await interaction.fetchReply();
+      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const ownerId = sel.values[0];
+      const rowBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ent_del_yes').setLabel('Confirmer').setEmoji('🟩').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ent_del_no').setLabel('Annuler').setEmoji('🟥').setStyle(ButtonStyle.Danger),
+      );
+      await sel.update({ components:[rowBtn], embeds:[info(`Supprimer définitivement l’entreprise du patron <@${ownerId}> ?`)] });
+
+      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 90_000 }).catch(()=>null);
+      if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+      if (click.customId === 'ent_del_no') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+
+      deleteEnterprise(ownerId);
+      return click.update({ components:[], embeds:[ok('✅ Entreprise supprimée.')] });
+    }
+  }
 };
