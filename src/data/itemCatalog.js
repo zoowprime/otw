@@ -181,4 +181,41 @@ module.exports = {
     id: "fusil_rolling_block", label: "Fusil Rolling Block",
     weight: 4.20, stackable: false, consumable: false, emoji: "🎯",
   },
+
+  // =========================================================
+  // EXPLOITATIONS — AGRICOLE & MINIÈRE
+  // (ids synchronisés avec tes fichiers d’icônes)
+  // =========================================================
+  acier_brut: {
+    id: "acier_brut", label: "Acier brut",
+    weight: 0.5, stackable: true, consumable: false, emoji: "🔩",
+  },
+  acier_transformer: {
+    id: "acier_transformer", label: "Acier transformé",
+    weight: 2.0, stackable: true, consumable: false, emoji: "🔩",
+  },
+  charbon_brut: {
+    id: "charbon_brut", label: "Charbon brut",
+    weight: 0.5, stackable: true, consumable: false, emoji: "⚫",
+  },
+  charbon_transformer: {
+    id: "charbon_transformer", label: "Charbon transformé",
+    weight: 1.5, stackable: true, consumable: false, emoji: "⚫",
+  },
+  mais_brut: {
+    id: "mais_brut", label: "Maïs brut",
+    weight: 0.5, stackable: true, consumable: false, emoji: "🌽",
+  },
+  mais_transformer: {
+    id: "mais_transformer", label: "Maïs transformé",
+    weight: 1.5, stackable: true, consumable: false, emoji: "🌽",
+  },
+  tabac_brut: {
+    id: "tabac_brut", label: "Tabac brut",
+    weight: 0.5, stackable: true, consumable: false, emoji: "🚬",
+  },
+  tabac_transformer: {
+    id: "tabac_transformer", label: "Tabac transformé",
+    weight: 1.5, stackable: true, consumable: false, emoji: "🚬",
+  },
 };
