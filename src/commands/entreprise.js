@@ -15,10 +15,11 @@ const {
   getEnterpriseByOwner, getEnterpriseByMember,
   isOwner, isMember,
   addEmployee, removeEmployee,
-  incBank, decBank, addRevenue,
+  incBank, decBank, addRevenue, getBank,
   addStock, decStock,
   setPrice, getPrice,
   SUPPLIER_WEAPONS, SUPPLIER_HORSES, SUPPLIER_CARTS,
+  load: loadEnterprises,
 } = require('../data/entreprisesData');
 
 const { getOrCreateAccount, updateAccount } = require('../economyData');
@@ -28,22 +29,52 @@ const { addItem } = require('../data/inventoryStore');
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 const WINCHESTER_USER_ID = process.env.WINCHESTER_USER_ID || null;
 
-// Helpers
-const ok = (t) => new EmbedBuilder().setColor(0x2ecc71).setDescription(t);
-const ko = (t) => new EmbedBuilder().setColor(0xe74c3c).setDescription(t);
+// Helpers d’embed
+const ok   = (t) => new EmbedBuilder().setColor(0x2ecc71).setDescription(t);
+const ko   = (t) => new EmbedBuilder().setColor(0xe74c3c).setDescription(t);
 const info = (t) => new EmbedBuilder().setColor(0x95a5a6).setDescription(t);
 
 const THEME = {
   armurerie: 0xc0392b, // rouge foncé
-  ecurie: 0x145a32,    // vert sapin
+  ecurie:    0x145a32, // vert sapin
 };
 
+const humanize = (id) =>
+  String(id).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+// Débit / crédit (économie joueurs)
+function debitCourant(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  if ((acc.courant.liquide || 0) < amount) return false;
+  acc.courant.liquide -= amount;
+  updateAccount(userId, acc);
+  return true;
+}
+function creditCourant(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  acc.courant.liquide += amount;
+  updateAccount(userId, acc);
+  return true;
+}
+function creditBanque(userId, amount) {
+  const acc = getOrCreateAccount(userId);
+  acc.courant ||= { liquide: 0, banque: 0, entreprise: 0 };
+  acc.courant.banque += amount;
+  updateAccount(userId, acc);
+  return true;
+}
+
+// Entête entreprise avec solde via getBank()
 function titleEmbed(ent, subtitle) {
+  const bank = getBank(ent.ownerId);
+  const revenues = ent.revenues || 0;
   return new EmbedBuilder()
     .setColor(THEME[ent.type])
     .setTitle(`${ent.name} — ${ent.type === 'armurerie' ? 'Armurerie 🔫' : 'Écurie 🐴'}`)
     .setDescription(subtitle || '')
-    .setFooter({ text: `Banque: $${(ent.bank || 0).toFixed(2)} • Revenus: $${(ent.revenues || 0).toFixed(2)}`});
+    .setFooter({ text: `Banque: $${bank.toFixed(2)} • Revenus: $${revenues.toFixed(2)}` });
 }
 
 function listStock(ent) {
@@ -54,47 +85,23 @@ function listStock(ent) {
     return lines.length ? lines.join('\n') : '_Aucun article en stock_';
   } else {
     const h = Object.entries(ent.stock.horses || {}).map(([id,q]) => `• 🐎 ${humanize(id)} — **x${q}**`);
-    const c = Object.entries(ent.stock.carts || {}).map(([id,q]) => `• 🚚 ${humanize(id)} — **x${q}**`);
+    const c = Object.entries(ent.stock.carts  || {}).map(([id,q]) => `• 🚚 ${humanize(id)} — **x${q}**`);
     const lines = [...h, ...c];
     return lines.length ? lines.join('\n') : '_Aucun article en stock_';
   }
 }
-const humanize = (id) => String(id).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-// Debit/credit joueurs
-function debitCourant(userId, amount) {
-  const acc = getOrCreateAccount(userId);
-  acc.courant ||= { liquide: 0, banque: 0 };
-  if ((acc.courant.liquide || 0) < amount) return false;
-  acc.courant.liquide -= amount;
-  updateAccount(userId, acc);
-  return true;
-}
-function creditCourant(userId, amount) {
-  const acc = getOrCreateAccount(userId);
-  acc.courant ||= { liquide: 0, banque: 0 };
-  acc.courant.liquide += amount;
-  updateAccount(userId, acc);
-  return true;
-}
-function creditBanque(userId, amount) {
-  const acc = getOrCreateAccount(userId);
-  acc.courant ||= { liquide: 0, banque: 0 };
-  acc.courant.banque += amount;
-  updateAccount(userId, acc);
-  return true;
-}
-
-// Build select helpers
+// Options fournisseurs
 function supplierOptionsArmurerie() {
-  return Object.entries(SUPPLIER_WEAPONS).map(([id, p]) => ({
-    label: humanize(id).slice(0, 100),
-    value: id,
-    description: `$${p.toFixed(2)}`,
-    emoji: '🔫',
-  })).slice(0,25);
+  return Object.entries(SUPPLIER_WEAPONS)
+    .map(([id, p]) => ({
+      label: humanize(id).slice(0, 100),
+      value: id,
+      description: `$${p.toFixed(2)}`,
+      emoji: '🔫',
+    }))
+    .slice(0, 25);
 }
-// À adapter si tu mappes SUPPLIER_HORSES avec tes IDs de catalogHorses.js
 function supplierOptionsEcurie() {
   const H = Object.entries(SUPPLIER_HORSES).map(([id,p]) => ({
     label: humanize(id).slice(0, 100),
@@ -104,7 +111,7 @@ function supplierOptionsEcurie() {
     label: humanize(id).slice(0, 100),
     value: `c:${id}`, description: `$${p.toFixed(2)}`, emoji: '🛒'
   }));
-  return [...H, ...C].slice(0,25);
+  return [...H, ...C].slice(0, 25);
 }
 
 module.exports = {
@@ -156,14 +163,16 @@ module.exports = {
         const ent = createEnterprise(owner.id, name, type);
         const emb = titleEmbed(ent, `👤 Patron: <@${ent.ownerId}>\n🏷️ Créée avec succès.`);
         return interaction.reply({ embeds:[emb] });
-      } catch (e) {
+      } catch {
         return interaction.reply({ embeds:[ko('❌ Erreur création.')], flags: MessageFlags.Ephemeral });
       }
     }
 
     // Entreprise de l’utilisateur (patron ou employé)
     const ent = getEnterpriseByMember(interaction.user.id);
-    if (!ent) return interaction.reply({ embeds:[ko('❌ Tu ne fais partie d’aucune entreprise.')], flags: MessageFlags.Ephemeral });
+    if (!ent) {
+      return interaction.reply({ embeds:[ko('❌ Tu ne fais partie d’aucune entreprise.')], flags: MessageFlags.Ephemeral });
+    }
 
     // ──────────────────────────────────────────────────────
     if (sub === 'recruter') {
@@ -171,15 +180,20 @@ module.exports = {
         return interaction.reply({ embeds:[ko('⛔ Seul le patron peut recruter.')], flags: MessageFlags.Ephemeral });
       }
       const member = interaction.options.getUser('membre');
-      if (!member || member.bot) return interaction.reply({ embeds:[ko('❌ Membre invalide.')], flags: MessageFlags.Ephemeral });
+      if (!member || member.bot) {
+        return interaction.reply({ embeds:[ko('❌ Membre invalide.')], flags: MessageFlags.Ephemeral });
+      }
       try {
         addEmployee(ent.ownerId, member.id);
-        return interaction.reply({ embeds:[ok(`🤝 <@${member.id}> rejoint l’équipe (**${ent.employees.length}/4**).`)], flags: MessageFlags.Ephemeral });
+        return interaction.reply({
+          embeds:[ok(`🤝 <@${member.id}> rejoint l’équipe (**${getEnterpriseByOwner(ent.ownerId).employees.length}/4**).`)],
+          flags: MessageFlags.Ephemeral
+        });
       } catch (e) {
         const msg =
-          e.message === 'MAX_EMP' ? '❌ Limite atteinte (4).' :
-          e.message === 'ALREADY_EMP' ? '❌ Déjà employé.' :
-          '❌ Erreur.';
+          e.message === 'MAX_EMP'    ? '❌ Limite atteinte (4).' :
+          e.message === 'ALREADY_EMP'? '❌ Déjà employé.' :
+                                        '❌ Erreur.';
         return interaction.reply({ embeds:[ko(msg)], flags: MessageFlags.Ephemeral });
       }
     }
@@ -224,13 +238,17 @@ module.exports = {
       if (!isOwner(ent, interaction.user.id)) {
         return interaction.reply({ embeds:[ko('⛔ Réservé au patron.')], flags: MessageFlags.Ephemeral });
       }
-      const emb = titleEmbed(ent, '')
+      const bank = getBank(ent.ownerId);
+      const emb = new EmbedBuilder()
+        .setColor(THEME[ent.type])
+        .setTitle(`${ent.name} — ${ent.type === 'armurerie' ? 'Armurerie 🔫' : 'Écurie 🐴'}`)
         .addFields(
           { name: 'Patron', value: `<@${ent.ownerId}>`, inline: true },
-          { name: 'Employés', value: ent.employees.length ? ent.employees.map(id=>`<@${id}>`).join(' • ') : '_Aucun_', inline: true },
+          { name: 'Solde banque', value: `$${bank.toFixed(2)}`, inline: true },
+          { name: 'Employés', value: ent.employees.length ? ent.employees.map(id=>`<@${id}>`).join(' • ') : '_Aucun_', inline: false },
           { name: 'Stock', value: listStock(ent) },
         )
-        .setFooter({ text: `ID interne: ${ent.ownerId} • Banque $${ent.bank.toFixed(2)} • Revenus $${ent.revenues.toFixed(2)}` });
+        .setFooter({ text: `ID interne: ${ent.ownerId} • Revenus $${(ent.revenues||0).toFixed(2)}` });
       return interaction.reply({ embeds:[emb], flags: MessageFlags.Ephemeral });
     }
 
@@ -266,19 +284,19 @@ module.exports = {
         else { bucket = 'carts'; itemId = choice.slice(2); priceUnit = SUPPLIER_CARTS[itemId] || 0; }
       }
 
-      const qty = 1; // raisonnable par défaut (tu pourras ajouter un modal quantité plus tard)
+      const qty = 1; // par défaut
       const total = priceUnit * qty;
-
-      if ((ent.bank || 0) < total) {
+      const solde = getBank(ent.ownerId);
+      if (solde < total) {
         return sel.update({ components:[], embeds:[ko(`❌ Fonds insuffisants en banque entreprise. Requis: $${total.toFixed(2)}`)] });
       }
 
       try {
-        decBank(ent.ownerId, total);
-        if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total);
-        addStock(ent.ownerId, itemId, qty, bucket);
+        decBank(ent.ownerId, total);                  // débit entreprise (économie du patron)
+        if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total); // crédit fournisseur
+        addStock(ent.ownerId, itemId, qty, bucket);   // stock +
         return sel.update({ components:[], embeds:[ok(`✅ Commandé **${humanize(itemId)}** x${qty} pour **$${total.toFixed(2)}**.`)] });
-      } catch (e) {
+      } catch {
         return sel.update({ components:[], embeds:[ko('❌ Erreur commande.')] });
       }
     }
@@ -295,7 +313,10 @@ module.exports = {
           .setCustomId('ent_setprice_item')
           .setPlaceholder('Sélectionne l’article à tarifer…')
           .addOptions(entries.slice(0,25).map(id => ({
-            label: humanize(id), value: id, description: `Prix actuel: ${getPrice(ent.ownerId, id) ?? '—'}`, emoji: ent.type === 'armurerie' ? '💵' : '🏷️'
+            label: humanize(id),
+            value: id,
+            description: `Prix actuel: ${getPrice(ent.ownerId, id) ?? '—'}`,
+            emoji: ent.type === 'armurerie' ? '💵' : '🏷️'
           })))
       );
       await interaction.reply({ embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')], components:[row], flags: MessageFlags.Ephemeral });
@@ -306,11 +327,14 @@ module.exports = {
 
       const targetId = sel.values[0];
 
-      // Petit "wizard" via boutons pour fixer quelques paliers rapides (tu pourras ajouter un Modal plus tard)
+      // Petits presets (tu pourras remplacer par un Modal si tu veux un prix libre)
       const presets = [5,10,25,50,100].map(v =>
         new ButtonBuilder().setCustomId(`ent_price_${v}`).setLabel(`$${v}`).setStyle(ButtonStyle.Secondary)
       );
-      const rowBtns = new ActionRowBuilder().addComponents(...presets, new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger));
+      const rowBtns = new ActionRowBuilder().addComponents(
+        ...presets,
+        new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+      );
 
       await sel.update({
         embeds: [titleEmbed(ent, `Tarifer **${humanize(targetId)}** — choisis un preset`)],
@@ -335,11 +359,13 @@ module.exports = {
       // Build liste des items vendables (>0)
       let items = [];
       if (ent.type === 'armurerie') {
-        items = Object.entries(ent.stock.weapons || {}).filter(([,q]) => q>0).map(([id,q]) => ({ id, qty:q, emoji:'🔫' }));
+        items = Object.entries(ent.stock.weapons || {})
+          .filter(([,q]) => q>0)
+          .map(([id,q]) => ({ id, qty:q, emoji:'🔫' }));
       } else {
         items = [
           ...Object.entries(ent.stock.horses || {}).filter(([,q])=>q>0).map(([id,q]) => ({ id, qty:q, emoji:'🐎', bucket:'horses' })),
-          ...Object.entries(ent.stock.carts || {}).filter(([,q])=>q>0).map(([id,q]) => ({ id, qty:q, emoji:'🛒', bucket:'carts' })),
+          ...Object.entries(ent.stock.carts  || {}).filter(([,q])=>q>0).map(([id,q]) => ({ id, qty:q, emoji:'🛒', bucket:'carts'  })),
         ];
       }
       if (!items.length) return interaction.reply({ embeds:[info('📦 Aucun article vendable en stock.')], flags: MessageFlags.Ephemeral });
@@ -371,7 +397,9 @@ module.exports = {
       // Demander la mention du client
       await sel.update({ components:[], embeds:[info('👉 Mentionne maintenant le client dans ce salon (ex: @Nom).')] });
 
-      const mention = await interaction.channel.awaitMessages({ max: 1, time: 90_000, filter: m => m.author.id === interaction.user.id }).catch(()=>null);
+      const mention = await interaction.channel.awaitMessages({
+        max: 1, time: 90_000, filter: m => m.author.id === interaction.user.id
+      }).catch(()=>null);
       const m = mention?.first();
       const client = m?.mentions?.users?.first();
       if (!client || client.bot) {
@@ -422,17 +450,16 @@ module.exports = {
       try {
         if (ent.type === 'armurerie') {
           decStock(ent.ownerId, picked.id, 1);
-          addItem(client.id, picked.id, 1); // ajoute l’arme/outil dans l’inventaire joueur
+          addItem(client.id, picked.id, 1); // ajout inventaire
         } else {
           decStock(ent.ownerId, picked.id, 1, picked.bucket);
-          // Attribution de la carte grise côté /écurie (fait quand le joueur ouvrira /écurie via vehicleData si besoin)
-          // Ici tu peux aussi directement écrire dans vehicleData si tu veux auto-assigner :
-          // -> on laisse /écurie gérer l’affichage & gestion
+          // La “carte grise” sera gérée/affichée via /écurie
         }
-      } catch (e) {
-        // rollback paiement si erreur
+      } catch {
+        // rollback paiement si erreur stock
         creditCourant(client.id, price);
-        decBank(ent.ownerId, -price); // re-crédite
+        // re-crédite la banque entreprise (en annulant la décrémentation précédent incBank)
+        decBank(ent.ownerId, -price);
         return click.update({ components:[], embeds:[ko('❌ Erreur stock/attribution.')] });
       }
 
@@ -445,9 +472,10 @@ module.exports = {
       if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
         return interaction.reply({ embeds:[ko('⛔ Réservé au staff.')], flags: MessageFlags.Ephemeral });
       }
-      // Liste des patrons existants
-      const allOwnerIds = Object.keys(require('../data/entreprisesData').load().enterprises || {});
-      if (!allOwnerIds.length) return interaction.reply({ embeds:[info('Aucune entreprise.')], flags: MessageFlags.Ephemeral });
+      const allOwnerIds = Object.keys(loadEnterprises().enterprises || {});
+      if (!allOwnerIds.length) {
+        return interaction.reply({ embeds:[info('Aucune entreprise.')], flags: MessageFlags.Ephemeral });
+      }
 
       const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
