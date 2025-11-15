@@ -25,14 +25,14 @@ const {
 const { getOrCreateAccount, updateAccount } = require('../economyData');
 const { addItem } = require('../data/inventoryStore');
 
-// 🔹 nouveau : lien avec l’écurie
+// 🔹 lien avec l’écurie (propriété des chevaux / charrettes)
 const {
   setPlayerHorse,
   setPlayerCart,
 } = require('../data/stableData');
 
 // Ids env
-const STAFF_ROLE_ID     = process.env.STAFF_ROLE_ID;
+const STAFF_ROLE_ID      = process.env.STAFF_ROLE_ID;
 const WINCHESTER_USER_ID = process.env.WINCHESTER_USER_ID || null;
 
 // Helpers d’embed
@@ -97,7 +97,7 @@ function listStock(ent) {
   }
 }
 
-// Options fournisseurs
+// Options fournisseurs (armurerie)
 function supplierOptionsArmurerie() {
   return Object.entries(SUPPLIER_WEAPONS)
     .map(([id, p]) => ({
@@ -108,16 +108,16 @@ function supplierOptionsArmurerie() {
     }))
     .slice(0, 25);
 }
-function supplierOptionsEcurie() {
-  const H = Object.entries(SUPPLIER_HORSES).map(([id,p]) => ({
-    label: humanize(id).slice(0, 100),
-    value: `h:${id}`, description: `$${p.toFixed(2)}`, emoji: '🐎'
-  }));
-  const C = Object.entries(SUPPLIER_CARTS).map(([id,p]) => ({
-    label: humanize(id).slice(0, 100),
-    value: `c:${id}`, description: `$${p.toFixed(2)}`, emoji: '🛒'
-  }));
-  return [...H, ...C].slice(0, 25);
+
+// Groupes de chevaux par catégorie (clé = premier segment de l’ID)
+function groupHorsesByCategory() {
+  const buckets = {};
+  for (const [id, price] of Object.entries(SUPPLIER_HORSES)) {
+    const catKey = id.split('_')[0]; // ex: "american", "appaloosa", "breton", "trotteur", "pur", ...
+    if (!buckets[catKey]) buckets[catKey] = [];
+    buckets[catKey].push({ id, price });
+  }
+  return buckets;
 }
 
 module.exports = {
@@ -219,7 +219,11 @@ module.exports = {
       await interaction.reply({ embeds:[info(`Voulez-vous renvoyer **${member.username}** ?`)], components:[row], flags: MessageFlags.Ephemeral });
 
       const msg = await interaction.fetchReply();
-      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 60_000 }).catch(()=>null);
+      const click = await msg.awaitMessageComponent({
+        componentType: ComponentType.Button,
+        time: 60_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
 
       if (click.customId === 'ent_kick_no') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
@@ -259,51 +263,186 @@ module.exports = {
     }
 
     // ──────────────────────────────────────────────────────
+    // /entreprise commander
     if (sub === 'commander') {
       if (!isMember(ent, interaction.user.id)) {
         return interaction.reply({ embeds:[ko('⛔ Non autorisé.')], flags: MessageFlags.Ephemeral });
       }
 
-      const opts = ent.type === 'armurerie' ? supplierOptionsArmurerie() : supplierOptionsEcurie();
-      if (!opts.length) return interaction.reply({ embeds:[info('Aucun article fournisseur configuré.')], flags: MessageFlags.Ephemeral });
-
-      const row = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('ent_order_item')
-          .setPlaceholder('Choisis un article à commander…')
-          .addOptions(opts)
-      );
-      await interaction.reply({ embeds:[titleEmbed(ent, '🧾 Sélectionne un article fournisseur')], components:[row], flags: MessageFlags.Ephemeral });
-
-      const msg = await interaction.fetchReply();
-      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
-      if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
-
-      const choice = sel.values[0];
-      let priceUnit = 0, bucket = null, itemId = null;
-
+      // ──────────────────────────────────────────
+      // ARMURERIE : une seule liste
       if (ent.type === 'armurerie') {
-        priceUnit = SUPPLIER_WEAPONS[choice] || 0;
-        itemId = choice;
-      } else {
-        if (choice.startsWith('h:')) { bucket = 'horses'; itemId = choice.slice(2); priceUnit = SUPPLIER_HORSES[itemId] || 0; }
-        else { bucket = 'carts'; itemId = choice.slice(2); priceUnit = SUPPLIER_CARTS[itemId] || 0; }
+        const opts = supplierOptionsArmurerie();
+        if (!opts.length) {
+          return interaction.reply({ embeds:[info('Aucun article fournisseur configuré.')], flags: MessageFlags.Ephemeral });
+        }
+
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('ent_order_item_armurerie')
+            .setPlaceholder('Choisis une arme à commander…')
+            .addOptions(opts)
+        );
+        await interaction.reply({
+          embeds:[titleEmbed(ent, '🧾 Sélectionne une arme fournisseur')],
+          components:[row],
+          flags: MessageFlags.Ephemeral
+        });
+
+        const msg = await interaction.fetchReply();
+        const sel = await msg.awaitMessageComponent({
+          componentType: ComponentType.StringSelect,
+          time: 90_000,
+          filter: i => i.user.id === interaction.user.id,
+        }).catch(()=>null);
+        if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+        const choice = sel.values[0];
+        const priceUnit = SUPPLIER_WEAPONS[choice] || 0;
+        const itemId = choice;
+        const qty = 1;
+        const total = priceUnit * qty;
+        const solde = getBank(ent.ownerId);
+
+        if (solde < total) {
+          return sel.update({ components:[], embeds:[ko(`❌ Fonds insuffisants en banque entreprise. Requis: $${total.toFixed(2)}`)] });
+        }
+
+        try {
+          decBank(ent.ownerId, total);
+          if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total);
+          addStock(ent.ownerId, itemId, qty, null);
+          return sel.update({ components:[], embeds:[ok(`✅ Commandé **${humanize(itemId)}** x${qty} pour **$${total.toFixed(2)}**.`)] });
+        } catch {
+          return sel.update({ components:[], embeds:[ko('❌ Erreur commande.')] });
+        }
       }
 
-      const qty = 1; // par défaut
+      // ──────────────────────────────────────────
+      // ÉCURIE : 2 étapes → catégorie puis monture
+      const horsesByCat = groupHorsesByCategory();
+      const catOptions = Object.entries(horsesByCat).map(([catKey, list]) => ({
+        label: `🐎 ${humanize(catKey)}`.slice(0, 100),
+        value: catKey,
+        description: `${list.length} monture(s)`,
+        emoji: '🐎',
+      }));
+
+      if (Object.keys(SUPPLIER_CARTS).length > 0) {
+        catOptions.push({
+          label: '🚚 Charrettes',
+          value: '__carts',
+          description: `${Object.keys(SUPPLIER_CARTS).length} modèle(s)`,
+          emoji: '🚚',
+        });
+      }
+
+      if (!catOptions.length) {
+        return interaction.reply({
+          embeds:[info('Aucun cheval / charrette configuré chez le fournisseur.')],
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const rowCat = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_order_cat')
+          .setPlaceholder('Choisis une catégorie de montures…')
+          .addOptions(catOptions.slice(0, 25))
+      );
+
+      await interaction.reply({
+        embeds:[titleEmbed(ent, '🧾 Étape 1 — Choisis la catégorie')],
+        components:[rowCat],
+        flags: MessageFlags.Ephemeral
+      });
+
+      const msg = await interaction.fetchReply();
+      const selCat = await msg.awaitMessageComponent({
+        componentType: ComponentType.StringSelect,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
+      if (!selCat) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const pickedCat = selCat.values[0];
+      let secondOptions = [];
+      let bucket = null;
+
+      if (pickedCat === '__carts') {
+        bucket = 'carts';
+        secondOptions = Object.entries(SUPPLIER_CARTS).map(([id, price]) => ({
+          label: humanize(id).slice(0, 100),
+          value: id,
+          description: `$${price.toFixed(2)}`,
+          emoji: '🚚',
+        }));
+      } else {
+        bucket = 'horses';
+        const horses = horsesByCat[pickedCat] || [];
+        secondOptions = horses.map(({ id, price }) => ({
+          label: humanize(id).slice(0, 100),
+          value: id,
+          description: `$${price.toFixed(2)}`,
+          emoji: '🐎',
+        }));
+      }
+
+      if (!secondOptions.length) {
+        return selCat.update({
+          components: [],
+          embeds: [ko('❌ Aucun modèle disponible dans cette catégorie.')]
+        });
+      }
+
+      const rowItem = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('ent_order_item_ecurie')
+          .setPlaceholder('Choisis la monture à commander…')
+          .addOptions(secondOptions.slice(0, 25))
+      );
+
+      await selCat.update({
+        embeds: [titleEmbed(ent, '🧾 Étape 2 — Choisis la monture')],
+        components: [rowItem],
+      });
+
+      const selItem = await msg.awaitMessageComponent({
+        componentType: ComponentType.StringSelect,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
+      if (!selItem) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
+
+      const itemId = selItem.values[0];
+      let priceUnit = 0;
+      if (bucket === 'horses') {
+        priceUnit = SUPPLIER_HORSES[itemId] || 0;
+      } else {
+        priceUnit = SUPPLIER_CARTS[itemId] || 0;
+      }
+
+      const qty = 1;
       const total = priceUnit * qty;
       const solde = getBank(ent.ownerId);
+
       if (solde < total) {
-        return sel.update({ components:[], embeds:[ko(`❌ Fonds insuffisants en banque entreprise. Requis: $${total.toFixed(2)}`)] });
+        return selItem.update({
+          components: [],
+          embeds: [ko(`❌ Fonds insuffisants en banque entreprise. Requis: $${total.toFixed(2)}`)]
+        });
       }
 
       try {
-        decBank(ent.ownerId, total);                  // débit entreprise
-        if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total); // crédit fournisseur
-        addStock(ent.ownerId, itemId, qty, bucket);   // stock +
-        return sel.update({ components:[], embeds:[ok(`✅ Commandé **${humanize(itemId)}** x${qty} pour **$${total.toFixed(2)}**.`)] });
+        decBank(ent.ownerId, total);
+        if (WINCHESTER_USER_ID) creditBanque(WINCHESTER_USER_ID, total);
+        addStock(ent.ownerId, itemId, qty, bucket);
+        return selItem.update({
+          components: [],
+          embeds: [ok(`✅ Commandé **${humanize(itemId)}** x${qty} pour **$${total.toFixed(2)}**.`)]
+        });
       } catch {
-        return sel.update({ components:[], embeds:[ko('❌ Erreur commande.')] });
+        return selItem.update({ components:[], embeds:[ko('❌ Erreur commande.')] });
       }
     }
 
@@ -328,7 +467,11 @@ module.exports = {
       await interaction.reply({ embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')], components:[row], flags: MessageFlags.Ephemeral });
 
       const msg = await interaction.fetchReply();
-      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      const sel = await msg.awaitMessageComponent({
+        componentType: ComponentType.StringSelect,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
 
       const targetId = sel.values[0];
@@ -346,7 +489,11 @@ module.exports = {
         components: [rowBtns]
       });
 
-      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 90_000 }).catch(()=>null);
+      const click = await msg.awaitMessageComponent({
+        componentType: ComponentType.Button,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
       if (click.customId === 'ent_price_cancel') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
 
@@ -392,7 +539,11 @@ module.exports = {
       });
 
       const msg = await interaction.fetchReply();
-      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      const sel = await msg.awaitMessageComponent({
+        componentType: ComponentType.StringSelect,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
 
       const picked = JSON.parse(sel.values[0]);
@@ -403,7 +554,9 @@ module.exports = {
       await sel.update({ components:[], embeds:[info('👉 Mentionne maintenant le client dans ce salon (ex: @Nom).')] });
 
       const mention = await interaction.channel.awaitMessages({
-        max: 1, time: 90_000, filter: m => m.author.id === interaction.user.id
+        max: 1,
+        time: 90_000,
+        filter: m => m.author.id === interaction.user.id
       }).catch(()=>null);
       const m = mention?.first();
       const client = m?.mentions?.users?.first();
@@ -430,8 +583,9 @@ module.exports = {
       });
 
       const click = await prompt.awaitMessageComponent({
-        componentType: ComponentType.Button, time: 120_000,
-        filter: i => i.user.id === client.id
+        componentType: ComponentType.Button,
+        time: 120_000,
+        filter: i => i.user.id === client.id,
       }).catch(()=>null);
 
       if (!click) {
@@ -457,9 +611,9 @@ module.exports = {
           decStock(ent.ownerId, picked.id, 1);
           addItem(client.id, picked.id, 1); // ajout inventaire
         } else {
-          // 🔹 Retire du stock de l’écurie
+          // Retire du stock de l’écurie
           decStock(ent.ownerId, picked.id, 1, picked.bucket);
-          // 🔹 Assigne au joueur pour /écurie
+          // Assigne au joueur pour /écurie
           if (picked.bucket === 'horses') {
             setPlayerHorse(client.id, picked.id);
           } else if (picked.bucket === 'carts') {
@@ -499,7 +653,11 @@ module.exports = {
       await interaction.reply({ embeds:[info('Sélectionne l’entreprise à supprimer')], components:[row], flags: MessageFlags.Ephemeral });
 
       const msg = await interaction.fetchReply();
-      const sel = await msg.awaitMessageComponent({ componentType: ComponentType.StringSelect, time: 90_000 }).catch(()=>null);
+      const sel = await msg.awaitMessageComponent({
+        componentType: ComponentType.StringSelect,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!sel) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
 
       const ownerId = sel.values[0];
@@ -509,7 +667,11 @@ module.exports = {
       );
       await sel.update({ components:[rowBtn], embeds:[info(`Supprimer définitivement l’entreprise du patron <@${ownerId}> ?`)] });
 
-      const click = await msg.awaitMessageComponent({ componentType: ComponentType.Button, time: 90_000 }).catch(()=>null);
+      const click = await msg.awaitMessageComponent({
+        componentType: ComponentType.Button,
+        time: 90_000,
+        filter: i => i.user.id === interaction.user.id,
+      }).catch(()=>null);
       if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
       if (click.customId === 'ent_del_no') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
 
