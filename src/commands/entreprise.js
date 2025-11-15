@@ -113,7 +113,7 @@ function supplierOptionsArmurerie() {
 function groupHorsesByCategory() {
   const buckets = {};
   for (const [id, price] of Object.entries(SUPPLIER_HORSES)) {
-    const catKey = id.split('_')[0]; // ex: "american", "appaloosa", "breton", "trotteur", "pur", ...
+    const catKey = id.split('_')[0]; // ex: "american", "appaloosa", "breton", ...
     if (!buckets[catKey]) buckets[catKey] = [];
     buckets[catKey].push({ id, price });
   }
@@ -269,7 +269,6 @@ module.exports = {
         return interaction.reply({ embeds:[ko('⛔ Non autorisé.')], flags: MessageFlags.Ephemeral });
       }
 
-      // ──────────────────────────────────────────
       // ARMURERIE : une seule liste
       if (ent.type === 'armurerie') {
         const opts = supplierOptionsArmurerie();
@@ -318,7 +317,6 @@ module.exports = {
         }
       }
 
-      // ──────────────────────────────────────────
       // ÉCURIE : 2 étapes → catégorie puis monture
       const horsesByCat = groupHorsesByCategory();
       const catOptions = Object.entries(horsesByCat).map(([catKey, list]) => ({
@@ -476,12 +474,22 @@ module.exports = {
 
       const targetId = sel.values[0];
 
-      const presets = [5,10,25,50,100].map(v =>
-        new ButtonBuilder().setCustomId(`ent_price_${v}`).setLabel(`$${v}`).setStyle(ButtonStyle.Secondary)
+      // ⚠️ MAX 5 boutons par row → 4 presets + 1 Annuler
+      const presetsValues = [5, 10, 25, 50];
+      const presetButtons = presetsValues.map(v =>
+        new ButtonBuilder()
+          .setCustomId(`ent_price_${v}`)
+          .setLabel(`$${v}`)
+          .setStyle(ButtonStyle.Secondary)
       );
+      const cancelButton = new ButtonBuilder()
+        .setCustomId('ent_price_cancel')
+        .setLabel('Annuler')
+        .setStyle(ButtonStyle.Danger);
+
       const rowBtns = new ActionRowBuilder().addComponents(
-        ...presets,
-        new ButtonBuilder().setCustomId('ent_price_cancel').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+        ...presetButtons,
+        cancelButton
       );
 
       await sel.update({
@@ -495,7 +503,9 @@ module.exports = {
         filter: i => i.user.id === interaction.user.id,
       }).catch(()=>null);
       if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
-      if (click.customId === 'ent_price_cancel') return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+      if (click.customId === 'ent_price_cancel') {
+        return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+      }
 
       const val = Number(click.customId.replace('ent_price_', '')) || 0;
       setPrice(ent.ownerId, targetId, val);
