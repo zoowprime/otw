@@ -113,7 +113,7 @@ function supplierOptionsArmurerie() {
 function groupHorsesByCategory() {
   const buckets = {};
   for (const [id, price] of Object.entries(SUPPLIER_HORSES)) {
-    const catKey = id.split('_')[0]; // ex: "american", "appaloosa", "breton", ...
+    const catKey = id.split('_')[0]; // ex: "mustang", "breton", ...
     if (!buckets[catKey]) buckets[catKey] = [];
     buckets[catKey].push({ id, price });
   }
@@ -445,6 +445,7 @@ module.exports = {
     }
 
     // ──────────────────────────────────────────────────────
+    // DÉFINIR / MODIFIER PRIX — VERSION SAISIE MANUELLE
     if (sub === 'définirprix' || sub === 'modifierprix') {
       const entries = ent.type === 'armurerie'
         ? Object.keys(ent.stock.weapons || {})
@@ -462,7 +463,11 @@ module.exports = {
             emoji: ent.type === 'armurerie' ? '💵' : '🏷️'
           })))
       );
-      await interaction.reply({ embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')], components:[row], flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        embeds:[titleEmbed(ent, '💵 Choisis l’article à tarifer')],
+        components:[row],
+        flags: MessageFlags.Ephemeral
+      });
 
       const msg = await interaction.fetchReply();
       const sel = await msg.awaitMessageComponent({
@@ -474,42 +479,43 @@ module.exports = {
 
       const targetId = sel.values[0];
 
-      // ⚠️ MAX 5 boutons par row → 4 presets + 1 Annuler
-      const presetsValues = [5, 10, 25, 50];
-      const presetButtons = presetsValues.map(v =>
-        new ButtonBuilder()
-          .setCustomId(`ent_price_${v}`)
-          .setLabel(`$${v}`)
-          .setStyle(ButtonStyle.Secondary)
-      );
-      const cancelButton = new ButtonBuilder()
-        .setCustomId('ent_price_cancel')
-        .setLabel('Annuler')
-        .setStyle(ButtonStyle.Danger);
-
-      const rowBtns = new ActionRowBuilder().addComponents(
-        ...presetButtons,
-        cancelButton
-      );
-
+      // On demande maintenant au joueur d’envoyer le prix en message
       await sel.update({
-        embeds: [titleEmbed(ent, `Tarifer **${humanize(targetId)}** — choisis un preset`)],
-        components: [rowBtns]
+        embeds: [titleEmbed(
+          ent,
+          `✏️ Entre le **nouveau prix** pour **${humanize(targetId)}** dans le chat.\nExemple : \`125\` ou \`125.5\``
+        )],
+        components: []
       });
 
-      const click = await msg.awaitMessageComponent({
-        componentType: ComponentType.Button,
+      const collected = await interaction.channel.awaitMessages({
+        max: 1,
         time: 90_000,
-        filter: i => i.user.id === interaction.user.id,
-      }).catch(()=>null);
-      if (!click) return msg.edit({ components:[], embeds:[ko('⌛ Temps écoulé.')] });
-      if (click.customId === 'ent_price_cancel') {
-        return click.update({ components:[], embeds:[info('❎ Annulé.')] });
+        filter: m => m.author.id === interaction.user.id
+      }).catch(() => null);
+
+      const priceMsg = collected?.first();
+      if (!priceMsg) {
+        return msg.edit({ components: [], embeds: [ko('⌛ Temps écoulé. Aucun prix reçu.')] });
       }
 
-      const val = Number(click.customId.replace('ent_price_', '')) || 0;
+      const raw = priceMsg.content.replace(',', '.').trim();
+      const val = Number.parseFloat(raw);
+      // on supprime le message pour garder le salon propre
+      priceMsg.delete().catch(() => {});
+
+      if (!Number.isFinite(val) || val <= 0) {
+        return msg.edit({
+          components: [],
+          embeds: [ko('❌ Prix invalide. Utilise un nombre strictement positif.')]
+        });
+      }
+
       setPrice(ent.ownerId, targetId, val);
-      return click.update({ components:[], embeds:[ok(`✅ Prix défini: **${humanize(targetId)}** → **$${val.toFixed(2)}**`)] });
+      return msg.edit({
+        components: [],
+        embeds: [ok(`✅ Prix défini : **${humanize(targetId)}** → **$${val.toFixed(2)}**`)]
+      });
     }
 
     // ──────────────────────────────────────────────────────
