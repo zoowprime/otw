@@ -28,8 +28,8 @@ const COORDS = {
   width: 1400,
   height: 950,
   photo: {
-    x: 165,   // coin haut gauche du cadre photo
-    y: 270,
+    x: 250,   // coin haut gauche du cadre photo
+    y: 300,
     w: 430,
     h: 430,
   },
