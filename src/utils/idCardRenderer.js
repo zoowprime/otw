@@ -71,34 +71,36 @@ async function renderIdCard(userId, cardData) {
     ctx.drawImage(templateImg, 0, 0, COORDS.width, COORDS.height);
 
     // Photo (si dispo)
-    if (cardData.photoPath && fs.existsSync(cardData.photoPath)) {
-      try {
-        const photo = await loadImage(cardData.photoPath);
-        const { x, y, w, h } = COORDS.photo;
+if (cardData.photoPath && fs.existsSync(cardData.photoPath)) {
+  try {
+    const photo = await loadImage(cardData.photoPath);
+    const { x, y, w, h } = COORDS.photo;
 
-        // "cover" : remplir le cadre et rogner ce qui dépasse
-const scale = Math.max(w / photo.width, h / photo.height);
-const pw = photo.width * scale;
-const ph = photo.height * scale;
+    // "contain" : l'image tient entièrement dans le cadre, jamais plus grande
+    const scale = Math.min(w / photo.width, h / photo.height);
+    const pw = photo.width * scale;
+    const ph = photo.height * scale;
 
-// On centre l'image dans le cadre
-const px = x + (w - pw) / 2;
-const py = y + (h - ph) / 2;
+    // On centre l'image dans le cadre
+    const px = x + (w - pw) / 2;
+    const py = y + (h - ph) / 2;
 
-// Découpe automatique aux limites du cadre
-ctx.save();
-ctx.beginPath();
-ctx.rect(x, y, w, h); // zone du cadre
-ctx.clip();
+    // (Optionnel) fond papier sous la photo pour éviter des bords transparents
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h); // zone du cadre
+    ctx.clip();
 
-ctx.drawImage(photo, px, py, pw, ph);
+    ctx.fillStyle = '#d6c29e'; // couleur proche du fond de la carte
+    ctx.fillRect(x, y, w, h);
 
-ctx.restore();
+    ctx.drawImage(photo, px, py, pw, ph);
 
-      } catch (err) {
-        console.error('Erreur chargement photo ID:', err);
-      }
-    }
+    ctx.restore();
+  } catch (err) {
+    console.error('Erreur chargement photo ID:', err);
+  }
+}
 
     // Textes
     drawText(ctx, cardData.nom,       COORDS.text.nom.x,       COORDS.text.nom.y);
