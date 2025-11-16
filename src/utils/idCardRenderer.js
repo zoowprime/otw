@@ -76,14 +76,25 @@ async function renderIdCard(userId, cardData) {
         const photo = await loadImage(cardData.photoPath);
         const { x, y, w, h } = COORDS.photo;
 
-        // on cale l'image en conservant le ratio
-        const scale = Math.min(w / photo.width, h / photo.height);
-        const pw = photo.width * scale;
-        const ph = photo.height * scale;
-        const px = x + (w - pw) / 2;
-        const py = y + (h - ph) / 2;
+        // "cover" : remplir le cadre et rogner ce qui dépasse
+const scale = Math.max(w / photo.width, h / photo.height);
+const pw = photo.width * scale;
+const ph = photo.height * scale;
 
-        ctx.drawImage(photo, px, py, pw, ph);
+// On centre l'image dans le cadre
+const px = x + (w - pw) / 2;
+const py = y + (h - ph) / 2;
+
+// Découpe automatique aux limites du cadre
+ctx.save();
+ctx.beginPath();
+ctx.rect(x, y, w, h); // zone du cadre
+ctx.clip();
+
+ctx.drawImage(photo, px, py, pw, ph);
+
+ctx.restore();
+
       } catch (err) {
         console.error('Erreur chargement photo ID:', err);
       }
