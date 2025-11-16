@@ -34,11 +34,11 @@ const COORDS = {
     h: 520,
   },
   text: {
-    nom:        { x: 820, y: 320 },
-    prenom:     { x: 830, y: 400 },
-    birthDate:  { x: 970, y: 470 },
-    size:       { x: 860, y: 560 },
-    address:    { x: 930, y: 645 },
+    nom:        { x: 825, y: 315 },
+    prenom:     { x: 845, y: 400 },
+    birthDate:  { x: 970, y: 465 },
+    size:       { x: 860, y: 565 },
+    address:    { x: 930, y: 660 },
   },
 };
 
