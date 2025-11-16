@@ -35,10 +35,10 @@ const COORDS = {
   },
   text: {
     nom:        { x: 820, y: 320 },
-    prenom:     { x: 820, y: 370 },
-    birthDate:  { x: 970, y: 420 },
-    size:       { x: 860, y: 470 },
-    address:    { x: 930, y: 550 },
+    prenom:     { x: 820, y: 400 },
+    birthDate:  { x: 970, y: 710 },
+    size:       { x: 860, y: 570 },
+    address:    { x: 930, y: 650 },
   },
 };
 
