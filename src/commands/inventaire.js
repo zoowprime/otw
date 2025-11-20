@@ -18,7 +18,8 @@ const {
   totalWeight,
   getVitals,
   addItem,
-  removeItem
+  removeItem,
+  consumeItem, // ⬅️ IMPORT IMPORTANT
 } = require('../data/inventoryStore');
 const catalog = require('../data/itemCatalog');
 
@@ -54,8 +55,7 @@ const GRID = {
 };
 
 // Micro-ajustements par colonne/ligne.
-// Ajuste ici si tu veux re-centrer précisément des colonnes/lignes entières :
-const COL_NUDGE = [ 0, 0, 11, 40, 60 ];   // <- j’ai avancé un peu les colonnes 3,4,5 vers la DROITE
+const COL_NUDGE = [ 0, 0, 11, 40, 60 ];
 const ROW_NUDGE = [ 0, 0, 0, 0, 0 ];
 
 // Position du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
@@ -97,14 +97,14 @@ function getSlotRect(col, row) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Résolution d’icône robuste (corrige les cas "Mauser" vs "pistolet_mauser")
+// Résolution d’icône robuste
 const strip = (s) =>
   (s || '')
     .toString()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // enlève accents
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')                         // enlève ponctuation
-    .replace(/\s+/g, '_');                            // espaces -> underscore
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '_');
 
 // index label->id (catalog)
 const labelIndex = (() => {
@@ -119,21 +119,19 @@ const labelIndex = (() => {
 function resolveIconId(rawId) {
   if (!rawId) return null;
 
-  // 1) essai direct (déjà un id)
+  // 1) id direct
   const direct = path.join(ICONS_DIR, `${rawId}.png`);
   if (fs.existsSync(direct)) return rawId;
 
-  // 2) essai via label => id (ex: "Mauser" -> "pistolet_mauser")
+  // 2) via label
   const byLabel = labelIndex[strip(rawId)];
   if (byLabel && fs.existsSync(path.join(ICONS_DIR, `${byLabel}.png`))) return byLabel;
 
-  // 3) essai "normalisé" du rawId (ex: "Arc amélioré" -> "arc_ameliorer")
+  // 3) normalisation (ex: Arc amélioré → arc_ameliorer)
   const normalized = strip(rawId).replace(/amelior[eé]/, 'ameliorer');
   if (fs.existsSync(path.join(ICONS_DIR, `${normalized}.png`))) return normalized;
 
-  // 4) essai id catalog si le "rawId" est un label d’un item connu
-  // (déjà couvert par byLabel normalement)
-  return null; // pas trouvé
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -172,8 +170,8 @@ async function renderInventoryImage(userId) {
   const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
   for (let i = 0; i < items.length; i++) {
     const it  = items[i];
-    const raw = it.name || it.id;                    // peut être "humain" (Mauser) ou un id (pistolet_mauser)
-    const id  = resolveIconId(raw) || raw;           // résout id d’icône si possible
+    const raw = it.name || it.id;
+    const id  = resolveIconId(raw) || raw;
     const qty = typeof it.quantity === 'number' ? it.quantity : 1;
 
     const col = i % GRID.COLS;
@@ -189,7 +187,6 @@ async function renderInventoryImage(userId) {
         const h = img.height * scale;
         ctx.drawImage(img, cx - w/2, cy - h/2, w, h);
       } catch {
-        // pas grave, on passe au cadre
         ctx.strokeStyle = 'rgba(255,255,255,0.20)';
         ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
       }
@@ -198,21 +195,17 @@ async function renderInventoryImage(userId) {
       ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
     }
 
-    // métadonnées (via id résolu si possible)
     const meta   = catalog[id] || catalog[raw] || {};
     const weight = (meta.weight ?? 0);
 
-    // qty
     if ((meta.stackable ?? true) && qty > 1) {
       ctx.font = FONTS.META;
       drawShadowText(ctx, `x${qty}`, slotX + 6, slotY + 14, 'left');
     }
 
-    // poids unitaire
     ctx.font = FONTS.META;
     drawShadowText(ctx, `${weight.toFixed(1)}kg`, slotX + slotW - 6, slotY + 14, 'right');
 
-    // nom
     ctx.font = FONTS.NAME;
     const labelSource = meta.label || raw;
     const label = truncateTo(ctx, labelSource.replace(/_/g, ' '), slotW - 10);
@@ -349,7 +342,7 @@ module.exports = {
           });
         }
 
-        // action === 'give' : on choisit l’objet, PUIS on mentionne la cible dans le chat
+        // action === 'give'
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId('inv_give_item')
@@ -362,12 +355,46 @@ module.exports = {
         });
       }
 
-      // Utiliser — démo (à brancher avec tes effets si besoin)
+      // 🔵 Utiliser — maintenant on CONSOMME vraiment l’item
       if (i.customId === 'inv_use_item') {
         const id = i.values[0];
-        // ici tu peux décrémenter et appliquer l’effet si tu veux
+
+        const result = consumeItem(userId, id, 1);
+        if (!result.ok) {
+          let msg;
+          switch (result.reason) {
+            case 'NOT_FOUND':
+            case 'NOT_ENOUGH':
+              msg = '❌ Tu ne possèdes plus cet objet.'; break;
+            case 'NOT_CONSUMABLE':
+              msg = '❌ Cet objet ne peut pas être consommé.'; break;
+            default:
+              msg = '❌ Impossible de consommer cet objet.'; break;
+          }
+          return i.update({
+            embeds: [ new EmbedBuilder().setColor(0xe74c3c).setDescription(msg) ],
+            components: [buildActionMenu()]
+          });
+        }
+
+        const { hungerDelta, thirstDelta } = result.effect || {};
+        const { emb, file } = await buildEmbedWithImage(userId, displayName);
+
+        let effectText = `✅ Tu as utilisé **${niceName(id)}**.`;
+        const changes = [];
+        if (typeof hungerDelta === 'number' && hungerDelta !== 0) {
+          changes.push(`🍖 Faim : \`${hungerDelta > 0 ? '+' : ''}${hungerDelta}\``);
+        }
+        if (typeof thirstDelta === 'number' && thirstDelta !== 0) {
+          changes.push(`💧 Soif : \`${thirstDelta > 0 ? '+' : ''}${thirstDelta}\``);
+        }
+        if (changes.length) effectText += `\n${changes.join(' • ')}`;
+
+        emb.addFields({ name: 'Effets', value: effectText });
+
         return i.update({
-          embeds: [ new EmbedBuilder().setColor(0x3498db).setDescription(`✅ Tu as utilisé **${niceName(id)}**.`) ],
+          embeds: [emb],
+          files: file ? [file] : [],
           components: [buildActionMenu()]
         });
       }
@@ -395,7 +422,7 @@ module.exports = {
         });
       }
 
-      // Donner — on mémorise l’item, puis on demandera une mention dans le chat
+      // Donner — on mémorise l’item, puis mention de la cible
       if (i.customId === 'inv_give_item') {
         pendingGiveItemId = i.values[0];
 
@@ -410,14 +437,14 @@ module.exports = {
       }
     });
 
-    // Collector de messages (pour récupérer la mention de la cible après choix de l’objet à donner)
+    // Collector pour les mentions (donner)
     const msgCollector = msg.channel.createMessageCollector({
       time: 180_000,
       filter: m => m.author.id === userId
     });
 
     msgCollector.on('collect', async (m) => {
-      if (!pendingGiveItemId) return; // on n’attend une mention que si un objet a été choisi
+      if (!pendingGiveItemId) return;
       const target = m.mentions.users.first();
       if (!target || target.bot) {
         return m.reply({ content: '❌ Mention invalide. Réessaie en mentionnant la personne (@Nom).', allowedMentions: { users: [] } })
@@ -425,7 +452,6 @@ module.exports = {
           .catch(()=>{});
       }
 
-      // transfert : -1 chez l’émetteur, +1 chez la cible
       try {
         removeItem(userId, pendingGiveItemId, 1);
         addItem(target.id, pendingGiveItemId, 1);
@@ -435,7 +461,6 @@ module.exports = {
         return;
       }
 
-      // re-render pour l’auteur
       const { emb, file } = await buildEmbedWithImage(userId, displayName);
       emb.addFields({ name: 'Donner', value: `🤝 Tu as donné **${niceName(pendingGiveItemId)}** à <@${target.id}>.` });
 
