@@ -6,53 +6,50 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   ComponentType,
-} = require('discord.js');
+} = require("discord.js");
 
-const path = require('path');
-const { createCanvas, loadImage } = require('canvas');
-
-const { getOrCreateAccount, updateAccount } = require('../economyData');
+const path = require("path");
+const { createCanvas, loadImage } = require("canvas");
+const { getOrCreateAccount, updateAccount } = require("../economyData");
 
 const BANKER_ROLE = process.env.BANQUIER_ROLE_ID;
 const BANK_LOG_CHANNEL = process.env.BANK_LOG_CHANNEL || null;
 
-// ─────────────────────────────────────────────────────────────
-// Utils / format
+// ────────────────────────────────────────────────
+// Utils formatage
 const fmt = (n) =>
-  `${(Number(n) || 0).toLocaleString('fr-FR', {
+  `${(Number(n) || 0).toLocaleString("fr-FR", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })} $`;
-
-const footer = { text: 'otw' };
+const footer = { text: "otw" };
 
 const accountTypes = [
-  { name: 'Courant', value: 'courant' },
-  { name: 'Entreprise', value: 'entreprise' },
-  { name: 'Epargne', value: 'epargne' },
+  { name: "Courant", value: "courant" },
+  { name: "Entreprise", value: "entreprise" },
+  { name: "Epargne", value: "epargne" },
 ];
 
 const subAccountChoices = [
-  { name: 'Courant (Liquide)', value: 'courant_liquide' },
-  { name: 'Courant (Banque)', value: 'courant_banque' },
-  { name: 'Entreprise (Liquide)', value: 'entreprise_liquide' },
-  { name: 'Entreprise (Banque)', value: 'entreprise_banque' },
-  { name: 'Épargne', value: 'epargne' },
+  { name: "Courant (Liquide)", value: "courant_liquide" },
+  { name: "Courant (Banque)", value: "courant_banque" },
+  { name: "Entreprise (Liquide)", value: "entreprise_liquide" },
+  { name: "Entreprise (Banque)", value: "entreprise_banque" },
+  { name: "Épargne", value: "epargne" },
 ];
 
 function getBalanceRef(acc, choice) {
   switch (choice) {
-    case 'courant_liquide':
+    case "courant_liquide":
       return acc.courant.liquide;
-    case 'courant_banque':
+    case "courant_banque":
       return acc.courant.banque;
-    case 'entreprise_liquide':
+    case "entreprise_liquide":
       return acc.entreprise.liquide;
-    case 'entreprise_banque':
+    case "entreprise_banque":
       return acc.entreprise.banque;
-    case 'epargne':
+    case "epargne":
       return acc.epargne;
     default:
       return null;
@@ -61,19 +58,19 @@ function getBalanceRef(acc, choice) {
 
 function setBalanceRef(acc, choice, val) {
   switch (choice) {
-    case 'courant_liquide':
+    case "courant_liquide":
       acc.courant.liquide = val;
       break;
-    case 'courant_banque':
+    case "courant_banque":
       acc.courant.banque = val;
       break;
-    case 'entreprise_liquide':
+    case "entreprise_liquide":
       acc.entreprise.liquide = val;
       break;
-    case 'entreprise_banque':
+    case "entreprise_banque":
       acc.entreprise.banque = val;
       break;
-    case 'epargne':
+    case "epargne":
       acc.epargne = val;
       break;
   }
@@ -120,874 +117,524 @@ function requireBanker(interaction) {
   return interaction.member.roles.cache.has(BANKER_ROLE);
 }
 
-// ─────────────────────────────────────────────────────────────
-// Partie IMAGE de compte bancaire
+// ────────────────────────────────────────────────
+// Rendu image de compte bancaire
 
 const BANK_TEMPLATE = path.join(
   __dirname,
-  '..',
-  'assets',
-  'bank',
-  'compte_banque.png'
+  "..",
+  "assets",
+  "bank",
+  "compte_banque.png"
 );
 
-// Coordonnées approx. sur l’image 1024x1024
-// (tu pourras ajuster ces valeurs si besoin)
+let BANK_BASE_IMAGE = null;
+
+async function getBankBaseImage() {
+  if (!BANK_BASE_IMAGE) {
+    BANK_BASE_IMAGE = await loadImage(BANK_TEMPLATE);
+  }
+  return BANK_BASE_IMAGE;
+}
+
+// Coordonnées des textes sur ton template 1024x1024
+// (tu pourras affiner X/Y si tu veux que ce soit parfaitement calé)
 const COORDS = {
-  courant_banque: { x: 350, y: 305 },
-  courant_liquide: { x: 350, y: 365 },
-  entreprise_banque: { x: 740, y: 305 },
-  entreprise_liquide: { x: 740, y: 365 },
-  owner: { x: 360, y: 455 },
+  courantBanque: { x: 260, y: 355 },
+  courantLiquide: { x: 260, y: 410 },
+  entrepriseBanque: { x: 690, y: 355 },
+  entrepriseLiquide: { x: 690, y: 410 },
+  owner: { x: 310, y: 515 },
 };
 
-function fmtForImage(n) {
-  return (Number(n) || 0).toLocaleString('fr-FR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-}
-
-// Génère l’image de la carte bancaire pour un joueur
-async function renderBankCard(user, acc) {
+async function renderBankImage(acc, ownerName) {
+  const base = await getBankBaseImage();
   const canvas = createCanvas(1024, 1024);
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
-  const tpl = await loadImage(BANK_TEMPLATE);
-  ctx.drawImage(tpl, 0, 0, 1024, 1024);
+  ctx.drawImage(base, 0, 0, 1024, 1024);
 
-  ctx.textBaseline = 'middle';
+  ctx.fillStyle = "#E8F8FF";
+  ctx.font = '30px "Times New Roman"';
+  ctx.textAlign = "left";
 
-  // Montants
-  ctx.font = '32px Arial';
-  ctx.fillStyle = '#46d5d1'; // bleu-vert pour les montants
+  // montants
+  const cb = fmt(acc.courant.banque || 0);
+  const cl = fmt(acc.courant.liquide || 0);
+  const eb = fmt(acc.entreprise.banque || 0);
+  const el = fmt(acc.entreprise.liquide || 0);
 
-  ctx.fillText(
-    fmtForImage(acc.courant.banque || 0),
-    COORDS.courant_banque.x,
-    COORDS.courant_banque.y
-  );
-  ctx.fillText(
-    fmtForImage(acc.courant.liquide || 0),
-    COORDS.courant_liquide.x,
-    COORDS.courant_liquide.y
-  );
-  ctx.fillText(
-    fmtForImage(acc.entreprise.banque || 0),
-    COORDS.entreprise_banque.x,
-    COORDS.entreprise_banque.y
-  );
-  ctx.fillText(
-    fmtForImage(acc.entreprise.liquide || 0),
-    COORDS.entreprise_liquide.x,
-    COORDS.entreprise_liquide.y
-  );
+  ctx.fillText(cb, COORDS.courantBanque.x, COORDS.courantBanque.y);
+  ctx.fillText(cl, COORDS.courantLiquide.x, COORDS.courantLiquide.y);
+  ctx.fillText(eb, COORDS.entrepriseBanque.x, COORDS.entrepriseBanque.y);
+  ctx.fillText(el, COORDS.entrepriseLiquide.x, COORDS.entrepriseLiquide.y);
 
-  // Propriétaire
-  ctx.font = '30px Arial';
-  ctx.fillStyle = '#fdf2d0';
-  ctx.fillText(
-    user.displayName || user.username,
-    COORDS.owner.x,
-    COORDS.owner.y
-  );
+  // propriétaire
+  ctx.font = '32px "Times New Roman"';
+  ctx.fillText(ownerName, COORDS.owner.x, COORDS.owner.y);
 
-  const buffer = canvas.toBuffer('image/png');
-  return new AttachmentBuilder(buffer, { name: 'compte_banque.png' });
+  const buffer = canvas.toBuffer("image/png");
+  return new AttachmentBuilder(buffer, { name: "compte_banque.png" });
 }
 
-// Boutons principaux de l’interface
-function buildMainButtons() {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('eco_dep')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🏦')
-        .setLabel('Déposer des sous'),
-      new ButtonBuilder()
-        .setCustomId('eco_with')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('💰')
-        .setLabel('Retirer des sous'),
-      new ButtonBuilder()
-        .setCustomId('eco_virement')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('💸')
-        .setLabel('Faire un virement')
-    ),
-  ];
+// ────────────────────────────────────────────────
+// UI boutons
+
+function mainButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("eco_dep")
+      .setEmoji("🏦")
+      .setLabel("Déposer des sous")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("eco_with")
+      .setEmoji("💰")
+      .setLabel("Retirer des sous")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("eco_transfer")
+      .setEmoji("💸")
+      .setLabel("Faire un virement")
+      .setStyle(ButtonStyle.Primary)
+  );
 }
 
-// Embeds de base pour l’interface image
-function buildBankEmbed(user, note = null) {
-  const emb = new EmbedBuilder()
-    .setColor(0x1f2a35)
-    .setTitle(`🏦 Interface bancaire — ${user.username}`)
-    .setDescription(
-      note ||
-        'Utilise les boutons ci-dessous pour déposer, retirer ou virer de l’argent.'
-    )
-    .setFooter(footer)
-    .setImage('attachment://compte_banque.png');
-  return emb;
+function accountChoiceRow(prefix) {
+  // prefix = 'dep' ou 'with'
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`eco_${prefix}_courant`)
+      .setEmoji("🏦")
+      .setLabel("Compte courant")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`eco_${prefix}_entreprise`)
+      .setEmoji("🏢")
+      .setLabel("Compte entreprise")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`eco_${prefix}_cancel`)
+      .setEmoji("🟥")
+      .setLabel("Annuler")
+      .setStyle(ButtonStyle.Danger)
+  );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Commande & exécution
+function cancelRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("eco_cancel_flow")
+      .setEmoji("🟥")
+      .setLabel("Annuler l’opération")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+// ────────────────────────────────────────────────
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('economy')
-    .setDescription('Comptes & opérations (courant, entreprise, épargne).')
+    .setName("economy")
+    .setDescription("Comptes & opérations (courant, entreprise, épargne).")
 
-    // 🔵 Nouvelle interface graphique
+    // PANEL GRAPHIQUE
     .addSubcommand((sc) =>
       sc
-        .setName('banque')
+        .setName("compte")
         .setDescription(
-          'Affiche ta carte bancaire graphique et les boutons d’actions.'
+          "Affiche ton compte bancaire avec l’interface graphique."
         )
     )
 
-    // 🔵 Voir la carte d’un autre joueur (image seule)
+    // Voir le compte de quelqu’un (image uniquement)
     .addSubcommand((sc) =>
       sc
-        .setName('voircompte')
-        .setDescription('Affiche la carte bancaire graphique de quelqu’un.')
+        .setName("voircompte")
+        .setDescription("Voir le compte bancaire complet d’un joueur.")
         .addUserOption((o) =>
           o
-            .setName('target')
-            .setDescription('Joueur cible')
+            .setName("target")
+            .setDescription("Joueur à consulter")
             .setRequired(true)
         )
     )
 
-    // /economy compte (ANCIEN comportement, laissé intact)
+    // /economy solde (raccourci numérique)
     .addSubcommand((sc) =>
       sc
-        .setName('compte')
-        .setDescription('Affiche le compte choisi.')
+        .setName("solde")
+        .setDescription("Affiche le solde total du compte choisi.")
         .addStringOption((o) =>
           o
-            .setName('type')
-            .setDescription('Type de compte')
-            .setRequired(true)
-            .addChoices(...accountTypes)
-        )
-        .addUserOption((o) =>
-          o
-            .setName('target')
-            .setDescription('Joueur cible (optionnel)')
-        )
-    )
-
-    // /economy solde (ANCIEN)
-    .addSubcommand((sc) =>
-      sc
-        .setName('solde')
-        .setDescription('Affiche le solde total du compte choisi.')
-        .addStringOption((o) =>
-          o
-            .setName('type')
-            .setDescription('Type de compte')
+            .setName("type")
+            .setDescription("Type de compte")
             .setRequired(true)
             .addChoices(...accountTypes)
         )
     )
 
-    // /economy ajouterfonds (banquier) — inchangé
+    // /economy ajouterfonds (banquier)
     .addSubcommand((sc) =>
       sc
-        .setName('ajouterfonds')
+        .setName("ajouterfonds")
         .setDescription("Ajoute des fonds dans un champ précis (banquiers).")
         .addUserOption((o) =>
-          o
-            .setName('target')
-            .setDescription('Joueur cible')
-            .setRequired(true)
+          o.setName("target").setDescription("Joueur cible").setRequired(true)
         )
         .addStringOption((o) =>
           o
-            .setName('destination')
-            .setDescription('Champ cible')
+            .setName("destination")
+            .setDescription("Champ cible")
             .setRequired(true)
             .addChoices(...subAccountChoices)
         )
         .addNumberOption((o) =>
           o
-            .setName('montant')
-            .setDescription('Montant à ajouter')
+            .setName("montant")
+            .setDescription("Montant à ajouter")
             .setRequired(true)
         )
     )
 
-    // /economy retirerfonds (banquier) — inchangé
+    // /economy retirerfonds (banquier)
     .addSubcommand((sc) =>
       sc
-        .setName('retirerfonds')
+        .setName("retirerfonds")
         .setDescription(
           "Retire des fonds d'un joueur (liquide/banque, courant/entreprise/épargne)."
         )
         .addUserOption((o) =>
-          o
-            .setName('target')
-            .setDescription('Joueur cible')
-            .setRequired(true)
+          o.setName("target").setDescription("Joueur cible").setRequired(true)
         )
         .addStringOption((o) =>
           o
-            .setName('source')
-            .setDescription('Champ à débiter')
+            .setName("source")
+            .setDescription("Champ à débiter")
             .setRequired(true)
             .addChoices(...subAccountChoices)
         )
         .addNumberOption((o) =>
           o
-            .setName('montant')
-            .setDescription('Montant à retirer')
+            .setName("montant")
+            .setDescription("Montant à retirer")
             .setRequired(true)
         )
     )
 
-    // /economy paye (joueur → joueur) — inchangé
+    // /economy paye (paiement joueur → joueur)
     .addSubcommand((sc) =>
       sc
-        .setName('paye')
+        .setName("paye")
         .setDescription(
-          'Payer un joueur depuis un de vos champs vers un de ses champs.'
+          "Payer un joueur depuis un de vos champs vers un de ses champs."
         )
         .addStringOption((o) =>
           o
-            .setName('source')
-            .setDescription('Votre champ source')
+            .setName("source")
+            .setDescription("Votre champ source")
             .setRequired(true)
             .addChoices(
-              { name: 'Courant (Liquide)', value: 'courant_liquide' },
-              { name: 'Entreprise (Liquide)', value: 'entreprise_liquide' }
+              { name: "Courant (Liquide)", value: "courant_liquide" },
+              { name: "Entreprise (Liquide)", value: "entreprise_liquide" }
             )
         )
         .addStringOption((o) =>
           o
-            .setName('destination')
-            .setDescription('Champ du destinataire')
+            .setName("destination")
+            .setDescription("Champ du destinataire")
             .setRequired(true)
             .addChoices(...subAccountChoices)
         )
         .addUserOption((o) =>
-          o
-            .setName('target')
-            .setDescription('Destinataire')
-            .setRequired(true)
+          o.setName("target").setDescription("Destinataire").setRequired(true)
         )
         .addNumberOption((o) =>
-          o
-            .setName('montant')
-            .setDescription('Montant')
-            .setRequired(true)
+          o.setName("montant").setDescription("Montant").setRequired(true)
         )
     ),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
-    // ──────────────────────────────────────────────────────
-    // /economy banque — INTERFACE GRAPHIQUE PRINCIPALE
-    if (sub === 'banque') {
+    // ─────────────────────────────────────
+    // PANEL GRAPHIQUE /economy compte
+    if (sub === "compte") {
       const user = interaction.user;
-      const acc = getOrCreateAccount(user.id);
+      let acc = getOrCreateAccount(user.id);
 
-      const file = await renderBankCard(user, acc);
-      const embed = buildBankEmbed(
-        user,
-        'Utilise les boutons pour gérer tes comptes. Les montants sont ceux de ton compte courant et de ton compte entreprise.'
+      const file = await renderBankImage(
+        acc,
+        interaction.member?.displayName || user.username
       );
 
       const msg = await interaction.reply({
-        embeds: [embed],
+        content:
+          "💳 **Interface de compte bancaire.** Utilise les boutons ci-dessous pour déposer / retirer de l’argent.\n*(Seul le propriétaire du message peut interagir.)*",
         files: [file],
-        components: buildMainButtons(),
+        components: [mainButtonsRow()],
         fetchReply: true,
       });
 
-      // État local pour les flows
-      let currentAction = null; // 'deposit' | 'withdraw' | 'transfer'
-      let transferState = {
-        account: null, // 'courant' | 'entreprise'
-        kind: null, // 'liquide' | 'banque'
-        targetId: null,
-      };
-      let busy = false; // pour éviter plusieurs flows en même temps
+      // état local pour ce message
+      let currentFlow = null; // 'dep' ou 'with'
+      let currentAccount = null; // 'courant' ou 'entreprise'
 
+      // Collector de boutons, owner-only, SANS timeout court
       const collector = msg.createMessageComponentCollector({
-        componentType: ComponentType.Button | ComponentType.StringSelect,
-        time: 15 * 60 * 1000,
+        componentType: ComponentType.Button,
+        time: 24 * 60 * 60 * 1000, // 24h
+        filter: (i) => i.user.id === user.id && i.message.id === msg.id,
       });
 
-      collector.on('collect', async (i) => {
-        if (i.user.id !== user.id) {
-          // Discord enverra son propre message d’erreur, on ne rajoute rien.
-          return;
-        }
-
-        const accLive = getOrCreateAccount(user.id);
-
-        // ============= BOUTONS PRINCIPAUX =============
-        if (i.customId === 'eco_dep') {
-          currentAction = 'deposit';
-          busy = false;
-          transferState = { account: null, kind: null, targetId: null };
-
-          const emb = buildBankEmbed(
-            user,
-            '🟩 **Dépôt** — choisis sur quel compte déposer (le montant sera déplacé de ton *liquide* vers la *banque* du compte choisi).'
-          );
-          const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('eco_dep_courant')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🏦')
-              .setLabel('Compte courant'),
-            new ButtonBuilder()
-              .setCustomId('eco_dep_entreprise')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🏢')
-              .setLabel('Compte entreprise'),
-            new ButtonBuilder()
-              .setCustomId('eco_cancel')
-              .setStyle(ButtonStyle.Danger)
-              .setEmoji('❌')
-              .setLabel('Annuler')
-          );
-
-          return i.update({
-            embeds: [emb],
-            files: [await renderBankCard(user, accLive)],
-            components: [row],
-          });
-        }
-
-        if (i.customId === 'eco_with') {
-          currentAction = 'withdraw';
-          busy = false;
-          transferState = { account: null, kind: null, targetId: null };
-
-          const emb = buildBankEmbed(
-            user,
-            '🟥 **Retrait** — choisis depuis quel compte retirer (la somme passera de la *banque* vers le *liquide* du compte choisi).'
-          );
-          const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('eco_with_courant')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🏦')
-              .setLabel('Compte courant'),
-            new ButtonBuilder()
-              .setCustomId('eco_with_entreprise')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🏢')
-              .setLabel('Compte entreprise'),
-            new ButtonBuilder()
-              .setCustomId('eco_cancel')
-              .setStyle(ButtonStyle.Danger)
-              .setEmoji('❌')
-              .setLabel('Annuler')
-          );
-
-          return i.update({
-            embeds: [emb],
-            files: [await renderBankCard(user, accLive)],
-            components: [row],
-          });
-        }
-
-        if (i.customId === 'eco_virement') {
-          currentAction = 'transfer';
-          busy = false;
-          transferState = { account: null, kind: null, targetId: null };
-
-          const emb = buildBankEmbed(
-            user,
-            '💸 **Virement** — étape 1 : choisis le compte à débiter.'
-          );
-          const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId('eco_tr_account')
-              .setPlaceholder('Compte à débiter…')
-              .addOptions(
-                {
-                  label: 'Compte courant',
-                  value: 'courant',
-                  emoji: '🏦',
-                  description: 'Virement depuis ton compte courant',
-                },
-                {
-                  label: 'Compte entreprise',
-                  value: 'entreprise',
-                  emoji: '🏢',
-                  description: 'Virement depuis ton compte entreprise',
-                }
-              )
-          );
-
-          return i.update({
-            embeds: [emb],
-            files: [await renderBankCard(user, accLive)],
-            components: [row],
-          });
-        }
-
-        if (i.customId === 'eco_cancel') {
-          currentAction = null;
-          busy = false;
-          transferState = { account: null, kind: null, targetId: null };
-          return i.update({
-            embeds: [
-              buildBankEmbed(
-                user,
-                '❎ Action annulée. Utilise les boutons pour relancer une opération.'
-              ),
-            ],
-            files: [await renderBankCard(user, accLive)],
-            components: buildMainButtons(),
-          });
-        }
-
-        // ============= DÉPÔT / RETRAIT (compte choisi) =============
-        if (
-          ['eco_dep_courant', 'eco_dep_entreprise'].includes(i.customId) ||
-          ['eco_with_courant', 'eco_with_entreprise'].includes(i.customId)
-        ) {
-          if (!currentAction || busy) return;
-          busy = true;
-
-          const isCourant =
-            i.customId === 'eco_dep_courant' ||
-            i.customId === 'eco_with_courant';
-          const accountLabel = isCourant
-            ? 'compte courant'
-            : 'compte entreprise';
-
-          const ask = await i.update({
-            embeds: [
-              buildBankEmbed(
-                user,
-                `✍️ Entre maintenant le **montant** à ${
-                  currentAction === 'deposit' ? 'déposer' : 'retirer'
-                } sur ton **${accountLabel}** en envoyant un message dans le salon (ex: \`250\`).`
-              ),
-            ],
-            files: [await renderBankCard(user, accLive)],
-            components: [],
-          });
-
-          // On récupère UN message numérique
-          const collected = await ask.channel
-            .awaitMessages({
-              max: 1,
-              time: 60_000,
-              filter: (m) => m.author.id === user.id,
-            })
-            .catch(() => null);
-
-          const msgAmount = collected?.first();
-          if (!msgAmount) {
-            busy = false;
-            return ask.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '⌛ Temps écoulé. Utilise les boutons pour relancer une opération.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          const amount = Number(msgAmount.content.replace(',', '.'));
-          msgAmount.delete().catch(() => {});
-          if (!amount || amount <= 0) {
-            busy = false;
-            return ask.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '❌ Montant invalide. Utilise les boutons pour recommencer.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          // On récupère de nouveau l’état compte à jour
-          const acc2 = getOrCreateAccount(user.id);
-
-          if (currentAction === 'deposit') {
-            if (isCourant) {
-              if ((acc2.courant.liquide || 0) < amount) {
-                busy = false;
-                return ask.edit({
-                  embeds: [
-                    buildBankEmbed(
-                      user,
-                      `❌ Fonds insuffisants en **liquide courant** (solde: ${fmt(
-                        acc2.courant.liquide || 0
-                      )}).`
-                    ),
-                  ],
-                  files: [await renderBankCard(user, acc2)],
-                  components: buildMainButtons(),
-                });
-              }
-              acc2.courant.liquide -= amount;
-              acc2.courant.banque += amount;
-            } else {
-              if ((acc2.entreprise.liquide || 0) < amount) {
-                busy = false;
-                return ask.edit({
-                  embeds: [
-                    buildBankEmbed(
-                      user,
-                      `❌ Fonds insuffisants en **liquide entreprise** (solde: ${fmt(
-                        acc2.entreprise.liquide || 0
-                      )}).`
-                    ),
-                  ],
-                  files: [await renderBankCard(user, acc2)],
-                  components: buildMainButtons(),
-                });
-              }
-              acc2.entreprise.liquide -= amount;
-              acc2.entreprise.banque += amount;
-            }
-          } else if (currentAction === 'withdraw') {
-            if (isCourant) {
-              if ((acc2.courant.banque || 0) < amount) {
-                busy = false;
-                return ask.edit({
-                  embeds: [
-                    buildBankEmbed(
-                      user,
-                      `❌ Fonds insuffisants en **banque courant** (solde: ${fmt(
-                        acc2.courant.banque || 0
-                      )}).`
-                    ),
-                  ],
-                  files: [await renderBankCard(user, acc2)],
-                  components: buildMainButtons(),
-                });
-              }
-              acc2.courant.banque -= amount;
-              acc2.courant.liquide += amount;
-            } else {
-              if ((acc2.entreprise.banque || 0) < amount) {
-                busy = false;
-                return ask.edit({
-                  embeds: [
-                    buildBankEmbed(
-                      user,
-                      `❌ Fonds insuffisants en **banque entreprise** (solde: ${fmt(
-                        acc2.entreprise.banque || 0
-                      )}).`
-                    ),
-                  ],
-                  files: [await renderBankCard(user, acc2)],
-                  components: buildMainButtons(),
-                });
-              }
-              acc2.entreprise.banque -= amount;
-              acc2.entreprise.liquide += amount;
-            }
-          }
-
-          updateAccount(user.id, acc2);
-          busy = false;
-          currentAction = null;
-
-          return ask.edit({
-            embeds: [
-              buildBankEmbed(
-                user,
-                `✅ ${
-                  amount > 0 ? fmt(amount) : ''
-                } ${
-                  currentAction === 'withdraw' ? 'retirés' : 'déposés'
-                } sur ton **${accountLabel}**.`
-              ),
-            ],
-            files: [await renderBankCard(user, acc2)],
-            components: buildMainButtons(),
-          });
-        }
-
-        // ============= VIREMENT — SELECT COMPTE =============
-        if (i.customId === 'eco_tr_account') {
-          if (currentAction !== 'transfer' || busy) return;
-          const val = i.values[0]; // 'courant' | 'entreprise'
-          transferState.account = val;
-
-          const emb = buildBankEmbed(
-            user,
-            '💸 **Virement** — étape 2 : choisis le type de fonds à débiter.'
-          );
-          const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId('eco_tr_kind')
-              .setPlaceholder('Type de fonds…')
-              .addOptions(
-                {
-                  label: 'Liquide',
-                  value: 'liquide',
-                  emoji: '💵',
-                  description: 'Virement depuis le liquide de ce compte',
-                },
-                {
-                  label: 'Banque',
-                  value: 'banque',
-                  emoji: '🏦',
-                  description: 'Virement depuis la banque de ce compte',
-                }
-              )
-          );
-
-          return i.update({
-            embeds: [emb],
-            files: [await renderBankCard(user, accLive)],
-            components: [row],
-          });
-        }
-
-        // ============= VIREMENT — SELECT KIND =============
-        if (i.customId === 'eco_tr_kind') {
-          if (currentAction !== 'transfer' || busy) return;
-          const val = i.values[0]; // 'liquide' | 'banque'
-          transferState.kind = val;
-
-          const emb = buildBankEmbed(
-            user,
-            '💸 **Virement** — étape 3 : mentionne maintenant le joueur à créditer (ex: `@Nom`).'
-          );
-
-          await i.update({
-            embeds: [emb],
-            files: [await renderBankCard(user, accLive)],
-            components: [],
-          });
-
-          // On attend une mention
-          const collected = await msg.channel
-            .awaitMessages({
-              max: 1,
-              time: 60_000,
-              filter: (m) => m.author.id === user.id,
-            })
-            .catch(() => null);
-
-          const mention = collected?.first();
-          if (!mention) {
-            return msg.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '⌛ Temps écoulé. Utilise les boutons pour relancer le virement.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          const target = mention.mentions.users.first();
-          mention.delete().catch(() => {});
-          if (!target || target.bot) {
-            return msg.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '❌ Mention invalide. Utilise les boutons pour relancer le virement.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          transferState.targetId = target.id;
-
-          const emb2 = buildBankEmbed(
-            user,
-            `💸 **Virement** — étape 4 : envoie maintenant le **montant** à virer vers ${target} (ex: \`500\`).`
-          );
-
-          await msg.edit({
-            embeds: [emb2],
-            files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-            components: [],
-          });
-
-          const collected2 = await msg.channel
-            .awaitMessages({
-              max: 1,
-              time: 60_000,
-              filter: (m) => m.author.id === user.id,
-            })
-            .catch(() => null);
-
-          const msgAmount = collected2?.first();
-          if (!msgAmount) {
-            return msg.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '⌛ Temps écoulé. Utilise les boutons pour relancer le virement.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          const amount = Number(msgAmount.content.replace(',', '.'));
-          msgAmount.delete().catch(() => {});
-          if (!amount || amount <= 0) {
-            return msg.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  '❌ Montant invalide. Utilise les boutons pour relancer le virement.'
-                ),
-              ],
-              files: [await renderBankCard(user, getOrCreateAccount(user.id))],
-              components: buildMainButtons(),
-            });
-          }
-
-          // On applique le virement
-          const sender = getOrCreateAccount(user.id);
-          const recv = getOrCreateAccount(transferState.targetId);
-
-          // determine champ source
-          const srcField =
-            transferState.account === 'courant'
-              ? transferState.kind === 'liquide'
-                ? 'courant_liquide'
-                : 'courant_banque'
-              : transferState.kind === 'liquide'
-              ? 'entreprise_liquide'
-              : 'entreprise_banque';
-
-          const dstField = 'courant_banque'; // par défaut : banque du compte courant du destinataire
-
-          const sVal = getBalanceRef(sender, srcField);
-          const rVal = getBalanceRef(recv, dstField);
-          if (sVal < amount) {
-            return msg.edit({
-              embeds: [
-                buildBankEmbed(
-                  user,
-                  `❌ Fonds insuffisants dans \`${srcField}\` (solde: ${fmt(
-                    sVal
-                  )}).`
-                ),
-              ],
-              files: [await renderBankCard(user, sender)],
-              components: buildMainButtons(),
-            });
-          }
-
-          setBalanceRef(sender, srcField, sVal - amount);
-          setBalanceRef(recv, dstField, rVal + amount);
-          updateAccount(user.id, sender);
-          updateAccount(transferState.targetId, recv);
-
-          currentAction = null;
-          transferState = { account: null, kind: null, targetId: null };
-
-          return msg.edit({
-            embeds: [
-              buildBankEmbed(
-                user,
-                `✅ Virement de **${fmt(
-                  amount
-                )}** effectué depuis \`${srcField}\` vers <@${recv.userId ||
-                  transferState.targetId}>\`(courant_banque)\`.`
-              ),
-            ],
-            files: [await renderBankCard(user, sender)],
-            components: buildMainButtons(),
-          });
-        }
-      });
-
-      collector.on('end', async () => {
+      collector.on("collect", async (btn) => {
         try {
-          await msg.edit({ components: [] });
-        } catch {}
+          // RESET DU FLOW
+          if (
+            btn.customId === "eco_cancel_flow" ||
+            btn.customId.endsWith("_cancel")
+          ) {
+            currentFlow = null;
+            currentAccount = null;
+            return btn.update({
+              content:
+                "💳 Interface de compte bancaire remise à zéro.\nUtilise les boutons pour **déposer**, **retirer** ou **faire un virement**.",
+              components: [mainButtonsRow()],
+            });
+          }
+
+          // 1) Choix Déposer / Retirer
+          if (btn.customId === "eco_dep") {
+            currentFlow = "dep";
+            currentAccount = null;
+            return btn.update({
+              content:
+                "🏦 **Dépôt d’argent** — choisis le **compte à créditer**.\nL’argent sera pris dans le **liquide** du compte choisi et transféré vers la **banque**.",
+              components: [accountChoiceRow("dep")],
+            });
+          }
+
+          if (btn.customId === "eco_with") {
+            currentFlow = "with";
+            currentAccount = null;
+            return btn.update({
+              content:
+                "💰 **Retrait d’argent** — choisis le **compte à débiter**.\nL’argent sera pris dans la **banque** du compte choisi et versé en **liquide**.",
+              components: [accountChoiceRow("with")],
+            });
+          }
+
+          // (optionnel) virement pour l'instant = placeholder
+          if (btn.customId === "eco_transfer") {
+            return btn.update({
+              content:
+                "💸 Le système de virement via ce panel sera ajouté prochainement.\nEn attendant, tu peux utiliser `/economy paye`.",
+              components: [mainButtonsRow()],
+            });
+          }
+
+          // 2) Choix compte pour dépôt / retrait
+          if (btn.customId === "eco_dep_courant") currentAccount = "courant";
+          if (btn.customId === "eco_dep_entreprise")
+            currentAccount = "entreprise";
+          if (btn.customId === "eco_with_courant") currentAccount = "courant";
+          if (btn.customId === "eco_with_entreprise")
+            currentAccount = "entreprise";
+
+          if (currentFlow && currentAccount && btn.customId.startsWith("eco_")) {
+            // On demande le montant via message classique
+            const actionLabel =
+              currentFlow === "dep" ? "à **déposer**" : "à **retirer**";
+            const compteLabel =
+              currentAccount === "courant"
+                ? "compte **courant**"
+                : "compte **entreprise**";
+
+            await btn.update({
+              content: `✏️ Indique maintenant le **montant ${actionLabel}** pour ton ${compteLabel}.\nEnvoie simplement un message avec un nombre (ex: \`250\`).`,
+              components: [cancelRow()],
+            });
+
+            const msgCollector = msg.channel.createMessageCollector({
+              time: 60_000,
+              max: 1,
+              filter: (m) => m.author.id === user.id,
+            });
+
+            msgCollector.on("collect", async (m) => {
+              const raw = m.content.replace(",", ".").trim();
+              const amount = Number(raw);
+              if (!Number.isFinite(amount) || amount <= 0) {
+                await msg.edit({
+                  content:
+                    "❌ Montant invalide. Opération annulée. Réessaie avec un nombre positif.",
+                  components: [mainButtonsRow()],
+                });
+                return;
+              }
+
+              // on récupère le compte à jour
+              acc = getOrCreateAccount(user.id);
+
+              if (currentFlow === "dep") {
+                // dépôt : liquide -> banque
+                if (currentAccount === "courant") {
+                  const liq = acc.courant.liquide || 0;
+                  if (liq < amount) {
+                    await msg.edit({
+                      content: `❌ Fonds insuffisants en **liquide courant** (solde: ${fmt(
+                        liq
+                      )}).`,
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
+                  acc.courant.liquide = liq - amount;
+                  acc.courant.banque =
+                    (acc.courant.banque || 0) + amount;
+                } else {
+                  const liq = acc.entreprise.liquide || 0;
+                  if (liq < amount) {
+                    await msg.edit({
+                      content: `❌ Fonds insuffisants en **liquide entreprise** (solde: ${fmt(
+                        liq
+                      )}).`,
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
+                  acc.entreprise.liquide = liq - amount;
+                  acc.entreprise.banque =
+                    (acc.entreprise.banque || 0) + amount;
+                }
+              } else if (currentFlow === "with") {
+                // retrait : banque -> liquide
+                if (currentAccount === "courant") {
+                  const ban = acc.courant.banque || 0;
+                  if (ban < amount) {
+                    await msg.edit({
+                      content: `❌ Fonds insuffisants en **banque courant** (solde: ${fmt(
+                        ban
+                      )}).`,
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
+                  acc.courant.banque = ban - amount;
+                  acc.courant.liquide =
+                    (acc.courant.liquide || 0) + amount;
+                } else {
+                  const ban = acc.entreprise.banque || 0;
+                  if (ban < amount) {
+                    await msg.edit({
+                      content: `❌ Fonds insuffisants en **banque entreprise** (solde: ${fmt(
+                        ban
+                      )}).`,
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
+                  acc.entreprise.banque = ban - amount;
+                  acc.entreprise.liquide =
+                    (acc.entreprise.liquide || 0) + amount;
+                }
+              }
+
+              // sauvegarde + re-rendu image
+              updateAccount(user.id, acc);
+              const newFile = await renderBankImage(
+                acc,
+                interaction.member?.displayName || user.username
+              );
+
+              const actionDone =
+                currentFlow === "dep" ? "déposé" : "retiré";
+
+              await msg.edit({
+                content: `✅ Tu as **${actionDone} ${fmt(
+                  amount
+                )}** sur ton ${currentAccount === "courant"
+                  ? "compte courant"
+                  : "compte entreprise"
+                }.\nUtilise à nouveau les boutons pour une autre opération.`,
+                files: [newFile],
+                components: [mainButtonsRow()],
+              });
+
+              // on nettoie le message de saisie de l’utilisateur
+              setTimeout(() => m.delete().catch(() => {}), 2000);
+
+              currentFlow = null;
+              currentAccount = null;
+            });
+
+            msgCollector.on("end", async (collected) => {
+              if (collected.size === 0) {
+                // timeout sans réponse
+                await msg.edit({
+                  content:
+                    "⌛ Temps écoulé sans montant. Interface remise à zéro.",
+                  components: [mainButtonsRow()],
+                });
+                currentFlow = null;
+                currentAccount = null;
+              }
+            });
+
+            return;
+          }
+        } catch (err) {
+          console.error("Erreur interaction economy:", err);
+          if (!btn.replied && !btn.deferred) {
+            await btn.reply({
+              content: "❌ Erreur pendant l’opération.",
+              ephemeral: false,
+            });
+          }
+        }
+      });
+
+      collector.on("end", async () => {
+        // On ne supprime pas les boutons pour que le message reste propre,
+        // mais si tu veux les griser après 24h tu peux éditer ici.
       });
 
       return;
     }
 
-    // ──────────────────────────────────────────────────────
-    // /economy voircompte [target] — image seule
-    if (sub === 'voircompte') {
-      const user = interaction.options.getUser('target');
+    // ─────────────────────────────────────
+    // /economy voircompte
+    if (sub === "voircompte") {
+      const user = interaction.options.getUser("target");
       const acc = getOrCreateAccount(user.id);
 
-      const file = await renderBankCard(user, acc);
-      const emb = new EmbedBuilder()
-        .setColor(0x1f2a35)
-        .setTitle(`🏦 Carte bancaire de ${user.username}`)
-        .setDescription(
-          `📊 Résumé rapide :\n` +
-            `• Courant — ${fmt(
-              (acc.courant.liquide || 0) + (acc.courant.banque || 0)
-            )}\n` +
-            `• Entreprise — ${fmt(
-              (acc.entreprise.liquide || 0) + (acc.entreprise.banque || 0)
-            )}`
-        )
-        .setImage('attachment://compte_banque.png')
-        .setFooter(footer);
+      const file = await renderBankImage(
+        acc,
+        interaction.guild?.members.cache.get(user.id)?.displayName ||
+          user.username
+      );
 
-      return interaction.reply({ embeds: [emb], files: [file] });
-    }
-
-    // ──────────────────────────────────────────────────────
-    // /economy compte — ancien système (embed texte)
-    if (sub === 'compte') {
-      const type = interaction.options.getString('type');
-      const user = interaction.options.getUser('target') || interaction.user;
-      const acc = getOrCreateAccount(user.id);
-
-      if (type === 'courant')
-        return interaction.reply({ embeds: [embedCourant(user, acc)] });
-      if (type === 'entreprise')
-        return interaction.reply({ embeds: [embedEntreprise(user, acc)] });
-      if (type === 'epargne')
-        return interaction.reply({ embeds: [embedEpargne(user, acc)] });
       return interaction.reply({
-        content: 'Type de compte invalide.',
-        ephemeral: true,
+        content: `💳 **Compte de ${user}**`,
+        files: [file],
       });
     }
 
-    // /economy solde — ancien
-    if (sub === 'solde') {
-      const type = interaction.options.getString('type');
+    // ─────────────────────────────────────
+    // /economy solde (inchangé)
+    if (sub === "solde") {
+      const type = interaction.options.getString("type");
       const acc = getOrCreateAccount(interaction.user.id);
       let val = 0;
-      if (type === 'courant')
+      if (type === "courant")
         val = (acc.courant.liquide || 0) + (acc.courant.banque || 0);
-      else if (type === 'entreprise')
+      else if (type === "entreprise")
         val =
           (acc.entreprise.liquide || 0) + (acc.entreprise.banque || 0);
-      else if (type === 'epargne') val = acc.epargne || 0;
+      else if (type === "epargne") val = acc.epargne || 0;
       else
         return interaction.reply({
-          content: 'Type de compte invalide.',
+          content: "Type de compte invalide.",
           ephemeral: true,
         });
       return interaction.reply({
@@ -1000,22 +647,23 @@ module.exports = {
       });
     }
 
-    // /economy ajouterfonds — inchangé
-    if (sub === 'ajouterfonds') {
+    // ─────────────────────────────────────
+    // /economy ajouterfonds (banquier)  (inchangé)
+    if (sub === "ajouterfonds") {
       if (!requireBanker(interaction))
         return interaction.reply({
-          content: 'Commande réservée aux banquiers.',
+          content: "Commande réservée aux banquiers.",
           ephemeral: true,
         });
-      const user = interaction.options.getUser('target');
-      const dest = interaction.options.getString('destination');
-      const amount = interaction.options.getNumber('montant');
+      const user = interaction.options.getUser("target");
+      const dest = interaction.options.getString("destination");
+      const amount = interaction.options.getNumber("montant");
 
       const acc = getOrCreateAccount(user.id);
       const before = getBalanceRef(acc, dest);
       if (before === null)
         return interaction.reply({
-          content: 'Champ invalide.',
+          content: "Champ invalide.",
           ephemeral: true,
         });
 
@@ -1024,7 +672,7 @@ module.exports = {
 
       const emb = new EmbedBuilder()
         .setColor(0x27ae60)
-        .setTitle('💹 Ajout de fonds')
+        .setTitle("💹 Ajout de fonds")
         .setDescription(
           `👤 **Joueur :** ${user}\n` +
             `📍 **Champ :** \`${dest}\`\n` +
@@ -1043,22 +691,23 @@ module.exports = {
       return;
     }
 
-    // /economy retirerfonds — inchangé
-    if (sub === 'retirerfonds') {
+    // ─────────────────────────────────────
+    // /economy retirerfonds (banquier) (inchangé)
+    if (sub === "retirerfonds") {
       if (!requireBanker(interaction))
         return interaction.reply({
-          content: 'Commande réservée aux banquiers.',
+          content: "Commande réservée aux banquiers.",
           ephemeral: true,
         });
-      const user = interaction.options.getUser('target');
-      const src = interaction.options.getString('source');
-      const amount = interaction.options.getNumber('montant');
+      const user = interaction.options.getUser("target");
+      const src = interaction.options.getString("source");
+      const amount = interaction.options.getNumber("montant");
 
       const acc = getOrCreateAccount(user.id);
       const before = getBalanceRef(acc, src);
       if (before === null)
         return interaction.reply({
-          content: 'Champ invalide.',
+          content: "Champ invalide.",
           ephemeral: true,
         });
       if (before < amount)
@@ -1074,7 +723,7 @@ module.exports = {
 
       const emb = new EmbedBuilder()
         .setColor(0xe74c3c)
-        .setTitle('💸 Retrait de fonds')
+        .setTitle("💸 Retrait de fonds")
         .setDescription(
           `👤 **Joueur :** ${user}\n` +
             `📍 **Champ :** \`${src}\`\n` +
@@ -1093,12 +742,13 @@ module.exports = {
       return;
     }
 
-    // /economy paye — inchangé
-    if (sub === 'paye') {
-      const target = interaction.options.getUser('target');
-      const src = interaction.options.getString('source');
-      const dst = interaction.options.getString('destination');
-      const amount = interaction.options.getNumber('montant');
+    // ─────────────────────────────────────
+    // /economy paye (inchangé)
+    if (sub === "paye") {
+      const target = interaction.options.getUser("target");
+      const src = interaction.options.getString("source");
+      const dst = interaction.options.getString("destination");
+      const amount = interaction.options.getNumber("montant");
 
       const sender = getOrCreateAccount(interaction.user.id);
       const recv = getOrCreateAccount(target.id);
@@ -1107,7 +757,7 @@ module.exports = {
       const rVal = getBalanceRef(recv, dst);
       if (sVal === null || rVal === null)
         return interaction.reply({
-          content: 'Champ source/destination invalide.',
+          content: "Champ source/destination invalide.",
           ephemeral: true,
         });
       if (sVal < amount)
@@ -1123,7 +773,7 @@ module.exports = {
 
       const emb = new EmbedBuilder()
         .setColor(0x8e44ad)
-        .setTitle('🤝 Paiement effectué')
+        .setTitle("🤝 Paiement effectué")
         .setDescription(
           `👤 **De :** ${interaction.user} \`(${src})\`\n` +
             `👤 **À :** ${target} \`(${dst})\`\n` +
