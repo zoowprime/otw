@@ -19,9 +19,10 @@ const {
   getVitals,
   addItem,
   removeItem,
-  consumeItem, // ⬅️ IMPORT IMPORTANT
+  consumeItem,
 } = require('../data/inventoryStore');
 const catalog = require('../data/itemCatalog');
+const { getOrCreateAccount } = require('../economyData'); // ← pour récupérer le liquide courant
 
 // ─────────────────────────────────────────────────────────────
 // Canvas 1024×1024
@@ -39,32 +40,28 @@ const BAG_BG    = path.join(__dirname, '..', 'assets', 'inventory', 'Sacoche.png
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icones');
 
 // ─────────────────────────────────────────────────────────────
-// GRILLE (tu peux adapter ici facilement)
-// NOTE IMPORTANTE : les offsets de centrage sont par **colonne**
-// - COL_NUDGE[i] -> pousse toute la colonne i (0=col1) en px (positif = droite, négatif = gauche)
-// - ROW_NUDGE[j] -> pousse toute la ligne j (0=ligne1) en px (positif = bas, négatif = haut)
+// GRILLE
 const GRID = {
   COLS: 5,
   ROWS: 5,
   SLOT_W: 96,
   SLOT_H: 120,
-  LEFT: 170,  // origine X de la 1ère case
-  TOP:  220,  // origine Y de la 1ère case
-  XGAP: 35,   // espacement horizontal entre cases
-  YGAP: 28,   // espacement vertical entre cases
+  LEFT: 170,
+  TOP:  220,
+  XGAP: 35,
+  YGAP: 28,
 };
 
-// Micro-ajustements par colonne/ligne.
 const COL_NUDGE = [ 0, 0, 11, 40, 60 ];
 const ROW_NUDGE = [ 0, 0, 0, 0, 0 ];
 
-// Position du poids ACTUEL (le “/ 60.00” est déjà sur l’image)
+// Position du poids ACTUEL
 const WEIGHT_TEXT = { X: 473, Y: 165, FONT: '26px Arial', COLOR: '#EDEDED', SHADOW: 'rgba(0,0,0,0.75)' };
 
 // Polices overlays
 const FONTS = { NAME:'14px Arial', META:'12px Arial', COLOR:'#FFFFFF', SHADOW:'rgba(0,0,0,0.65)' };
 
-// DEBUG (active si besoin)
+// DEBUG
 const DEBUG_GRID  = false;
 const DEBUG_INDEX = false;
 
@@ -119,15 +116,12 @@ const labelIndex = (() => {
 function resolveIconId(rawId) {
   if (!rawId) return null;
 
-  // 1) id direct
   const direct = path.join(ICONS_DIR, `${rawId}.png`);
   if (fs.existsSync(direct)) return rawId;
 
-  // 2) via label
   const byLabel = labelIndex[strip(rawId)];
   if (byLabel && fs.existsSync(path.join(ICONS_DIR, `${byLabel}.png`))) return byLabel;
 
-  // 3) normalisation (ex: Arc amélioré → arc_ameliorer)
   const normalized = strip(rawId).replace(/amelior[eé]/, 'ameliorer');
   if (fs.existsSync(path.join(ICONS_DIR, `${normalized}.png`))) return normalized;
 
@@ -167,7 +161,21 @@ async function renderInventoryImage(userId) {
     }
   }
 
-  const items = Array.isArray(st.items) ? st.items.slice(0, GRID.COLS * GRID.ROWS) : [];
+  // Items "réels" + injection de l’argent liquide en premier slot
+  const rawItems = Array.isArray(st.items) ? st.items : [];
+  let items = rawItems.slice(0, GRID.COLS * GRID.ROWS);
+
+  try {
+    const acc = getOrCreateAccount(userId);
+    const cash = Math.floor(acc?.courant?.liquide || 0);
+    if (cash > 0) {
+      const cashItem = { name: 'argent_icone', quantity: cash };
+      items = [cashItem, ...rawItems].slice(0, GRID.COLS * GRID.ROWS);
+    }
+  } catch {
+    // si economyData plante, on continue sans l’argent
+  }
+
   for (let i = 0; i < items.length; i++) {
     const it  = items[i];
     const raw = it.name || it.id;
@@ -272,7 +280,6 @@ module.exports = {
 
     const { emb, file } = await buildEmbedWithImage(userId, displayName);
 
-    // envoi + menu d’action
     await interaction.reply({
       embeds: [emb],
       files: file ? [file] : [],
@@ -281,13 +288,11 @@ module.exports = {
 
     const msg = await interaction.fetchReply();
 
-    // collector principal (actions)
     const collector = msg.createMessageComponentCollector({
       componentType: ComponentType.StringSelect,
       time: 180_000
     });
 
-    // état pour "donner"
     let pendingGiveItemId = null;
 
     collector.on('collect', async (i) => {
@@ -295,7 +300,6 @@ module.exports = {
         return i.reply({ content: '⛔ Seul le propriétaire peut utiliser ce menu.', flags: MessageFlags.Ephemeral });
       }
 
-      // Sélection de l’action
       if (i.customId === 'inv_action') {
         const action = i.values[0];
         const st = getUser(userId);
@@ -342,7 +346,6 @@ module.exports = {
           });
         }
 
-        // action === 'give'
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId('inv_give_item')
@@ -355,7 +358,7 @@ module.exports = {
         });
       }
 
-      // 🔵 Utiliser — maintenant on CONSOMME vraiment l’item
+      // Utiliser = consommation réelle
       if (i.customId === 'inv_use_item') {
         const id = i.values[0];
 
@@ -399,13 +402,13 @@ module.exports = {
         });
       }
 
-      // Jeter — retrait réel + re-render
+      // Jeter
       if (i.customId === 'inv_drop_item') {
         const id = i.values[0];
 
         try {
           removeItem(userId, id, 1);
-        } catch (e) {
+        } catch {
           return i.update({
             embeds: [ new EmbedBuilder().setColor(0xe74c3c).setDescription(`❌ Impossible de jeter **${niceName(id)}**.`) ],
             components: [buildActionMenu()]
@@ -422,7 +425,7 @@ module.exports = {
         });
       }
 
-      // Donner — on mémorise l’item, puis mention de la cible
+      // Donner
       if (i.customId === 'inv_give_item') {
         pendingGiveItemId = i.values[0];
 
@@ -437,7 +440,6 @@ module.exports = {
       }
     });
 
-    // Collector pour les mentions (donner)
     const msgCollector = msg.channel.createMessageCollector({
       time: 180_000,
       filter: m => m.author.id === userId
@@ -455,7 +457,7 @@ module.exports = {
       try {
         removeItem(userId, pendingGiveItemId, 1);
         addItem(target.id, pendingGiveItemId, 1);
-      } catch (e) {
+      } catch {
         await m.reply({ content: '❌ Transfert impossible.', allowedMentions: { users: [] } }).catch(()=>{});
         pendingGiveItemId = null;
         return;
