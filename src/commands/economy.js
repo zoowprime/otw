@@ -138,7 +138,6 @@ async function getBankBaseImage() {
 }
 
 // Coordonnées des textes sur ton template 1024x1024
-// (tu pourras affiner X/Y si tu veux que ce soit parfaitement calé)
 const COORDS = {
   courantBanque: { x: 260, y: 355 },
   courantLiquide: { x: 260, y: 410 },
@@ -158,7 +157,6 @@ async function renderBankImage(acc, ownerName) {
   ctx.font = '30px "Times New Roman"';
   ctx.textAlign = "left";
 
-  // montants
   const cb = fmt(acc.courant.banque || 0);
   const cl = fmt(acc.courant.liquide || 0);
   const eb = fmt(acc.entreprise.banque || 0);
@@ -169,12 +167,21 @@ async function renderBankImage(acc, ownerName) {
   ctx.fillText(eb, COORDS.entrepriseBanque.x, COORDS.entrepriseBanque.y);
   ctx.fillText(el, COORDS.entrepriseLiquide.x, COORDS.entrepriseLiquide.y);
 
-  // propriétaire
   ctx.font = '32px "Times New Roman"';
   ctx.fillText(ownerName, COORDS.owner.x, COORDS.owner.y);
 
   const buffer = canvas.toBuffer("image/png");
   return new AttachmentBuilder(buffer, { name: "compte_banque.png" });
+}
+
+// Embed panel principal (utilise l’attachment compte_banque.png)
+function buildPanelEmbed(description) {
+  return new EmbedBuilder()
+    .setColor(0x1abc9c)
+    .setTitle("💳 Compte bancaire")
+    .setDescription(description)
+    .setImage("attachment://compte_banque.png")
+    .setFooter(footer);
 }
 
 // ────────────────────────────────────────────────
@@ -201,7 +208,6 @@ function mainButtonsRow() {
 }
 
 function accountChoiceRow(prefix) {
-  // prefix = 'dep' ou 'with'
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`eco_${prefix}_courant`)
@@ -260,7 +266,7 @@ module.exports = {
         )
     )
 
-    // /economy solde (raccourci numérique)
+    // /economy solde
     .addSubcommand((sc) =>
       sc
         .setName("solde")
@@ -368,28 +374,29 @@ module.exports = {
         interaction.member?.displayName || user.username
       );
 
+      const panelEmbed = buildPanelEmbed(
+        "💳 **Interface de compte bancaire.**\nUtilise les boutons ci-dessous pour **déposer** ou **retirer** de l’argent.\n*(Seul le propriétaire du message peut interagir.)*"
+      );
+
       const msg = await interaction.reply({
-        content:
-          "💳 **Interface de compte bancaire.** Utilise les boutons ci-dessous pour déposer / retirer de l’argent.\n*(Seul le propriétaire du message peut interagir.)*",
+        embeds: [panelEmbed],
         files: [file],
         components: [mainButtonsRow()],
         fetchReply: true,
       });
 
-      // état local pour ce message
       let currentFlow = null; // 'dep' ou 'with'
       let currentAccount = null; // 'courant' ou 'entreprise'
 
-      // Collector de boutons, owner-only, SANS timeout court
       const collector = msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
-        time: 24 * 60 * 60 * 1000, // 24h
+        time: 24 * 60 * 60 * 1000,
         filter: (i) => i.user.id === user.id && i.message.id === msg.id,
       });
 
       collector.on("collect", async (btn) => {
         try {
-          // RESET DU FLOW
+          // Reset du flow
           if (
             btn.customId === "eco_cancel_flow" ||
             btn.customId.endsWith("_cancel")
@@ -397,8 +404,11 @@ module.exports = {
             currentFlow = null;
             currentAccount = null;
             return btn.update({
-              content:
-                "💳 Interface de compte bancaire remise à zéro.\nUtilise les boutons pour **déposer**, **retirer** ou **faire un virement**.",
+              embeds: [
+                buildPanelEmbed(
+                  "💳 Interface de compte bancaire remise à zéro.\nUtilise les boutons pour **déposer**, **retirer** ou **faire un virement**."
+                ),
+              ],
               components: [mainButtonsRow()],
             });
           }
@@ -408,8 +418,11 @@ module.exports = {
             currentFlow = "dep";
             currentAccount = null;
             return btn.update({
-              content:
-                "🏦 **Dépôt d’argent** — choisis le **compte à créditer**.\nL’argent sera pris dans le **liquide** du compte choisi et transféré vers la **banque**.",
+              embeds: [
+                buildPanelEmbed(
+                  "🏦 **Dépôt d’argent**\nChoisis le **compte à créditer**.\nL’argent sera pris dans le **liquide** et envoyé vers la **banque**."
+                ),
+              ],
               components: [accountChoiceRow("dep")],
             });
           }
@@ -418,17 +431,23 @@ module.exports = {
             currentFlow = "with";
             currentAccount = null;
             return btn.update({
-              content:
-                "💰 **Retrait d’argent** — choisis le **compte à débiter**.\nL’argent sera pris dans la **banque** du compte choisi et versé en **liquide**.",
+              embeds: [
+                buildPanelEmbed(
+                  "💰 **Retrait d’argent**\nChoisis le **compte à débiter**.\nL’argent sera pris de la **banque** et versé en **liquide**."
+                ),
+              ],
               components: [accountChoiceRow("with")],
             });
           }
 
-          // (optionnel) virement pour l'instant = placeholder
+          // virement : placeholder pour l’instant
           if (btn.customId === "eco_transfer") {
             return btn.update({
-              content:
-                "💸 Le système de virement via ce panel sera ajouté prochainement.\nEn attendant, tu peux utiliser `/economy paye`.",
+              embeds: [
+                buildPanelEmbed(
+                  "💸 Le système de virement via ce panel sera ajouté plus tard.\nEn attendant, utilise la commande `/economy paye` pour payer un joueur."
+                ),
+              ],
               components: [mainButtonsRow()],
             });
           }
@@ -442,7 +461,6 @@ module.exports = {
             currentAccount = "entreprise";
 
           if (currentFlow && currentAccount && btn.customId.startsWith("eco_")) {
-            // On demande le montant via message classique
             const actionLabel =
               currentFlow === "dep" ? "à **déposer**" : "à **retirer**";
             const compteLabel =
@@ -451,7 +469,11 @@ module.exports = {
                 : "compte **entreprise**";
 
             await btn.update({
-              content: `✏️ Indique maintenant le **montant ${actionLabel}** pour ton ${compteLabel}.\nEnvoie simplement un message avec un nombre (ex: \`250\`).`,
+              embeds: [
+                buildPanelEmbed(
+                  `✏️ Indique maintenant le **montant ${actionLabel}** pour ton ${compteLabel}.\nEnvoie simplement un message avec un nombre (ex: \`250\`).`
+                ),
+              ],
               components: [cancelRow()],
             });
 
@@ -466,14 +488,16 @@ module.exports = {
               const amount = Number(raw);
               if (!Number.isFinite(amount) || amount <= 0) {
                 await msg.edit({
-                  content:
-                    "❌ Montant invalide. Opération annulée. Réessaie avec un nombre positif.",
+                  embeds: [
+                    buildPanelEmbed(
+                      "❌ Montant invalide. Opération annulée.\nRéessaie avec un nombre positif."
+                    ),
+                  ],
                   components: [mainButtonsRow()],
                 });
                 return;
               }
 
-              // on récupère le compte à jour
               acc = getOrCreateAccount(user.id);
 
               if (currentFlow === "dep") {
@@ -482,9 +506,13 @@ module.exports = {
                   const liq = acc.courant.liquide || 0;
                   if (liq < amount) {
                     await msg.edit({
-                      content: `❌ Fonds insuffisants en **liquide courant** (solde: ${fmt(
-                        liq
-                      )}).`,
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Fonds insuffisants en **liquide courant**.\nSolde actuel : ${fmt(
+                            liq
+                          )}.`
+                        ),
+                      ],
                       components: [mainButtonsRow()],
                     });
                     return;
@@ -496,9 +524,13 @@ module.exports = {
                   const liq = acc.entreprise.liquide || 0;
                   if (liq < amount) {
                     await msg.edit({
-                      content: `❌ Fonds insuffisants en **liquide entreprise** (solde: ${fmt(
-                        liq
-                      )}).`,
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Fonds insuffisants en **liquide entreprise**.\nSolde actuel : ${fmt(
+                            liq
+                          )}.`
+                        ),
+                      ],
                       components: [mainButtonsRow()],
                     });
                     return;
@@ -513,9 +545,13 @@ module.exports = {
                   const ban = acc.courant.banque || 0;
                   if (ban < amount) {
                     await msg.edit({
-                      content: `❌ Fonds insuffisants en **banque courant** (solde: ${fmt(
-                        ban
-                      )}).`,
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Fonds insuffisants en **banque courant**.\nSolde actuel : ${fmt(
+                            ban
+                          )}.`
+                        ),
+                      ],
                       components: [mainButtonsRow()],
                     });
                     return;
@@ -527,9 +563,13 @@ module.exports = {
                   const ban = acc.entreprise.banque || 0;
                   if (ban < amount) {
                     await msg.edit({
-                      content: `❌ Fonds insuffisants en **banque entreprise** (solde: ${fmt(
-                        ban
-                      )}).`,
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Fonds insuffisants en **banque entreprise**.\nSolde actuel : ${fmt(
+                            ban
+                          )}.`
+                        ),
+                      ],
                       components: [mainButtonsRow()],
                     });
                     return;
@@ -540,7 +580,6 @@ module.exports = {
                 }
               }
 
-              // sauvegarde + re-rendu image
               updateAccount(user.id, acc);
               const newFile = await renderBankImage(
                 acc,
@@ -551,17 +590,21 @@ module.exports = {
                 currentFlow === "dep" ? "déposé" : "retiré";
 
               await msg.edit({
-                content: `✅ Tu as **${actionDone} ${fmt(
-                  amount
-                )}** sur ton ${currentAccount === "courant"
-                  ? "compte courant"
-                  : "compte entreprise"
-                }.\nUtilise à nouveau les boutons pour une autre opération.`,
+                embeds: [
+                  buildPanelEmbed(
+                    `✅ Tu as **${actionDone} ${fmt(
+                      amount
+                    )}** sur ton ${
+                      currentAccount === "courant"
+                        ? "compte courant"
+                        : "compte entreprise"
+                    }.\nUtilise à nouveau les boutons pour une autre opération.`
+                  ),
+                ],
                 files: [newFile],
                 components: [mainButtonsRow()],
               });
 
-              // on nettoie le message de saisie de l’utilisateur
               setTimeout(() => m.delete().catch(() => {}), 2000);
 
               currentFlow = null;
@@ -570,10 +613,12 @@ module.exports = {
 
             msgCollector.on("end", async (collected) => {
               if (collected.size === 0) {
-                // timeout sans réponse
                 await msg.edit({
-                  content:
-                    "⌛ Temps écoulé sans montant. Interface remise à zéro.",
+                  embeds: [
+                    buildPanelEmbed(
+                      "⌛ Temps écoulé sans montant.\nInterface remise à zéro."
+                    ),
+                  ],
                   components: [mainButtonsRow()],
                 });
                 currentFlow = null;
@@ -595,15 +640,15 @@ module.exports = {
       });
 
       collector.on("end", async () => {
-        // On ne supprime pas les boutons pour que le message reste propre,
-        // mais si tu veux les griser après 24h tu peux éditer ici.
+        // Tu peux éventuellement griser les boutons ici si tu veux,
+        // pour l’instant on laisse tel quel.
       });
 
       return;
     }
 
     // ─────────────────────────────────────
-    // /economy voircompte
+    // /economy voircompte (consultation simple, inchangé en texte+image)
     if (sub === "voircompte") {
       const user = interaction.options.getUser("target");
       const acc = getOrCreateAccount(user.id);
@@ -648,7 +693,7 @@ module.exports = {
     }
 
     // ─────────────────────────────────────
-    // /economy ajouterfonds (banquier)  (inchangé)
+    // /economy ajouterfonds (banquier)
     if (sub === "ajouterfonds") {
       if (!requireBanker(interaction))
         return interaction.reply({
@@ -692,7 +737,7 @@ module.exports = {
     }
 
     // ─────────────────────────────────────
-    // /economy retirerfonds (banquier) (inchangé)
+    // /economy retirerfonds (banquier)
     if (sub === "retirerfonds") {
       if (!requireBanker(interaction))
         return interaction.reply({
