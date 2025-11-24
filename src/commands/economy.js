@@ -139,11 +139,11 @@ async function getBankBaseImage() {
 
 // Coordonnées des textes sur ton template 1024x1024
 const COORDS = {
-  courantBanque: { x: 260, y: 330 },
-  courantLiquide: { x: 260, y: 365 },
-  entrepriseBanque: { x: 755, y: 330 },
-  entrepriseLiquide: { x: 755, y: 3365 },
-  owner: { x: 250, y: 540 },
+  courantBanque: { x: 260, y: 325 },
+  courantLiquide: { x: 260, y: 400 },
+  entrepriseBanque: { x: 755, y: 325 },
+  entrepriseLiquide: { x: 755, y: 400 },
+  owner: { x: 220, y: 570 },
 };
 
 async function renderBankImage(acc, ownerName) {
