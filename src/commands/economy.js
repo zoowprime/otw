@@ -25,6 +25,8 @@ const fmt = (n) =>
   })} $`;
 const footer = { text: "Old Town Western" };
 
+const MAX_LIQUID = 5000; // plafond liquide courant & entreprise
+
 const accountTypes = [
   { name: "Courant", value: "courant" },
   { name: "Entreprise", value: "entreprise" },
@@ -38,6 +40,10 @@ const subAccountChoices = [
   { name: "Entreprise (Banque)", value: "entreprise_banque" },
   { name: "Épargne", value: "epargne" },
 ];
+
+function isLiquidField(choice) {
+  return choice === "courant_liquide" || choice === "entreprise_liquide";
+}
 
 function getBalanceRef(acc, choice) {
   switch (choice) {
@@ -174,7 +180,7 @@ async function renderBankImage(acc, ownerName) {
   return new AttachmentBuilder(buffer, { name: "compte_banque.png" });
 }
 
-// Embed panel principal (utilise l’attachment compte_banque.png)
+// Embed panel principal
 function buildPanelEmbed(description) {
   return new EmbedBuilder()
     .setColor(0x1abc9c)
@@ -440,7 +446,7 @@ module.exports = {
             });
           }
 
-          // virement : placeholder pour l’instant
+          // virement : placeholder
           if (btn.customId === "eco_transfer") {
             return btn.update({
               embeds: [
@@ -540,9 +546,10 @@ module.exports = {
                     (acc.entreprise.banque || 0) + amount;
                 }
               } else if (currentFlow === "with") {
-                // retrait : banque -> liquide
+                // retrait : banque -> liquide (→ CAP 5000)
                 if (currentAccount === "courant") {
                   const ban = acc.courant.banque || 0;
+                  const liq = acc.courant.liquide || 0;
                   if (ban < amount) {
                     await msg.edit({
                       embeds: [
@@ -556,11 +563,25 @@ module.exports = {
                     });
                     return;
                   }
+                  const newLiq = liq + amount;
+                  if (newLiq > MAX_LIQUID) {
+                    await msg.edit({
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Tu ne peux pas avoir plus de ${MAX_LIQUID}$ en **liquide courant**.\nSolde liquide actuel : ${fmt(
+                            liq
+                          )}.`
+                        ),
+                      ],
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
                   acc.courant.banque = ban - amount;
-                  acc.courant.liquide =
-                    (acc.courant.liquide || 0) + amount;
+                  acc.courant.liquide = newLiq;
                 } else {
                   const ban = acc.entreprise.banque || 0;
+                  const liq = acc.entreprise.liquide || 0;
                   if (ban < amount) {
                     await msg.edit({
                       embeds: [
@@ -574,9 +595,22 @@ module.exports = {
                     });
                     return;
                   }
+                  const newLiq = liq + amount;
+                  if (newLiq > MAX_LIQUID) {
+                    await msg.edit({
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Tu ne peux pas avoir plus de ${MAX_LIQUID}$ en **liquide entreprise**.\nSolde liquide actuel : ${fmt(
+                            liq
+                          )}.`
+                        ),
+                      ],
+                      components: [mainButtonsRow()],
+                    });
+                    return;
+                  }
                   acc.entreprise.banque = ban - amount;
-                  acc.entreprise.liquide =
-                    (acc.entreprise.liquide || 0) + amount;
+                  acc.entreprise.liquide = newLiq;
                 }
               }
 
@@ -640,15 +674,14 @@ module.exports = {
       });
 
       collector.on("end", async () => {
-        // Tu peux éventuellement griser les boutons ici si tu veux,
-        // pour l’instant on laisse tel quel.
+        // tu peux décider de désactiver les boutons ici si tu veux
       });
 
       return;
     }
 
     // ─────────────────────────────────────
-    // /economy voircompte (consultation simple, inchangé en texte+image)
+    // /economy voircompte
     if (sub === "voircompte") {
       const user = interaction.options.getUser("target");
       const acc = getOrCreateAccount(user.id);
@@ -666,7 +699,7 @@ module.exports = {
     }
 
     // ─────────────────────────────────────
-    // /economy solde (inchangé)
+    // /economy solde
     if (sub === "solde") {
       const type = interaction.options.getString("type");
       const acc = getOrCreateAccount(interaction.user.id);
@@ -711,6 +744,16 @@ module.exports = {
           content: "Champ invalide.",
           ephemeral: true,
         });
+
+      if (isLiquidField(dest)) {
+        const newVal = (before || 0) + amount;
+        if (newVal > MAX_LIQUID) {
+          return interaction.reply({
+            content: `❌ Ce joueur ne peut pas recevoir plus de liquide sur ce compte (plafond ${MAX_LIQUID}$).`,
+            ephemeral: true,
+          });
+        }
+      }
 
       setBalanceRef(acc, dest, before + amount);
       updateAccount(user.id, acc);
@@ -788,7 +831,7 @@ module.exports = {
     }
 
     // ─────────────────────────────────────
-    // /economy paye (inchangé)
+    // /economy paye
     if (sub === "paye") {
       const target = interaction.options.getUser("target");
       const src = interaction.options.getString("source");
@@ -810,6 +853,16 @@ module.exports = {
           content: `Fonds insuffisants dans \`${src}\`.`,
           ephemeral: true,
         });
+
+      if (isLiquidField(dst)) {
+        const newDst = (rVal || 0) + amount;
+        if (newDst > MAX_LIQUID) {
+          return interaction.reply({
+            content: `❌ Le destinataire ne peut pas recevoir plus de ${MAX_LIQUID}$ en liquide sur ce compte.`,
+            ephemeral: true,
+          });
+        }
+      }
 
       setBalanceRef(sender, src, sVal - amount);
       setBalanceRef(recv, dst, rVal + amount);
