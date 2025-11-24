@@ -6,6 +6,7 @@ const path = require('path');
 
 const DB_FILE = path.join('/data', 'inventory.json');
 const catalog = require('./itemCatalog'); // { id: {weight, stackable, consumable, effect, ...}, ... }
+const { getOrCreateAccount } = require('../economyData'); // ← pour récupérer le liquide courant
 
 // ─────────────────────────────────────────────────────────────
 // I/O JSON
@@ -37,6 +38,10 @@ const DEFAULT_WEIGHT_MAX = 60.0;
 const HUNGER_DROP_PER_MIN  = 100 / 90;
 // soif 100 -> 0 en 60 min : 100/60 ≈ 1.666... % par minute
 const THIRST_DROP_PER_MIN  = 100 / 60;
+
+// argent liquide courant dans l’inventaire
+const CASH_ITEM_ID = 'argent_icone';
+const CASH_UNIT_WEIGHT = (catalog[CASH_ITEM_ID]?.weight ?? 0);
 
 // ─────────────────────────────────────────────────────────────
 // Normalisation d'état
@@ -73,19 +78,32 @@ function clamp0_100(x) {
 
 function getItemWeight(itemId) {
   const meta = catalog[itemId];
-  if (!meta) return 0; // Inconnu => 0kg pour ne pas “casser” les anciens items. (mets 1 si tu préfères)
+  if (!meta) return 0;
   return typeof meta.weight === 'number' ? meta.weight : 0;
 }
 
 function totalWeight(userOrId) {
   const state = typeof userOrId === 'object' ? ensureState(userOrId) : getUser(userOrId);
   const items = Array.isArray(state.items) ? state.items : [];
-  return items.reduce((sum, it) => {
-    const id  = (it.id || it.name); // compat
+
+  // poids des items classiques
+  let sum = items.reduce((acc, it) => {
+    const id  = (it.id || it.name);
     const qty = typeof it.quantity === 'number' ? it.quantity :
                 (typeof it.qty === 'number' ? it.qty : 1);
-    return sum + getItemWeight(id) * qty;
+    return acc + getItemWeight(id) * qty;
   }, 0);
+
+  // + poids de l’argent liquide du compte courant
+  try {
+    const acc = getOrCreateAccount(state.user_id);
+    const cash = acc?.courant?.liquide || 0;
+    sum += cash * CASH_UNIT_WEIGHT;
+  } catch {
+    // si economyData n’est pas dispo pour une raison quelconque, on ignore le cash
+  }
+
+  return sum;
 }
 
 function canCarry(userIdOrState, addItemId, addQty = 1) {
@@ -135,7 +153,6 @@ function changeVitals(userId, { hungerDelta = 0, thirstDelta = 0 } = {}) {
 
   if (hungerDelta) {
     st.hunger = clamp0_100(st.hunger + hungerDelta);
-    // reset l’horloge côté faim pour éviter de redescendre instantanément
     st.lastHungerTs = t;
   }
   if (thirstDelta) {
@@ -174,7 +191,7 @@ function addItem(userId, itemId, qty = 1) {
 
   const q = Math.max(1, Number(qty) || 1);
 
-  // contrainte de poids (si l’item est connu du catalogue)
+  // contrainte de poids
   const meta = catalog[itemId];
   if (meta) {
     const wAdd = getItemWeight(itemId) * q;
@@ -226,7 +243,6 @@ function transferItem(fromId, toId, itemId, qty = 1) {
   if (!r1.ok) return r1;
   const r2 = addItem(toId, itemId, qty);
   if (!r2.ok) {
-    // rollback
     addItem(fromId, itemId, qty);
     return r2;
   }
@@ -239,11 +255,9 @@ function consumeItem(userId, itemId, qty = 1) {
   if (!meta) return { ok: false, reason: 'UNKNOWN_ITEM' };
   if (!meta.consumable) return { ok: false, reason: 'NOT_CONSUMABLE' };
 
-  // retirer l’item
   const r = removeItem(userId, itemId, q);
   if (!r.ok) return r;
 
-  // appliquer effets (par unité)
   const thirstDelta = Number(meta.effect?.thirstDelta || 0) * q;
   const hungerDelta = Number(meta.effect?.hungerDelta || 0) * q;
 
