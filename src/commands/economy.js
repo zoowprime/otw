@@ -23,7 +23,7 @@ const fmt = (n) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })} $`;
-const footer = { text: "otw" };
+const footer = { text: "Old Town Western" };
 
 const accountTypes = [
   { name: "Courant", value: "courant" },
@@ -139,11 +139,11 @@ async function getBankBaseImage() {
 
 // Coordonnées des textes sur ton template 1024x1024
 const COORDS = {
-  courantBanque: { x: 260, y: 310 },
-  courantLiquide: { x: 260, y: 355 },
-  entrepriseBanque: { x: 750, y: 310 },
-  entrepriseLiquide: { x: 750, y: 355 },
-  owner: { x: 230, y: 570 },
+  courantBanque: { x: 260, y: 330 },
+  courantLiquide: { x: 260, y: 365 },
+  entrepriseBanque: { x: 755, y: 330 },
+  entrepriseLiquide: { x: 755, y: 3365 },
+  owner: { x: 250, y: 540 },
 };
 
 async function renderBankImage(acc, ownerName) {
