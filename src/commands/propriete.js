@@ -35,6 +35,7 @@ const {
   addKeyholder,
   removeKeyholder,
   markRentPaid,
+  setProperty,
 } = require('../data/propertyStore');
 
 const { getOrCreateAccount, updateAccount } = require('../economyData');
@@ -63,8 +64,10 @@ const GRID = {
 const COL_NUDGE = [0, 0, 10, 30, 50];
 const ROW_NUDGE = [0, 0, 0, 0, 0];
 
-const OWNER_TEXT = { X: 230, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
+const OWNER_TEXT  = { X: 230, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
 const WEIGHT_TEXT = { X: 540, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
+const CASH_TEXT   = { X: 830, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
+
 const FONTS = { NAME: '14px Arial', META: '12px Arial', COLOR: '#FFFFFF', SHADOW: 'rgba(0,0,0,0.65)' };
 
 function getSlotRect(col, row) {
@@ -142,6 +145,14 @@ async function renderStorageImage(property, ownerDisplayName) {
   ctx.textAlign = 'center';
   ctx.fillText(`${w.toFixed(2)} kg`, WEIGHT_TEXT.X, WEIGHT_TEXT.Y);
 
+  // argent liquide dans le coffre
+  const cash = property.storage && typeof property.storage.cash === 'number'
+    ? property.storage.cash
+    : 0;
+  ctx.font = CASH_TEXT.FONT;
+  ctx.textAlign = 'center';
+  ctx.fillText(`${cash.toLocaleString('fr-FR')} $`, CASH_TEXT.X, CASH_TEXT.Y);
+
   // items
   const items = Array.isArray(property.storage.items)
     ? property.storage.items.slice(0, GRID.COLS * GRID.ROWS)
@@ -199,7 +210,7 @@ async function renderStorageImage(property, ownerDisplayName) {
 }
 
 // ──────────────────────────────────────────────
-// Helpers économie (loyer)
+// Helpers économie (loyer + argent liquide)
 
 function getBalanceRef(acc, choice) {
   switch (choice) {
@@ -264,6 +275,16 @@ function buildStorageButtons() {
       .setEmoji('📤')
       .setLabel('Retirer un item')
       .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('prop_storage_deposit_cash')
+      .setEmoji('💵')
+      .setLabel('Déposer argent')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('prop_storage_withdraw_cash')
+      .setEmoji('💸')
+      .setLabel('Retirer argent')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('prop_storage_close')
       .setEmoji('❌')
@@ -538,7 +559,7 @@ module.exports = {
           const emb = new EmbedBuilder()
             .setColor(0x1abc9c)
             .setTitle(`📦 Coffre de ${prop.name}`)
-            .setDescription('Utilise les boutons ci-dessous pour déposer ou retirer des items.')
+            .setDescription('Utilise les boutons ci-dessous pour déposer ou retirer des **items** ou de l’**argent liquide**.')
             .setImage('attachment://stockage_propriete.png')
             .setFooter(footer);
 
@@ -583,8 +604,8 @@ module.exports = {
           });
         }
 
+        // ── Dépôt d’items
         if (i.customId === 'prop_storage_deposit') {
-          // Déposer : on liste les items perso de l’utilisateur
           const inv = getUser(userId);
           const items = Array.isArray(inv.items) ? inv.items : [];
           if (!items.length) {
@@ -627,6 +648,7 @@ module.exports = {
           });
         }
 
+        // ── Retrait d’items
         if (i.customId === 'prop_storage_withdraw') {
           const items = Array.isArray(prop.storage.items) ? prop.storage.items : [];
           if (!items.length) {
@@ -668,6 +690,18 @@ module.exports = {
             components: [select],
             files: [],
           });
+        }
+
+        // ── Dépôt d’argent liquide
+        if (i.customId === 'prop_storage_deposit_cash') {
+          await handleCashDepositStep(i, userId, prop);
+          return;
+        }
+
+        // ── Retrait d’argent liquide
+        if (i.customId === 'prop_storage_withdraw_cash') {
+          await handleCashWithdrawStep(i, userId, prop);
+          return;
         }
 
         // Choix de l’item à déposer
@@ -852,7 +886,7 @@ module.exports = {
 
       const montant = prop.rentAmount;
 
-      const tenantAcc = getOrCreateAccount(userId);
+      const tenantAcc   = getOrCreateAccount(userId);
       const landlordAcc = getOrCreateAccount(prop.landlordId);
 
       const tenantBal = getBalanceRef(tenantAcc, 'courant_banque');
@@ -920,6 +954,10 @@ function describePropertyEmbed(p, userId, client) {
     ? `<t:${Math.floor(p.nextRentTs / 1000)}:R>`
     : 'Non défini';
 
+  const cash = p.storage && typeof p.storage.cash === 'number'
+    ? p.storage.cash
+    : 0;
+
   return new EmbedBuilder()
     .setColor(0x2980b9)
     .setTitle(`🏠 ${p.name}`)
@@ -927,7 +965,8 @@ function describePropertyEmbed(p, userId, client) {
       `• Type : **${p.type}**\n` +
       (p.location ? `• Localisation : ${p.location}\n` : '') +
       `• Statut : **${status}**\n` +
-      `• ID : \`${p.id}\``
+      `• ID : \`${p.id}\`\n` +
+      `• Argent dans le coffre : **${cash.toLocaleString('fr-FR')} $**`
     )
     .addFields(
       { name: 'Propriétaire', value: owner, inline: true },
@@ -950,7 +989,7 @@ async function resolveOwnerName(interaction, prop) {
   }
 }
 
-// Étape : saisir la quantité à déposer
+// Étape : saisir la quantité à déposer (item)
 async function handleDepositAmountStep(i, userId, prop, itemId) {
   await i.update({
     embeds: [
@@ -989,7 +1028,6 @@ async function handleDepositAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 1) check capacité coffre
     const check = canStoreItem(prop.id, itemId, qty);
     if (!check.ok && check.reason === 'OVERWEIGHT') {
       await i.message.edit({
@@ -1007,7 +1045,6 @@ async function handleDepositAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 2) retirer de l’inventaire joueur
     const r = removeItem(userId, itemId, qty);
     if (!r.ok) {
       await i.message.edit({
@@ -1022,10 +1059,8 @@ async function handleDepositAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 3) ajouter dans la propriété
     const r2 = addItemToProperty(prop.id, itemId, qty);
     if (!r2.ok) {
-      // rollback par sécurité
       addItem(userId, itemId, qty);
       await i.message.edit({
         embeds: [
@@ -1079,7 +1114,7 @@ async function handleDepositAmountStep(i, userId, prop, itemId) {
   });
 }
 
-// Étape : saisir la quantité à retirer
+// Étape : saisir la quantité à retirer (item)
 async function handleWithdrawAmountStep(i, userId, prop, itemId) {
   await i.update({
     embeds: [
@@ -1118,7 +1153,6 @@ async function handleWithdrawAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 1) vérifier capacité de l’inventaire joueur
     const can = canCarry(userId, itemId, qty);
     if (!can) {
       await i.message.edit({
@@ -1133,7 +1167,6 @@ async function handleWithdrawAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 2) retirer du coffre
     const r = removeItemFromProperty(prop.id, itemId, qty);
     if (!r.ok) {
       await i.message.edit({
@@ -1148,10 +1181,8 @@ async function handleWithdrawAmountStep(i, userId, prop, itemId) {
       return;
     }
 
-    // 3) ajouter au joueur
     const r2 = addItem(userId, itemId, qty);
     if (!r2.ok) {
-      // rollback coffre si jamais
       addItemToProperty(prop.id, itemId, qty);
       await i.message.edit({
         embeds: [
@@ -1197,6 +1228,243 @@ async function handleWithdrawAmountStep(i, userId, prop, itemId) {
               .setColor(0x95a5a6)
               .setTitle('📤 Retrait annulé')
               .setDescription('Aucun montant saisi, opération annulée.'),
+          ],
+          components: [buildStorageButtons()],
+        });
+      } catch {}
+    }
+  });
+}
+
+// Étape : dépôt d’argent liquide
+async function handleCashDepositStep(i, userId, prop) {
+  await i.update({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x1abc9c)
+        .setTitle(`💵 Déposer de l’argent — ${prop.name}`)
+        .setDescription(
+          'Envoie maintenant **la somme en dollars** à déposer dans le coffre (nombre entier, ex: `250`).\n\n' +
+          '_Cet argent sera prélevé de ton **liquide**._'
+        ),
+    ],
+    components: [],
+    files: [],
+  });
+
+  const channel = i.channel;
+  const msgCollector = channel.createMessageCollector({
+    time: 60_000,
+    max: 1,
+    filter: (m) => m.author.id === userId,
+  });
+
+  msgCollector.on('collect', async (m) => {
+    const raw = m.content.replace(',', '.').trim();
+    const amount = Math.floor(Number(raw));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await i.message.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle('Montant invalide')
+            .setDescription('Opération annulée. Utilise un nombre entier positif.'),
+        ],
+        components: [buildStorageButtons()],
+      });
+      return;
+    }
+
+    const acc = getOrCreateAccount(userId);
+    const liquide = acc.courant?.liquide ?? 0;
+
+    if (liquide < amount) {
+      await i.message.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle('Fonds insuffisants')
+            .setDescription(
+              `Tu n’as pas assez d’argent **liquide**.\n` +
+              `Montant demandé : ${amount.toLocaleString('fr-FR')} $\n` +
+              `Ton liquide actuel : ${liquide.toLocaleString('fr-FR')} $`
+            ),
+        ],
+        components: [buildStorageButtons()],
+      });
+      return;
+    }
+
+    // Débiter le liquide du joueur
+    if (!acc.courant) acc.courant = { liquide: 0, banque: 0 };
+    acc.courant.liquide = liquide - amount;
+    updateAccount(userId, acc);
+
+    // Créditer le coffre de la propriété
+    const fullProp = getProperty(prop.id);
+    if (!fullProp.storage) fullProp.storage = { items: [], weightMax: 120, cash: 0 };
+    if (typeof fullProp.storage.cash !== 'number') fullProp.storage.cash = 0;
+    fullProp.storage.cash += amount;
+    const updatedProp = setProperty(fullProp);
+
+    const ownerName = await resolveOwnerName(i, updatedProp);
+    const file = await renderStorageImage(updatedProp, ownerName);
+
+    await i.message.edit({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle(`📦 Coffre de ${updatedProp.name}`)
+          .setDescription(
+            `Tu as déposé **${amount.toLocaleString('fr-FR')} $** en liquide dans le coffre.\n` +
+            'Le coffre a été mis à jour.'
+          )
+          .setImage('attachment://stockage_propriete.png')
+          .setFooter(footer),
+      ],
+      files: [file],
+      components: [buildStorageButtons()],
+    });
+
+    setTimeout(() => m.delete().catch(() => {}), 2000);
+  });
+
+  msgCollector.on('end', async (collected) => {
+    if (collected.size === 0) {
+      try {
+        await i.message.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x95a5a6)
+              .setTitle('💵 Dépôt annulé')
+              .setDescription('Aucun montant saisi, dépôt d’argent annulé.'),
+          ],
+          components: [buildStorageButtons()],
+        });
+      } catch {}
+    }
+  });
+}
+
+// Étape : retrait d’argent liquide
+async function handleCashWithdrawStep(i, userId, prop) {
+  const fullProp = getProperty(prop.id);
+  const currentCash = fullProp.storage && typeof fullProp.storage.cash === 'number'
+    ? fullProp.storage.cash
+    : 0;
+
+  if (currentCash <= 0) {
+    return i.update({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xe67e22)
+          .setTitle(`💸 Retrait d’argent — ${prop.name}`)
+          .setDescription('Il n’y a **aucun argent liquide** dans ce coffre.'),
+      ],
+      components: [buildStorageButtons()],
+      files: [],
+    });
+  }
+
+  await i.update({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x1abc9c)
+        .setTitle(`💸 Retirer de l’argent — ${prop.name}`)
+        .setDescription(
+          `Il y a actuellement **${currentCash.toLocaleString('fr-FR')} $** dans ce coffre.\n\n` +
+          'Envoie maintenant **la somme en dollars** à retirer (nombre entier).'
+        ),
+    ],
+    components: [],
+    files: [],
+  });
+
+  const channel = i.channel;
+  const msgCollector = channel.createMessageCollector({
+    time: 60_000,
+    max: 1,
+    filter: (m) => m.author.id === userId,
+  });
+
+  msgCollector.on('collect', async (m) => {
+    const raw = m.content.replace(',', '.').trim();
+    const amount = Math.floor(Number(raw));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await i.message.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle('Montant invalide')
+            .setDescription('Opération annulée. Utilise un nombre entier positif.'),
+        ],
+        components: [buildStorageButtons()],
+      });
+      return;
+    }
+
+    const refreshedProp = getProperty(prop.id);
+    if (!refreshedProp.storage) refreshedProp.storage = { items: [], weightMax: 120, cash: 0 };
+    if (typeof refreshedProp.storage.cash !== 'number') refreshedProp.storage.cash = 0;
+
+    if (refreshedProp.storage.cash < amount) {
+      await i.message.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle('Fonds insuffisants dans le coffre')
+            .setDescription(
+              `Il n’y a pas assez d’argent dans ce coffre.\n` +
+              `Montant demandé : ${amount.toLocaleString('fr-FR')} $\n` +
+              `Montant disponible : ${refreshedProp.storage.cash.toLocaleString('fr-FR')} $`
+            ),
+        ],
+        components: [buildStorageButtons()],
+      });
+      return;
+    }
+
+    // Débiter le coffre
+    refreshedProp.storage.cash -= amount;
+    const updatedProp = setProperty(refreshedProp);
+
+    // Créditer le joueur en liquide
+    const acc = getOrCreateAccount(userId);
+    if (!acc.courant) acc.courant = { liquide: 0, banque: 0 };
+    acc.courant.liquide = (acc.courant.liquide ?? 0) + amount;
+    updateAccount(userId, acc);
+
+    const ownerName = await resolveOwnerName(i, updatedProp);
+    const file = await renderStorageImage(updatedProp, ownerName);
+
+    await i.message.edit({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle(`📦 Coffre de ${updatedProp.name}`)
+          .setDescription(
+            `Tu as retiré **${amount.toLocaleString('fr-FR')} $** en liquide du coffre.\n` +
+            'Le coffre a été mis à jour.'
+          )
+          .setImage('attachment://stockage_propriete.png')
+          .setFooter(footer),
+      ],
+      files: [file],
+      components: [buildStorageButtons()],
+    });
+
+    setTimeout(() => m.delete().catch(() => {}), 2000);
+  });
+
+  msgCollector.on('end', async (collected) => {
+    if (collected.size === 0) {
+      try {
+        await i.message.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x95a5a6)
+              .setTitle('💸 Retrait annulé')
+              .setDescription('Aucun montant saisi, retrait d’argent annulé.'),
           ],
           components: [buildStorageButtons()],
         });
