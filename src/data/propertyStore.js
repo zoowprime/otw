@@ -40,7 +40,7 @@ function getItemWeight(itemId) {
   return typeof meta.weight === 'number' ? meta.weight : 0;
 }
 
-function storageTotalWeight(storage) {
+function storageTotalWeight(storage = {}) {
   const items = Array.isArray(storage.items) ? storage.items : [];
   return items.reduce((sum, it) => {
     const id  = it.id || it.name;
@@ -78,9 +78,12 @@ function ensureProperty(raw, id) {
 
   // clés / stockage
   p.keyholders    = Array.isArray(p.keyholders) ? p.keyholders : [];
+
   p.storage       = p.storage && typeof p.storage === 'object' ? { ...p.storage } : {};
-  p.storage.items      = Array.isArray(p.storage.items) ? p.storage.items : [];
-  p.storage.weightMax  = typeof p.storage.weightMax === 'number' ? p.storage.weightMax : DEFAULT_STORAGE_MAX;
+  p.storage.items     = Array.isArray(p.storage.items) ? p.storage.items : [];
+  p.storage.weightMax = typeof p.storage.weightMax === 'number' ? p.storage.weightMax : DEFAULT_STORAGE_MAX;
+  // argent liquide dans le coffre
+  p.storage.cash      = typeof p.storage.cash === 'number' ? p.storage.cash : 0;
 
   return p;
 }
@@ -127,7 +130,7 @@ function userHasAccessToProperty(userId, prop) {
   if (!prop) return false;
   if (prop.ownerPlayerId === userId) return true;
   if (prop.tenantId === userId) return true;
-  if (Array.isArray(prop.keyholders) && p.keyholders.includes(userId)) return true;
+  if (Array.isArray(prop.keyholders) && prop.keyholders.includes(userId)) return true;
   return false;
 }
 
@@ -236,7 +239,10 @@ function wipeStorage(propertyId) {
   const raw = db[propertyId];
   if (!raw) return { ok: false, reason: 'PROP_NOT_FOUND' };
   const p = ensureProperty(raw, propertyId);
+
   p.storage.items = [];
+  p.storage.cash  = 0;
+
   db[propertyId] = p;
   saveDB(db);
   return { ok: true, property: p };
@@ -261,6 +267,7 @@ function resetPropertyToState(propertyId) {
 
   p.keyholders    = [];
   p.storage.items = [];
+  p.storage.cash  = 0;
 
   db[propertyId] = p;
   saveDB(db);
