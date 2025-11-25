@@ -21,6 +21,7 @@ const {
   getProperty,
   setProperty,
   getAllProperties,
+  wipeStorage,
 } = require('../data/propertyStore');
 
 const { getOrCreateAccount, updateAccount } = require('../economyData');
@@ -130,11 +131,10 @@ function findStatePropById(id) {
   return STATE_PROPERTIES.find(p => p.id === id) || null;
 }
 
-// Une propriété est dispo pour achat si aucune agence ne la possède encore.
+// Une propriété est dispo pour achat si aucune agence ou joueur ne la possède.
 function isStatePropAvailable(stateId) {
   const prop = getProperty(stateId);
   if (!prop) return true;
-  // si prop.agencyId ou prop.ownerPlayerId ou prop.tenantId sont présents => plus dispo
   if (prop.agencyId || prop.ownerPlayerId || prop.tenantId) return false;
   return true;
 }
@@ -175,23 +175,23 @@ function agencySummaryEmbed(agency) {
     .setColor(0x3498db)
     .setTitle(`🏢 ${agency.name}`)
     .setDescription(
-      `Type : **${agency.type}**\n` +
-      `Patron : <@${agency.patronId}>`
+      `📂 **Type :** ${agency.type}\n` +
+      `👑 **Patron :** <@${agency.patronId}>`
     )
     .addFields(
       {
-        name: 'Agents',
+        name: '👥 Équipe',
         value: agency.agents.length
           ? agency.agents.map(id => `<@${id}>`).join(', ')
           : 'Aucun agent pour l’instant.',
       },
       {
-        name: 'Biens gérés',
+        name: '🏘️ Biens gérés',
         value: `${agency.properties.length} bien(s) au catalogue.`,
       },
       {
-        name: 'Historique',
-        value: `🏠 Ventes : **${agency.soldCount}** • 📜 Locations : **${agency.rentedCount}**`,
+        name: '📜 Historique',
+        value: `🏠 Ventes : **${agency.soldCount}** • 📄 Locations : **${agency.rentedCount}**`,
       },
     )
     .setFooter(footer);
@@ -300,7 +300,7 @@ module.exports = {
 
     .addSubcommand(sc =>
       sc.setName('vendre')
-        .setDescription('Vendre un bien du catalogue à un joueur.')
+        .setDescription('Proposer la vente d’un bien à un joueur (avec confirmation du client).')
         .addStringOption(o =>
           o.setName('propriete')
             .setDescription('ID de la propriété à vendre.')
@@ -315,7 +315,7 @@ module.exports = {
 
     .addSubcommand(sc =>
       sc.setName('louer')
-        .setDescription('Mettre un bien en location pour un joueur.')
+        .setDescription('Proposer une location de bien à un joueur (avec confirmation du locataire).')
         .addStringOption(o =>
           o.setName('propriete')
             .setDescription('ID de la propriété à louer.')
@@ -346,6 +346,22 @@ module.exports = {
             .setDescription('Locataire à expulser')
             .setRequired(true),
         ),
+    )
+
+    // STAFF : donner une propriété d’État directement à un joueur
+    .addSubcommand(sc =>
+      sc.setName('givepropriete')
+        .setDescription('STAFF : donner une propriété d’État directement à un joueur.')
+        .addUserOption(o =>
+          o.setName('cible')
+            .setDescription('Joueur qui reçoit la propriété')
+            .setRequired(true),
+        )
+        .addStringOption(o =>
+          o.setName('etat_id')
+            .setDescription('ID de la propriété d’État (voir documentation interne).')
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction) {
@@ -358,7 +374,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle('Accès refusé')
+              .setTitle('⛔ Accès refusé')
               .setDescription('Seuls les membres STAFF peuvent créer une agence.'),
           ],
           ephemeral: true,
@@ -376,10 +392,10 @@ module.exports = {
             .setColor(0x3498db)
             .setTitle('🏢 Agence créée')
             .setDescription(
-              `Nouvelle agence **${ag.name}** créée.\n` +
-              `Patron : ${patron}\n` +
-              `Type : **${ag.type}**\n` +
-              `ID : \`${ag.id}\``
+              `Nouvelle agence **${ag.name}** créée.\n\n` +
+              `👑 Patron : ${patron}\n` +
+              `🏷️ Type : **${ag.type}**\n` +
+              `🆔 ID interne : \`${ag.id}\``
             )
             .setFooter(footer),
         ],
@@ -394,7 +410,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Accès refusé')
+              .setTitle('⛔ Accès refusé')
               .setDescription('Seul le patron de l’agence peut recruter des agents.'),
           ],
           ephemeral: true,
@@ -409,7 +425,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Impossible')
+              .setTitle('❌ Impossible')
               .setDescription('Tu ne peux pas recruter un bot.'),
           ],
           ephemeral: true,
@@ -420,7 +436,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Déjà dans l’agence')
+              .setTitle('ℹ️ Déjà dans l’agence')
               .setDescription(`${cible} fait déjà partie de l’agence.`),
           ],
           ephemeral: true,
@@ -431,8 +447,8 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Limite atteinte')
-              .setDescription('Ton agence a déjà 3 agents (hors patron).'),
+              .setTitle('⚠️ Limite atteinte')
+              .setDescription('Ton agence a déjà **3 agents** (hors patron).'),
           ],
           ephemeral: true,
         });
@@ -445,7 +461,7 @@ module.exports = {
         embeds: [
           new EmbedBuilder()
             .setColor(0x2ecc71)
-            .setTitle('Nouvel agent recruté')
+            .setTitle('✅ Nouvel agent recruté')
             .setDescription(`${cible} rejoint l’équipe de **${agency.name}**.`)
             .setFooter(footer),
         ],
@@ -460,7 +476,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Accès refusé')
+              .setTitle('⛔ Accès refusé')
               .setDescription('Seul le patron de l’agence peut retirer un agent.'),
           ],
           ephemeral: true,
@@ -475,7 +491,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Agent introuvable')
+              .setTitle('👤 Agent introuvable')
               .setDescription(`${cible} n’est pas agent dans ton agence.`),
           ],
           ephemeral: true,
@@ -489,7 +505,7 @@ module.exports = {
         embeds: [
           new EmbedBuilder()
             .setColor(0xe74c3c)
-            .setTitle('Agent retiré')
+            .setTitle('👋 Agent retiré')
             .setDescription(`${cible} ne fait plus partie de **${agency.name}**.`)
             .setFooter(footer),
         ],
@@ -504,7 +520,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu ne fais partie d’aucune agence immobilière.'),
           ],
           ephemeral: true,
@@ -516,29 +532,38 @@ module.exports = {
 
       const emb = new EmbedBuilder()
         .setColor(0x3498db)
-        .setTitle(`Catalogue — ${agency.name}`)
+        .setTitle(`📘 Catalogue — ${agency.name}`)
         .setDescription(
-          `Biens gérés : **${props.length}**\n` +
-          `Ventes : **${agency.soldCount}** • Locations : **${agency.rentedCount}**\n\n` +
-          'Les IDs ci-dessous sont à utiliser dans les commandes `/agence definirprix`, `/agence vendre`, `/agence louer`, etc.'
+          `🏘️ **Biens gérés :** ${props.length}\n` +
+          `📈 Ventes : **${agency.soldCount}** • 📄 Locations : **${agency.rentedCount}**\n\n` +
+          'ℹ️ Les IDs listés ci-dessous sont à utiliser dans :\n' +
+          '`/agence definirprix`, `/agence vendre`, `/agence louer`, etc.'
         )
         .setFooter(footer);
 
       if (!props.length) {
         emb.addFields({
           name: 'Aucun bien',
-          value: 'Ton agence n’a encore acheté aucun bien à l’État.',
+          value: 'Ton agence n’a encore acheté **aucun bien** à l’État.',
         });
       } else {
         for (const p of props) {
           const status = p.status || 'AGENCE_ONLY';
           const vente  = typeof p.salePrice === 'number' ? fmt(p.salePrice) : 'Non défini';
           const loyer  = typeof p.rentAmount === 'number' ? fmt(p.rentAmount) : 'Non défini';
+
+          let statusLabel = status;
+          if (status === 'AGENCE_ONLY') statusLabel = 'Disponible en agence';
+          if (status === 'FOR_SALE')   statusLabel = '🟢 En vente';
+          if (status === 'FOR_RENT')   statusLabel = '🟡 À louer';
+          if (status === 'RENTED')     statusLabel = '🔵 Loué';
+          if (status === 'OWNED')      statusLabel = '🟣 Vendu (client propriétaire)';
+
           emb.addFields({
-            name: `${p.name} — ${p.type || 'Bien'}`,
+            name: `🏠 ${p.name} — ${p.type || 'Bien'}`,
             value:
               (p.location ? `📍 **${p.location}**\n` : '') +
-              `• Statut : **${status}**\n` +
+              `• Statut : **${statusLabel}**\n` +
               `• Prix de vente : ${vente}\n` +
               `• Loyer : ${loyer}\n` +
               `• ID : \`${p.id}\``,
@@ -566,17 +591,17 @@ module.exports = {
         }
         const emb = new EmbedBuilder()
           .setColor(0x3498db)
-          .setTitle('Liste des agences')
+          .setTitle('📋 Liste des agences')
           .setFooter(footer);
 
         for (const a of all) {
           emb.addFields({
-            name: `${a.name} — <@${a.patronId}>`,
+            name: `${a.name} — 👑 <@${a.patronId}>`,
             value:
-              `ID : \`${a.id}\`\n` +
-              `Agents : ${a.agents.length}\n` +
-              `Biens gérés : ${a.properties.length}\n` +
-              `Ventes : ${a.soldCount} • Locations : ${a.rentedCount}`,
+              `🆔 ID : \`${a.id}\`\n` +
+              `👥 Agents : ${a.agents.length}\n` +
+              `🏘️ Biens gérés : ${a.properties.length}\n` +
+              `📈 Ventes : ${a.soldCount} • 📄 Locations : ${a.rentedCount}`,
           });
         }
 
@@ -590,7 +615,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu ne fais partie d’aucune agence immobilière.'),
           ],
           ephemeral: true,
@@ -608,7 +633,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu dois faire partie d’une agence pour acheter un bien.'),
           ],
           ephemeral: true,
@@ -621,7 +646,7 @@ module.exports = {
       const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('ag_add_cat')
-          .setPlaceholder('Choisis une catégorie de propriété')
+          .setPlaceholder('🗂️ Choisis une catégorie de propriété')
           .addOptions(
             categories.map(cat => ({
               label: cat,
@@ -637,20 +662,23 @@ module.exports = {
         embeds: [
           new EmbedBuilder()
             .setColor(0x1abc9c)
-            .setTitle(`Ajouter un bien — ${agency.name}`)
-            .setDescription('Sélectionne la **catégorie** de propriété à acheter pour ton agence.'),
+            .setTitle(`🧾 Ajouter un bien — ${agency.name}`)
+            .setDescription(
+              'Sélectionne la **catégorie** de propriété à acheter pour ton agence.\n\n' +
+              'Les biens déjà possédés par une agence ou un joueur ne seront pas affichés.'
+            ),
         ],
         components: [row],
         fetchReply: true,
       });
 
-      const collector = msg.createMessageComponentCollector({
+      const catCollector = msg.createMessageComponentCollector({
         componentType: ComponentType.StringSelect,
         time: 90_000,
         filter: (i) => i.user.id === interaction.user.id,
       });
 
-      collector.on('collect', async (sel) => {
+      catCollector.on('collect', async (sel) => {
         if (sel.customId !== 'ag_add_cat') return;
 
         const cat = sel.values[0];
@@ -665,7 +693,7 @@ module.exports = {
               new EmbedBuilder()
                 .setColor(0xe67e22)
                 .setTitle('Aucune propriété disponible')
-                .setDescription('Plus aucun bien disponible dans cette catégorie.'),
+                .setDescription('Plus aucun bien disponible dans cette catégorie pour le moment.'),
             ],
             components: [],
           });
@@ -674,7 +702,7 @@ module.exports = {
         const rowProps = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId('ag_add_prop')
-            .setPlaceholder('Choisis la propriété à acheter')
+            .setPlaceholder('🏠 Choisis la propriété à acheter')
             .addOptions(
               avail.slice(0, 25).map(p => ({
                 label: p.name,
@@ -688,22 +716,27 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0x1abc9c)
-              .setTitle(`Ajouter un bien — ${agency.name}`)
-              .setDescription('Sélectionne maintenant la propriété à acheter.'),
+              .setTitle(`🧾 Ajouter un bien — ${agency.name}`)
+              .setDescription(
+                `Catégorie sélectionnée : **${cat}**\n` +
+                'Choisis maintenant la **propriété** à acheter.'
+              ),
           ],
           components: [rowProps],
         });
       });
 
-      collector.on('end', async () => {
+      catCollector.on('end', async () => {
         try { await msg.edit({ components: [] }); } catch {}
       });
 
-      msg.createMessageComponentCollector({
+      const propCollector = msg.createMessageComponentCollector({
         componentType: ComponentType.StringSelect,
         time: 90_000,
         filter: (i) => i.user.id === interaction.user.id && i.customId === 'ag_add_prop',
-      }).on('collect', async (sel) => {
+      });
+
+      propCollector.on('collect', async (sel) => {
         const stateId = sel.values[0];
         const info = findStatePropById(stateId);
         if (!info || !isStatePropAvailable(stateId)) {
@@ -711,7 +744,7 @@ module.exports = {
             embeds: [
               new EmbedBuilder()
                 .setColor(0xe74c3c)
-                .setTitle('Erreur')
+                .setTitle('❌ Erreur')
                 .setDescription('Cette propriété n’est plus disponible.'),
             ],
             components: [],
@@ -731,11 +764,11 @@ module.exports = {
             embeds: [
               new EmbedBuilder()
                 .setColor(0xe74c3c)
-                .setTitle('Fonds insuffisants')
+                .setTitle('💰 Fonds insuffisants')
                 .setDescription(
-                  `Le compte **entreprise (banque)** du patron n’a pas assez de fonds.\n` +
-                  `Prix du bien : ${fmt(prix)}\n` +
-                  `Solde actuel : ${fmt(solde)}`
+                  `Le compte **entreprise (banque)** du patron n’a pas assez de fonds.\n\n` +
+                  `💵 Prix du bien : ${fmt(prix)}\n` +
+                  `🏦 Solde actuel : ${fmt(solde)}`
                 ),
             ],
             components: [],
@@ -765,11 +798,12 @@ module.exports = {
               .setColor(0x2ecc71)
               .setTitle('✅ Bien acheté pour l’agence')
               .setDescription(
-                `Ton agence **${agency.name}** a acheté :\n` +
-                `• **${prop.name}** (${prop.type})\n` +
-                `• Prix : ${fmt(info.basePrice)}\n\n` +
-                `Le gouvernement a été crédité de cette somme.\n` +
-                `ID propriété : \`${prop.id}\``
+                `Ton agence **${agency.name}** a acheté :\n\n` +
+                `🏠 **${prop.name}** *(${prop.type})*\n` +
+                `📍 Localisation : **${prop.location}**\n` +
+                `💵 Prix : ${fmt(info.basePrice)}\n\n` +
+                `🏛️ Le gouvernement a été crédité de cette somme.\n` +
+                `🆔 ID propriété : \`${prop.id}\``
               )
               .setFooter(footer),
           ],
@@ -788,7 +822,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu dois faire partie d’une agence pour définir un prix.'),
           ],
           ephemeral: true,
@@ -806,7 +840,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle('Propriété introuvable')
+              .setTitle('🏠 Propriété introuvable')
               .setDescription('Cette propriété ne fait pas partie du catalogue de ton agence.'),
           ],
           ephemeral: true,
@@ -828,9 +862,9 @@ module.exports = {
         embeds: [
           new EmbedBuilder()
             .setColor(0x2ecc71)
-            .setTitle('Prix mis à jour')
+            .setTitle('💰 Prix mis à jour')
             .setDescription(
-              `Pour **${prop.name}** :\n` +
+              `Pour **${prop.name}** :\n\n` +
               (kind === 'vente'
                 ? `• Nouveau **prix de vente** : ${fmt(amount)}`
                 : `• Nouveau **loyer** : ${fmt(amount)} tous les ${prop.rentEveryDays} jours`)
@@ -841,7 +875,7 @@ module.exports = {
       });
     }
 
-    // ─────────────────────────── /agence vendre
+    // ─────────────────────────── /agence vendre (avec confirmation client)
     if (sub === 'vendre') {
       const check = requirePatronOrAgent(interaction);
       if (!check.ok) {
@@ -849,25 +883,37 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu dois faire partie d’une agence pour vendre un bien.'),
           ],
           ephemeral: true,
         });
       }
-      const agency = check.agency;
+      let agency = check.agency;
 
       const propId = interaction.options.getString('propriete');
       const client = interaction.options.getUser('client');
 
-      const prop = getProperty(propId);
+      let prop = getProperty(propId);
       if (!prop || prop.agencyId !== agency.id) {
         return interaction.reply({
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle('Propriété introuvable')
+              .setTitle('🏠 Propriété introuvable')
               .setDescription('Ce bien ne fait pas partie du catalogue de ton agence.'),
+          ],
+          ephemeral: true,
+        });
+      }
+
+      if (prop.ownerPlayerId) {
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xe67e22)
+              .setTitle('⚠ Déjà vendu')
+              .setDescription('Ce bien appartient déjà à un joueur.'),
           ],
           ephemeral: true,
         });
@@ -878,67 +924,187 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Prix non défini')
+              .setTitle('💰 Prix non défini')
               .setDescription('Aucun **prix de vente** n’est défini pour ce bien. Utilise `/agence definirprix` avant.'),
           ],
           ephemeral: true,
         });
       }
 
-      // Débit client -> crédit patron (entreprise)
-      const clientAcc = getOrCreateAccount(client.id);
-      const patronAcc = getOrCreateAccount(agency.patronId);
+      const salePrice = prop.salePrice;
 
-      const soldeClient = getBalanceRef(clientAcc, 'courant_banque');
-      if (soldeClient < prop.salePrice) {
-        return interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('Fonds insuffisants (client)')
-              .setDescription(
-                `${client} n’a pas assez d’argent sur son **compte courant (banque)**.\n` +
-                `Prix : ${fmt(prop.salePrice)} • Solde : ${fmt(soldeClient)}`
-              ),
-          ],
-          ephemeral: true,
-        });
-      }
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('ag_sell_accept')
+          .setLabel('Accepter')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('ag_sell_refuse')
+          .setLabel('Refuser')
+          .setEmoji('❌')
+          .setStyle(ButtonStyle.Danger),
+      );
 
-      const soldeAgence = getBalanceRef(patronAcc, 'entreprise_banque') ?? 0;
+      const offerEmbed = new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle('💸 Offre d’achat de propriété')
+        .setDescription(
+          `${client}, tu as reçu une offre d’achat :\n\n` +
+          `🏠 **Bien :** ${prop.name}\n` +
+          (prop.location ? `📍 **Localisation :** ${prop.location}\n` : '') +
+          `🏢 **Agence :** ${agency.name}\n\n` +
+          `💵 **Prix :** ${fmt(salePrice)}\n\n` +
+          `▫️ L’argent sera débité de ton **compte courant (banque)**.\n` +
+          `▫️ L’agence ne gérera plus ce bien une fois la vente effectuée.\n\n` +
+          `👉 Clique sur **Accepter** ou **Refuser**.`
+        )
+        .setFooter(footer);
 
-      setBalanceRef(clientAcc, 'courant_banque', soldeClient - prop.salePrice);
-      setBalanceRef(patronAcc, 'entreprise_banque', soldeAgence + prop.salePrice);
-      updateAccount(client.id, clientAcc);
-      updateAccount(agency.patronId, patronAcc);
-
-      // Maj propriété -> propriétaire joueur
-      prop.ownerPlayerId = client.id;
-      prop.agencyId      = agency.id;
-      prop.status        = 'OWNED';
-      prop.salePrice     = prop.salePrice; // pour historique
-      prop.rentAmount    = null;
-      prop.tenantId      = null;
-      setProperty(prop);
-
-      agency.soldCount += 1;
-      setAgency(agency);
-
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('🏠 Vente finalisée')
-            .setDescription(
-              `**${prop.name}** a été vendue à ${client} pour ${fmt(prop.salePrice)}.\n` +
-              `L’agence **${agency.name}** a été créditée sur le compte **entreprise (banque)** du patron.`
-            )
-            .setFooter(footer),
-        ],
+      const msg = await interaction.reply({
+        content: `${client}`,
+        embeds: [offerEmbed],
+        components: [row],
+        fetchReply: true,
       });
+
+      const collector = msg.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 120_000,
+      });
+
+      collector.on('collect', async (btn) => {
+        if (btn.user.id !== client.id) {
+          return btn.reply({
+            content: '⛔ Seul le client concerné peut répondre à cette offre.',
+            ephemeral: true,
+          });
+        }
+
+        if (btn.customId === 'ag_sell_refuse') {
+          collector.stop('refused');
+          return btn.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xe74c3c)
+                .setTitle('❌ Vente refusée')
+                .setDescription(
+                  `${client} a refusé l’achat de **${prop.name}** auprès de l’agence **${agency.name}**.`
+                )
+                .setFooter(footer),
+            ],
+            components: [],
+          });
+        }
+
+        if (btn.customId === 'ag_sell_accept') {
+          // Re-check à la dernière seconde
+          prop = getProperty(propId);
+          agency = getAgency(agency.id) || agency;
+
+          if (!prop || prop.agencyId !== agency.id || prop.ownerPlayerId) {
+            collector.stop('invalid');
+            return btn.update({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0xe74c3c)
+                  .setTitle('❌ Vente impossible')
+                  .setDescription('Le bien n’est plus disponible à la vente (catalogue modifié).')
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          }
+
+          const price = prop.salePrice;
+          const clientAcc = getOrCreateAccount(client.id);
+          const patronAcc = getOrCreateAccount(agency.patronId);
+
+          const soldeClient = getBalanceRef(clientAcc, 'courant_banque');
+          if (soldeClient < price) {
+            collector.stop('nofunds');
+            return btn.update({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0xe74c3c)
+                  .setTitle('💰 Fonds insuffisants')
+                  .setDescription(
+                    `${client} n’a pas assez d’argent sur son **compte courant (banque)**.\n\n` +
+                    `💵 Prix : ${fmt(price)}\n` +
+                    `🏦 Solde actuel : ${fmt(soldeClient)}`
+                  )
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          }
+
+          const soldeAgence = getBalanceRef(patronAcc, 'entreprise_banque') ?? 0;
+
+          setBalanceRef(clientAcc, 'courant_banque', soldeClient - price);
+          setBalanceRef(patronAcc, 'entreprise_banque', soldeAgence + price);
+          updateAccount(client.id, clientAcc);
+          updateAccount(agency.patronId, patronAcc);
+
+          // Maj propriété -> propriétaire joueur
+          prop.ownerPlayerId = client.id;
+          prop.agencyId      = null;          // l’agence ne gère plus ce bien
+          prop.status        = 'OWNED';
+          prop.rentAmount    = null;
+          prop.tenantId      = null;
+          prop.landlordId    = null;
+          prop.nextRentTs    = null;
+          prop.keyholders    = [];            // on reset les anciennes clés éventuelles
+          setProperty(prop);
+
+          agency.properties = agency.properties.filter(id => id !== prop.id);
+          agency.soldCount  = (agency.soldCount || 0) + 1;
+          setAgency(agency);
+
+          collector.stop('accepted');
+
+          return btn.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ecc71)
+                .setTitle('✅ Vente finalisée')
+                .setDescription(
+                  `🏠 **${prop.name}** appartient désormais à ${client}.\n\n` +
+                  `💵 Montant payé : ${fmt(price)}\n` +
+                  `🏢 Agence : **${agency.name}**\n\n` +
+                  `L’agence a été créditée sur le compte **entreprise (banque)** du patron.`
+                )
+                .setFooter(footer),
+            ],
+            components: [],
+          });
+        }
+      });
+
+      collector.on('end', async (collected, reason) => {
+        if (reason === 'time' && collected.size === 0) {
+          try {
+            await msg.edit({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0x95a5a6)
+                  .setTitle('⌛ Offre expirée')
+                  .setDescription(
+                    `L’offre de vente pour **${prop.name}** a expiré.\n` +
+                    `L’agent peut relancer la commande \`/agence vendre\` si nécessaire.`
+                  )
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          } catch {}
+        }
+      });
+
+      return;
     }
 
-    // ─────────────────────────── /agence louer
+    // ─────────────────────────── /agence louer (avec confirmation locataire)
     if (sub === 'louer') {
       const check = requirePatronOrAgent(interaction);
       if (!check.ok) {
@@ -946,25 +1112,25 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu dois faire partie d’une agence pour louer un bien.'),
           ],
           ephemeral: true,
         });
       }
-      const agency = check.agency;
+      let agency = check.agency;
 
-      const propId   = interaction.options.getString('propriete');
+      const propId    = interaction.options.getString('propriete');
       const locataire = interaction.options.getUser('locataire');
-      const newRent  = interaction.options.getNumber('loyer');
+      const newRent   = interaction.options.getNumber('loyer');
 
-      const prop = getProperty(propId);
+      let prop = getProperty(propId);
       if (!prop || prop.agencyId !== agency.id) {
         return interaction.reply({
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle('Propriété introuvable')
+              .setTitle('🏠 Propriété introuvable')
               .setDescription('Ce bien ne fait pas partie du catalogue de ton agence.'),
           ],
           ephemeral: true,
@@ -976,7 +1142,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Déjà loué')
+              .setTitle('🔵 Déjà loué')
               .setDescription('Ce bien est déjà loué à un autre joueur. Utilise `/agence expulser` avant.'),
           ],
           ephemeral: true,
@@ -989,38 +1155,165 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Loyer non défini')
-              .setDescription('Aucun loyer n’est défini pour ce bien. Utilise `/agence definirprix` (type = Loyer) ou renseigne `loyer` dans cette commande.'),
+              .setTitle('💰 Loyer non défini')
+              .setDescription(
+                'Aucun loyer n’est défini pour ce bien.\n\n' +
+                'Utilise `/agence definirprix` (type = **Loyer**) ou renseigne `loyer` dans cette commande.'
+              ),
           ],
           ephemeral: true,
         });
       }
 
-      prop.rentAmount    = loyer;
-      prop.rentEveryDays = prop.rentEveryDays || 7;
-      prop.tenantId      = locataire.id;
-      prop.landlordId    = agency.patronId;
-      prop.status        = 'RENTED';
-      prop.nextRentTs    = Date.now(); // le locataire pourra payer le premier loyer tout de suite
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('ag_rent_accept')
+          .setLabel('Accepter la location')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('ag_rent_refuse')
+          .setLabel('Refuser')
+          .setEmoji('❌')
+          .setStyle(ButtonStyle.Danger),
+      );
 
-      setProperty(prop);
+      const offerEmbed = new EmbedBuilder()
+        .setColor(0x9b59b6)
+        .setTitle('📜 Proposition de location')
+        .setDescription(
+          `${locataire}, tu as reçu une proposition de location :\n\n` +
+          `🏠 **Bien :** ${prop.name}\n` +
+          (prop.location ? `📍 **Localisation :** ${prop.location}\n` : '') +
+          `🏢 **Agence :** ${agency.name}\n\n` +
+          `💰 **Loyer :** ${fmt(loyer)} tous les ${prop.rentEveryDays || 7} jours\n\n` +
+          `▫️ Tu pourras payer ton loyer avec \`/propriete payerloyer\`.\n` +
+          `▫️ En cas de non-paiement, l’agence pourra te retirer le bien.\n\n` +
+          `👉 Clique sur **Accepter la location** ou **Refuser**.`
+        )
+        .setFooter(footer);
 
-      agency.rentedCount += 1;
-      setAgency(agency);
-
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('📜 Location créée')
-            .setDescription(
-              `**${prop.name}** est maintenant louée à ${locataire}.\n` +
-              `Loyer : ${fmt(loyer)} tous les ${prop.rentEveryDays} jours.\n\n` +
-              `Le locataire pourra payer via \`/propriete payerloyer id:${prop.id}\`.`
-            )
-            .setFooter(footer),
-        ],
+      const msg = await interaction.reply({
+        content: `${locataire}`,
+        embeds: [offerEmbed],
+        components: [row],
+        fetchReply: true,
       });
+
+      const collector = msg.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 120_000,
+      });
+
+      collector.on('collect', async (btn) => {
+        if (btn.user.id !== locataire.id) {
+          return btn.reply({
+            content: '⛔ Seul le locataire concerné peut répondre à cette proposition.',
+            ephemeral: true,
+          });
+        }
+
+        if (btn.customId === 'ag_rent_refuse') {
+          collector.stop('refused');
+          return btn.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xe74c3c)
+                .setTitle('❌ Location refusée')
+                .setDescription(
+                  `${locataire} a refusé la location de **${prop.name}** auprès de l’agence **${agency.name}**.`
+                )
+                .setFooter(footer),
+            ],
+            components: [],
+          });
+        }
+
+        if (btn.customId === 'ag_rent_accept') {
+          prop   = getProperty(propId);
+          agency = getAgency(agency.id) || agency;
+
+          if (!prop || prop.agencyId !== agency.id) {
+            collector.stop('invalid');
+            return btn.update({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0xe74c3c)
+                  .setTitle('❌ Location impossible')
+                  .setDescription('Le bien ne fait plus partie du catalogue de ton agence.')
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          }
+
+          if (prop.status === 'RENTED' && prop.tenantId) {
+            collector.stop('already_rented');
+            return btn.update({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0xe67e22)
+                  .setTitle('🔵 Déjà loué')
+                  .setDescription('Ce bien vient d’être loué à quelqu’un d’autre.')
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          }
+
+          prop.rentAmount    = loyer;
+          prop.rentEveryDays = prop.rentEveryDays || 7;
+          prop.tenantId      = locataire.id;
+          prop.landlordId    = agency.patronId;
+          prop.status        = 'RENTED';
+          prop.nextRentTs    = Date.now();
+
+          setProperty(prop);
+
+          agency.rentedCount = (agency.rentedCount || 0) + 1;
+          setAgency(agency);
+
+          collector.stop('accepted');
+
+          return btn.update({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x2ecc71)
+                .setTitle('✅ Location créée')
+                .setDescription(
+                  `📜 **${prop.name}** est maintenant louée à ${locataire}.\n\n` +
+                  `💰 Loyer : ${fmt(loyer)} tous les ${prop.rentEveryDays} jours.\n` +
+                  `🏢 Agence : **${agency.name}**\n\n` +
+                  `Le locataire pourra payer via \`/propriete payerloyer id:${prop.id}\`.`
+                )
+                .setFooter(footer),
+            ],
+            components: [],
+          });
+        }
+      });
+
+      collector.on('end', async (collected, reason) => {
+        if (reason === 'time' && collected.size === 0) {
+          try {
+            await msg.edit({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0x95a5a6)
+                  .setTitle('⌛ Proposition expirée')
+                  .setDescription(
+                    `La proposition de location pour **${prop.name}** a expiré.\n` +
+                    `L’agent peut relancer la commande \`/agence louer\` si nécessaire.`
+                  )
+                  .setFooter(footer),
+              ],
+              components: [],
+            });
+          } catch {}
+        }
+      });
+
+      return;
     }
 
     // ─────────────────────────── /agence expulser
@@ -1031,7 +1324,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Aucune agence')
+              .setTitle('🏢 Aucune agence')
               .setDescription('Tu dois faire partie d’une agence pour expulser un locataire.'),
           ],
           ephemeral: true,
@@ -1039,7 +1332,7 @@ module.exports = {
       }
       const agency = check.agency;
 
-      const propId   = interaction.options.getString('propriete');
+      const propId    = interaction.options.getString('propriete');
       const locataire = interaction.options.getUser('locataire');
 
       const prop = getProperty(propId);
@@ -1048,7 +1341,7 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle('Propriété introuvable')
+              .setTitle('🏠 Propriété introuvable')
               .setDescription('Ce bien ne fait pas partie du catalogue de ton agence.'),
           ],
           ephemeral: true,
@@ -1060,19 +1353,20 @@ module.exports = {
           embeds: [
             new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Locataire incorrect')
+              .setTitle('👤 Locataire incorrect')
               .setDescription(`${locataire} n’est pas locataire de ce bien.`),
           ],
           ephemeral: true,
         });
       }
 
-      // On rompt la location
+      // On rompt la location + on wipe le stockage et les clés
       prop.tenantId   = null;
       prop.status     = 'AGENCE_ONLY';
       prop.nextRentTs = null;
-
+      prop.keyholders = [];
       setProperty(prop);
+      wipeStorage(prop.id);
 
       return interaction.reply({
         embeds: [
@@ -1080,8 +1374,103 @@ module.exports = {
             .setColor(0xe74c3c)
             .setTitle('⚠ Locataire expulsé')
             .setDescription(
-              `${locataire} a été expulsé de **${prop.name}**.\n` +
-              `Il n’a plus accès au coffre de cette propriété.`
+              `${locataire} a été expulsé de **${prop.name}**.\n\n` +
+              `🔐 Il n’a plus accès au coffre de cette propriété et le stockage a été vidé.`
+            )
+            .setFooter(footer),
+        ],
+      });
+    }
+
+    // ─────────────────────────── /agence givepropriete (STAFF)
+    if (sub === 'givepropriete') {
+      if (!requireStaff(interaction)) {
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xe74c3c)
+              .setTitle('⛔ Accès refusé')
+              .setDescription('Seuls les membres STAFF peuvent donner une propriété d’État.'),
+          ],
+          ephemeral: true,
+        });
+      }
+
+      const cible   = interaction.options.getUser('cible');
+      const stateId = interaction.options.getString('etat_id');
+
+      const info = findStatePropById(stateId);
+      if (!info) {
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xe74c3c)
+              .setTitle('🏠 Propriété d’État inconnue')
+              .setDescription(
+                `Aucune propriété d’État trouvée avec l’ID \`${stateId}\`.\n` +
+                'Vérifie l’ID dans la documentation interne.'
+              ),
+          ],
+          ephemeral: true,
+        });
+      }
+
+      if (!isStatePropAvailable(stateId)) {
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xe67e22)
+              .setTitle('⚠ Déjà attribuée')
+              .setDescription(
+                `Cette propriété est déjà possédée par une agence ou un joueur.\n` +
+                'Elle ne peut pas être donnée une seconde fois tant qu’elle n’est pas libérée.'
+              ),
+          ],
+          ephemeral: true,
+        });
+      }
+
+      let prop = getProperty(stateId);
+      if (!prop) {
+        prop = {
+          id: stateId,
+          name: info.name,
+          type: info.category,
+          location: info.location,
+          status: 'OWNED',
+          ownerPlayerId: cible.id,
+          tenantId: null,
+          landlordId: null,
+          rentAmount: null,
+          rentEveryDays: 7,
+          agencyId: null,
+          basePrice: info.basePrice,
+          keyholders: [],
+          storage: { items: [], weightMax: 120 },
+        };
+      } else {
+        prop.ownerPlayerId = cible.id;
+        prop.tenantId      = null;
+        prop.landlordId    = null;
+        prop.agencyId      = null;
+        prop.status        = 'OWNED';
+        prop.rentAmount    = null;
+        prop.nextRentTs    = null;
+        prop.keyholders    = [];
+      }
+
+      setProperty(prop);
+
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle('✅ Propriété attribuée (STAFF)')
+            .setDescription(
+              `🏠 **${prop.name}** a été donnée à ${cible}.\n\n` +
+              `📍 Localisation : **${prop.location}**\n` +
+              `🗂️ Type : **${prop.type}**\n\n` +
+              `Cette propriété est désormais **retirée du catalogue de l’État** pour les agences.`
             )
             .setFooter(footer),
         ],
