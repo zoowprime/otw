@@ -54,19 +54,31 @@ function storageTotalWeight(storage) {
 
 function ensureProperty(raw, id) {
   const p = raw && typeof raw === 'object' ? { ...raw } : {};
+
   p.id          = p.id || id || `prop_${Math.random().toString(36).slice(2, 10)}`;
   p.name        = p.name || 'Propriété sans nom';
   p.type        = p.type || 'MAISON'; // MAISON / TERRAIN / LOCAL / IMMEUBLE
   p.location    = p.location || '';
-  p.status      = p.status || 'AGENCE_ONLY'; // AGENCE_ONLY / OWNED / RENTED / SEIZED
+
+  // statut : AGENCE_ONLY / OWNED / RENTED / SEIZED etc.
+  p.status      = p.status || 'AGENCE_ONLY';
+
+  // liens logiques
   p.ownerPlayerId = p.ownerPlayerId || null; // achat définitif
-  p.landlordId  = p.landlordId || null;      // agence / proprio qui loue
-  p.tenantId    = p.tenantId || null;        // locataire
-  p.rentAmount  = typeof p.rentAmount === 'number' ? p.rentAmount : null;
+  p.landlordId    = p.landlordId || null;    // agence / proprio qui loue
+  p.tenantId      = p.tenantId || null;      // locataire
+  p.agencyId      = p.agencyId || null;      // agence qui gère le bien (catalogue)
+
+  // prix / loyers
+  p.salePrice     = typeof p.salePrice === 'number' ? p.salePrice : null;
+  p.basePrice     = typeof p.basePrice === 'number' ? p.basePrice : null;
+  p.rentAmount    = typeof p.rentAmount === 'number' ? p.rentAmount : null;
   p.rentEveryDays = typeof p.rentEveryDays === 'number' ? p.rentEveryDays : 7;
-  p.nextRentTs  = typeof p.nextRentTs === 'number' ? p.nextRentTs : null;
-  p.keyholders  = Array.isArray(p.keyholders) ? p.keyholders : [];
-  p.storage     = p.storage && typeof p.storage === 'object' ? { ...p.storage } : {};
+  p.nextRentTs    = typeof p.nextRentTs === 'number' ? p.nextRentTs : null;
+
+  // clés / stockage
+  p.keyholders    = Array.isArray(p.keyholders) ? p.keyholders : [];
+  p.storage       = p.storage && typeof p.storage === 'object' ? { ...p.storage } : {};
   p.storage.items      = Array.isArray(p.storage.items) ? p.storage.items : [];
   p.storage.weightMax  = typeof p.storage.weightMax === 'number' ? p.storage.weightMax : DEFAULT_STORAGE_MAX;
 
@@ -115,7 +127,7 @@ function userHasAccessToProperty(userId, prop) {
   if (!prop) return false;
   if (prop.ownerPlayerId === userId) return true;
   if (prop.tenantId === userId) return true;
-  if (Array.isArray(prop.keyholders) && prop.keyholders.includes(userId)) return true;
+  if (Array.isArray(prop.keyholders) && p.keyholders.includes(userId)) return true;
   return false;
 }
 
@@ -176,7 +188,6 @@ function addItemToProperty(propertyId, itemId, qty = 1) {
   const p = ensureProperty(raw, propertyId);
 
   const q = Math.max(1, Number(qty) || 1);
-  // On suppose que canStoreItem a déjà été appelé, mais on peut re-check
   const check = canStoreItem(propertyId, itemId, q);
   if (!check.ok && check.reason === 'OVERWEIGHT') return check;
 
@@ -231,6 +242,31 @@ function wipeStorage(propertyId) {
   return { ok: true, property: p };
 }
 
+// Remise au catalogue de l’État (libération complète)
+function resetPropertyToState(propertyId) {
+  const db = loadDB();
+  const raw = db[propertyId];
+  if (!raw) return { ok: false, reason: 'PROP_NOT_FOUND' };
+  const p = ensureProperty(raw, propertyId);
+
+  p.ownerPlayerId = null;
+  p.tenantId      = null;
+  p.landlordId    = null;
+  p.agencyId      = null;
+
+  p.status        = 'AGENCE_ONLY';
+  p.salePrice     = null;
+  p.rentAmount    = null;
+  p.nextRentTs    = null;
+
+  p.keyholders    = [];
+  p.storage.items = [];
+
+  db[propertyId] = p;
+  saveDB(db);
+  return { ok: true, property: p };
+}
+
 // ──────────────────────────────────────────────
 // Loyers
 
@@ -268,6 +304,7 @@ module.exports = {
   addItemToProperty,
   removeItemFromProperty,
   wipeStorage,
+  resetPropertyToState,
 
   markRentPaid,
 };
