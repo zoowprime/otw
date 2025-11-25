@@ -8,7 +8,6 @@ const DB_FILE = path.join('/data', 'real_estate.json');
 
 // ─────────────────────────────────────────────
 // Catalogue de l'État (propriétés disponibles)
-// Chaque bien a un id "propre", un nom RP, une catégorie et un prix.
 
 const PROPERTY_CATEGORIES = {
   MAISON: 'Maison',
@@ -17,7 +16,6 @@ const PROPERTY_CATEGORIES = {
   IMMEUBLE: 'Immeuble',
 };
 
-// Helper slug
 function slugify(str) {
   return str
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -87,10 +85,10 @@ const STATE_PROPERTIES_CATALOG = [
   { name: 'Quai ferroviaire Rhodes', price: 3500, category: PROPERTY_CATEGORIES.IMMEUBLE },
   { name: 'Quai ferroviaire Valentine', price: 3000, category: PROPERTY_CATEGORIES.IMMEUBLE },
   { name: 'Quai ferroviaire Van Horn', price: 2000, category: PROPERTY_CATEGORIES.IMMEUBLE },
-].map((p) => ({ ...p, id: slugify(p.name) }));
+].map(p => ({ ...p, id: slugify(p.name) }));
 
 // ─────────────────────────────────────────────
-// I/O
+// I/O DB
 
 function loadDB() {
   try {
@@ -105,7 +103,7 @@ function loadDB() {
     db.agencies   = db.agencies   || {};
     db.properties = db.properties || {};
 
-    // Initialiser les propriétés de l'État manquantes
+    // Injecter les propriétés de l'État manquantes
     for (const prop of STATE_PROPERTIES_CATALOG) {
       if (!db.properties[prop.id]) {
         db.properties[prop.id] = {
@@ -113,13 +111,30 @@ function loadDB() {
           name: prop.name,
           category: prop.category,
           basePrice: prop.price,
-          ownerAgencyId: null, // null = encore à l'État
-          status: 'etat',      // etat | agence_catalogue | en_vente | en_location | vendu | loue | saisie
+          ownerAgencyId: null,
+          ownerUserId: null,
+          tenantUserId: null,
+          status: 'etat', // etat | agence_catalogue | en_vente | en_location | vendu | loue | saisie
           currentPriceSale: null,
           currentPriceRent: null,
+          rentAmount: null,
+          nextRentDueAt: null,
           history: [],
         };
       }
+    }
+
+    // Normaliser les propriétés existantes
+    for (const p of Object.values(db.properties)) {
+      if (!('ownerAgencyId' in p)) p.ownerAgencyId = null;
+      if (!('ownerUserId'   in p)) p.ownerUserId   = null;
+      if (!('tenantUserId'  in p)) p.tenantUserId  = null;
+      if (!('status'        in p)) p.status        = 'etat';
+      if (!('currentPriceSale' in p)) p.currentPriceSale = null;
+      if (!('currentPriceRent' in p)) p.currentPriceRent = null;
+      if (!('rentAmount'       in p)) p.rentAmount       = null;
+      if (!('nextRentDueAt'    in p)) p.nextRentDueAt    = null;
+      if (!Array.isArray(p.history))   p.history = [];
     }
 
     return db;
@@ -139,7 +154,7 @@ function saveDB(db) {
 }
 
 // ─────────────────────────────────────────────
-// Helpers agences
+// Agences
 
 function newAgencyId() {
   return 'AG_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e5).toString(36);
@@ -148,7 +163,6 @@ function newAgencyId() {
 function createAgency({ name, ownerId }) {
   const db = loadDB();
 
-  // Un owner ne peut avoir qu'une agence pour l'instant
   const already = Object.values(db.agencies).find(a => a.ownerId === ownerId);
   if (already) {
     return { ok: false, reason: 'OWNER_ALREADY_HAS_AGENCY', agency: already };
@@ -161,7 +175,7 @@ function createAgency({ name, ownerId }) {
     type: 'Agence Immobilière',
     ownerId,
     agents: [],
-    catalogProperties: [], // array d'id de propriétés
+    catalogProperties: [],
     soldCount: 0,
     rentedCount: 0,
   };
@@ -226,6 +240,31 @@ function removeAgent(agencyId, userId) {
   return { ok: true, agency };
 }
 
+function deleteAgency(agencyId) {
+  const db = loadDB();
+  const agency = db.agencies[agencyId];
+  if (!agency) return { ok: false, reason: 'AGENCY_NOT_FOUND' };
+
+  // Détacher les propriétés
+  for (const p of Object.values(db.properties)) {
+    if (p.ownerAgencyId === agencyId) {
+      p.ownerAgencyId = null;
+      if (['agence_catalogue', 'en_vente', 'en_location'].includes(p.status)) {
+        p.status = 'etat';
+      }
+      p.history.push({
+        type: 'AGENCY_DELETED',
+        agencyId,
+        at: Date.now(),
+      });
+    }
+  }
+
+  delete db.agencies[agencyId];
+  saveDB(db);
+  return { ok: true };
+}
+
 // ─────────────────────────────────────────────
 // Propriétés
 
@@ -253,7 +292,7 @@ function assignPropertyToAgency(propertyId, agencyId) {
   }
 
   prop.ownerAgencyId = agencyId;
-  prop.status = 'agence_catalogue';
+  if (prop.status === 'etat') prop.status = 'agence_catalogue';
 
   if (!agency.catalogProperties.includes(propertyId)) {
     agency.catalogProperties.push(propertyId);
@@ -291,6 +330,112 @@ function summarizeAgencyCatalog(agencyId) {
   return { vente, location, vendus, loues, total: props.length };
 }
 
+// Prix
+
+function setPropertySalePrice(propertyId, amount) {
+  const db = loadDB();
+  const prop = db.properties[propertyId];
+  if (!prop) return { ok: false, reason: 'PROPERTY_NOT_FOUND' };
+  if (!prop.ownerAgencyId) return { ok: false, reason: 'NOT_OWNED_BY_AGENCY' };
+
+  prop.currentPriceSale = amount;
+  if (['etat', 'agence_catalogue', 'en_location'].includes(prop.status)) {
+    prop.status = 'en_vente';
+  }
+  prop.history.push({
+    type: 'SET_SALE_PRICE',
+    amount,
+    at: Date.now(),
+  });
+
+  saveDB(db);
+  return { ok: true, property: prop };
+}
+
+function setPropertyRentPrice(propertyId, amount) {
+  const db = loadDB();
+  const prop = db.properties[propertyId];
+  if (!prop) return { ok: false, reason: 'PROPERTY_NOT_FOUND' };
+  if (!prop.ownerAgencyId) return { ok: false, reason: 'NOT_OWNED_BY_AGENCY' };
+
+  prop.currentPriceRent = amount;
+  if (['etat', 'agence_catalogue', 'en_vente'].includes(prop.status)) {
+    prop.status = 'en_location';
+  }
+  prop.history.push({
+    type: 'SET_RENT_PRICE',
+    amount,
+    at: Date.now(),
+  });
+
+  saveDB(db);
+  return { ok: true, property: prop };
+}
+
+// Ventes / locations
+
+function markPropertySold(propertyId, buyerUserId, price) {
+  const db = loadDB();
+  const prop = db.properties[propertyId];
+  if (!prop) return { ok: false, reason: 'PROPERTY_NOT_FOUND' };
+
+  prop.status      = 'vendu';
+  prop.ownerUserId = buyerUserId;
+  prop.tenantUserId = null;
+  prop.history.push({
+    type: 'SOLD',
+    buyerUserId,
+    price,
+    at: Date.now(),
+  });
+
+  saveDB(db);
+  return { ok: true, property: prop };
+}
+
+function markPropertyRented(propertyId, tenantUserId, price, nextDueAt) {
+  const db = loadDB();
+  const prop = db.properties[propertyId];
+  if (!prop) return { ok: false, reason: 'PROPERTY_NOT_FOUND' };
+
+  prop.status        = 'loue';
+  prop.tenantUserId  = tenantUserId;
+  prop.rentAmount    = price;
+  prop.nextRentDueAt = nextDueAt || null;
+  prop.history.push({
+    type: 'RENTED',
+    tenantUserId,
+    price,
+    nextDueAt: prop.nextRentDueAt,
+    at: Date.now(),
+  });
+
+  saveDB(db);
+  return { ok: true, property: prop };
+}
+
+function expelTenant(propertyId) {
+  const db = loadDB();
+  const prop = db.properties[propertyId];
+  if (!prop) return { ok: false, reason: 'PROPERTY_NOT_FOUND' };
+  if (!prop.tenantUserId) return { ok: false, reason: 'NO_TENANT' };
+
+  const prevTenant = prop.tenantUserId;
+  prop.tenantUserId  = null;
+  prop.nextRentDueAt = null;
+  // on repasse à "en_location" pour que le bien reste louable
+  if (prop.status === 'loue') prop.status = 'en_location';
+
+  prop.history.push({
+    type: 'EXPULSION',
+    previousTenant: prevTenant,
+    at: Date.now(),
+  });
+
+  saveDB(db);
+  return { ok: true, property: prop };
+}
+
 // ─────────────────────────────────────────────
 
 module.exports = {
@@ -308,11 +453,17 @@ module.exports = {
   listAgencies,
   addAgent,
   removeAgent,
+  deleteAgency,
   summarizeAgencyCatalog,
 
-  // properties
+  // propriétés
   listStatePropertiesByCategory,
   getPropertyById,
   assignPropertyToAgency,
   listAgencyProperties,
+  setPropertySalePrice,
+  setPropertyRentPrice,
+  markPropertySold,
+  markPropertyRented,
+  expelTenant,
 };
