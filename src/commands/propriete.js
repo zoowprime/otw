@@ -55,17 +55,17 @@ const GRID = {
   ROWS: 5,
   SLOT_W: 96,
   SLOT_H: 120,
-  LEFT: 90,
-  TOP:  190,
-  XGAP: 28,
-  YGAP: 22,
+  LEFT: 170,
+  TOP:  220,
+  XGAP: 35,
+  YGAP: 28,
 };
 
-const COL_NUDGE = [0, 0, 10, 30, 50];
+const COL_NUDGE = [0, 0, 11, 40, 60];
 const ROW_NUDGE = [0, 0, 0, 0, 0];
 
 const OWNER_TEXT  = { X: 230, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
-const WEIGHT_TEXT = { X: 540, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
+const WEIGHT_TEXT = { X: 473, Y: 165, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
 const CASH_TEXT   = { X: 830, Y: 90, FONT: '30px "Times New Roman"', COLOR: '#F8F8F0' };
 
 const FONTS = { NAME: '14px Arial', META: '12px Arial', COLOR: '#FFFFFF', SHADOW: 'rgba(0,0,0,0.65)' };
