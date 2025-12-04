@@ -243,6 +243,17 @@ function cancelRow() {
   );
 }
 
+function bankKindToField(kind) {
+  // 'courant' | 'entreprise' -> champ banque correspondant
+  return kind === "courant" ? "courant_banque" : "entreprise_banque";
+}
+
+function bankKindLabel(kind) {
+  return kind === "courant"
+    ? "compte **courant (banque)**"
+    : "compte **entreprise (banque)**";
+}
+
 // ────────────────────────────────────────────────
 
 module.exports = {
@@ -332,38 +343,6 @@ module.exports = {
             .setDescription("Montant à retirer")
             .setRequired(true)
         )
-    )
-
-    // /economy paye (paiement joueur → joueur)
-    .addSubcommand((sc) =>
-      sc
-        .setName("paye")
-        .setDescription(
-          "Payer un joueur depuis un de vos champs vers un de ses champs."
-        )
-        .addStringOption((o) =>
-          o
-            .setName("source")
-            .setDescription("Votre champ source")
-            .setRequired(true)
-            .addChoices(
-              { name: "Courant (Liquide)", value: "courant_liquide" },
-              { name: "Entreprise (Liquide)", value: "entreprise_liquide" }
-            )
-        )
-        .addStringOption((o) =>
-          o
-            .setName("destination")
-            .setDescription("Champ du destinataire")
-            .setRequired(true)
-            .addChoices(...subAccountChoices)
-        )
-        .addUserOption((o) =>
-          o.setName("target").setDescription("Destinataire").setRequired(true)
-        )
-        .addNumberOption((o) =>
-          o.setName("montant").setDescription("Montant").setRequired(true)
-        )
     ),
 
   async execute(interaction) {
@@ -381,7 +360,7 @@ module.exports = {
       );
 
       const panelEmbed = buildPanelEmbed(
-        "💳 **Interface de compte bancaire.**\nUtilise les boutons ci-dessous pour **déposer** ou **retirer** de l’argent.\n*(Seul le propriétaire du message peut interagir.)*"
+        "💳 **Interface de compte bancaire.**\nUtilise les boutons ci-dessous pour **déposer**, **retirer** ou **faire un virement**.\n*(Seul le propriétaire du message peut interagir.)*"
       );
 
       const msg = await interaction.reply({
@@ -391,8 +370,10 @@ module.exports = {
         fetchReply: true,
       });
 
-      let currentFlow = null; // 'dep' ou 'with'
-      let currentAccount = null; // 'courant' ou 'entreprise'
+      let currentFlow = null; // 'dep' | 'with' | 'transfer' | null
+      let currentAccount = null; // pour dep/with : 'courant' | 'entreprise'
+      let transferSource = null; // pour transfer : 'courant' | 'entreprise'
+      let transferTarget = null; // pour transfer : 'courant' | 'entreprise'
 
       const collector = msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
@@ -402,13 +383,15 @@ module.exports = {
 
       collector.on("collect", async (btn) => {
         try {
-          // Reset du flow
+          // RESET flow (annuler)
           if (
             btn.customId === "eco_cancel_flow" ||
             btn.customId.endsWith("_cancel")
           ) {
             currentFlow = null;
             currentAccount = null;
+            transferSource = null;
+            transferTarget = null;
             return btn.update({
               embeds: [
                 buildPanelEmbed(
@@ -419,10 +402,12 @@ module.exports = {
             });
           }
 
-          // 1) Choix Déposer / Retirer
+          // 1) Boutons principaux
           if (btn.customId === "eco_dep") {
             currentFlow = "dep";
             currentAccount = null;
+            transferSource = null;
+            transferTarget = null;
             return btn.update({
               embeds: [
                 buildPanelEmbed(
@@ -436,6 +421,8 @@ module.exports = {
           if (btn.customId === "eco_with") {
             currentFlow = "with";
             currentAccount = null;
+            transferSource = null;
+            transferTarget = null;
             return btn.update({
               embeds: [
                 buildPanelEmbed(
@@ -446,27 +433,329 @@ module.exports = {
             });
           }
 
-          // virement : placeholder
           if (btn.customId === "eco_transfer") {
+            // Démarrage du flux de virement banque -> banque (toi ou un autre joueur)
+            currentFlow = "transfer";
+            currentAccount = null;
+            transferSource = null;
+            transferTarget = null;
             return btn.update({
               embeds: [
                 buildPanelEmbed(
-                  "💸 Le système de virement via ce panel sera ajouté plus tard.\nEn attendant, utilise la commande `/economy paye` pour payer un joueur."
+                  "💸 **Virement bancaire**\nTu vas faire un virement de **banque à banque** entre un de tes comptes (courant/entreprise) et un compte (courant/entreprise) d’un joueur.\n\n👉 Commence par choisir le **compte SOURCE (banque)**."
                 ),
               ],
-              components: [mainButtonsRow()],
+              components: [accountChoiceRow("trsrc")],
             });
           }
 
-          // 2) Choix compte pour dépôt / retrait
+          // 2) Choix de compte pour dépôt / retrait
           if (btn.customId === "eco_dep_courant") currentAccount = "courant";
-          if (btn.customId === "eco_dep_entreprise")
-            currentAccount = "entreprise";
+          if (btn.customId === "eco_dep_entreprise") currentAccount = "entreprise";
           if (btn.customId === "eco_with_courant") currentAccount = "courant";
-          if (btn.customId === "eco_with_entreprise")
-            currentAccount = "entreprise";
+          if (btn.customId === "eco_with_entreprise") currentAccount = "entreprise";
 
-          if (currentFlow && currentAccount && btn.customId.startsWith("eco_")) {
+          // 3) Choix SOURCE / DEST pour virement
+          if (btn.customId === "eco_trsrc_courant") {
+            transferSource = "courant";
+            transferTarget = null;
+            return btn.update({
+              embeds: [
+                buildPanelEmbed(
+                  `💸 **Virement bancaire**\nSource : ${bankKindLabel(
+                    transferSource
+                  )}.\n\n👉 Choisis maintenant le **compte DESTINATION (banque)**.`
+                ),
+              ],
+              components: [accountChoiceRow("trdst")],
+            });
+          }
+
+          if (btn.customId === "eco_trsrc_entreprise") {
+            transferSource = "entreprise";
+            transferTarget = null;
+            return btn.update({
+              embeds: [
+                buildPanelEmbed(
+                  `💸 **Virement bancaire**\nSource : ${bankKindLabel(
+                    transferSource
+                  )}.\n\n👉 Choisis maintenant le **compte DESTINATION (banque)**.`
+                ),
+              ],
+              components: [accountChoiceRow("trdst")],
+            });
+          }
+
+          if (btn.customId === "eco_trdst_courant") {
+            transferTarget = "courant";
+          }
+          if (btn.customId === "eco_trdst_entreprise") {
+            transferTarget = "entreprise";
+          }
+
+          // Si on est en mode virement et qu’on a source + destination
+          if (
+            currentFlow === "transfer" &&
+            transferSource &&
+            transferTarget &&
+            (btn.customId === "eco_trdst_courant" ||
+              btn.customId === "eco_trdst_entreprise")
+          ) {
+            if (transferSource === transferTarget) {
+              // même compte -> pas de sens
+              transferTarget = null;
+              return btn.update({
+                embeds: [
+                  buildPanelEmbed(
+                    "❌ Le **compte source** et le **compte destination** doivent être **différents**.\nChoisis à nouveau le compte destination."
+                  ),
+                ],
+                components: [accountChoiceRow("trdst")],
+              });
+            }
+
+            const labelSrc = bankKindLabel(transferSource);
+            const labelDst = bankKindLabel(transferTarget);
+
+            // Étape 1 : montant
+            await btn.update({
+              embeds: [
+                buildPanelEmbed(
+                  `✏️ Indique maintenant le **montant à virer** de ${labelSrc} vers ${labelDst}.\nEnvoie simplement un message avec un nombre (ex: \`500\`).`
+                ),
+              ],
+              components: [cancelRow()],
+            });
+
+            const amountCollector = msg.channel.createMessageCollector({
+              time: 60_000,
+              max: 1,
+              filter: (m) => m.author.id === user.id,
+            });
+
+            amountCollector.on("collect", async (m) => {
+              const raw = m.content.replace(",", ".").trim();
+              const amount = Number(raw);
+              if (!Number.isFinite(amount) || amount <= 0) {
+                await msg.edit({
+                  embeds: [
+                    buildPanelEmbed(
+                      "❌ Montant invalide. Virement annulé.\nRéessaie avec un nombre positif."
+                    ),
+                  ],
+                  components: [mainButtonsRow()],
+                });
+                setTimeout(() => m.delete().catch(() => {}), 2000);
+                currentFlow = null;
+                transferSource = null;
+                transferTarget = null;
+                return;
+              }
+
+              // Étape 2 : joueur cible
+              await msg.edit({
+                embeds: [
+                  buildPanelEmbed(
+                    `👤 Montant à virer : **${fmt(
+                      amount
+                    )}** de ${labelSrc} vers ${labelDst}.\n\n👉 Maintenant, **mentionne le joueur cible** dans ce salon (ex: @Nom). Tu peux te mentionner toi-même pour un virement interne.`
+                  ),
+                ],
+                components: [cancelRow()],
+              });
+
+              const targetCollector = msg.channel.createMessageCollector({
+                time: 60_000,
+                max: 1,
+                filter: (mm) => mm.author.id === user.id,
+              });
+
+              targetCollector.on("collect", async (mm) => {
+                const target = mm.mentions.users.first();
+                if (!target || target.bot) {
+                  await msg.edit({
+                    embeds: [
+                      buildPanelEmbed(
+                        "❌ Mention invalide. Virement annulé.\nRelance l’opération."
+                      ),
+                    ],
+                    components: [mainButtonsRow()],
+                  });
+                  setTimeout(() => mm.delete().catch(() => {}), 2000);
+                  currentFlow = null;
+                  transferSource = null;
+                  transferTarget = null;
+                  return;
+                }
+
+                // On effectue le virement (self ou autre joueur)
+                if (target.id === user.id) {
+                  // Virement interne (toi → toi)
+                  const accSelf = getOrCreateAccount(user.id);
+                  const srcField = bankKindToField(transferSource);
+                  const dstField = bankKindToField(transferTarget);
+
+                  const srcBalance = getBalanceRef(accSelf, srcField) || 0;
+                  const dstBalance = getBalanceRef(accSelf, dstField) || 0;
+
+                  if (srcBalance < amount) {
+                    await msg.edit({
+                      embeds: [
+                        buildPanelEmbed(
+                          `❌ Fonds insuffisants dans ${bankKindLabel(
+                            transferSource
+                          )}.\nSolde actuel : ${fmt(srcBalance)}.`
+                        ),
+                      ],
+                      components: [mainButtonsRow()],
+                    });
+                    setTimeout(() => mm.delete().catch(() => {}), 2000);
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
+                    currentFlow = null;
+                    transferSource = null;
+                    transferTarget = null;
+                    return;
+                  }
+
+                  setBalanceRef(accSelf, srcField, srcBalance - amount);
+                  setBalanceRef(accSelf, dstField, dstBalance + amount);
+                  updateAccount(user.id, accSelf);
+
+                  const newFile = await renderBankImage(
+                    accSelf,
+                    interaction.member?.displayName || user.username
+                  );
+
+                  await msg.edit({
+                    embeds: [
+                      buildPanelEmbed(
+                        `✅ Virement **interne** effectué : **${fmt(
+                          amount
+                        )}** transférés de ${bankKindLabel(
+                          transferSource
+                        )} vers ${bankKindLabel(transferTarget)}.`
+                      ),
+                    ],
+                    files: [newFile],
+                    components: [mainButtonsRow()],
+                  });
+
+                  setTimeout(() => mm.delete().catch(() => {}), 2000);
+                  setTimeout(() => m.delete().catch(() => {}), 2000);
+
+                  currentFlow = null;
+                  transferSource = null;
+                  transferTarget = null;
+                  return;
+                }
+
+                // VIREMENT VERS UN AUTRE JOUEUR
+                const senderAcc = getOrCreateAccount(user.id);
+                const recvAcc = getOrCreateAccount(target.id);
+
+                const srcField = bankKindToField(transferSource); // ex: "courant_banque"
+                const dstField = bankKindToField(transferTarget); // ex: "entreprise_banque"
+
+                const srcBalance = getBalanceRef(senderAcc, srcField) || 0;
+                const dstBalance = getBalanceRef(recvAcc, dstField) || 0;
+
+                if (srcBalance < amount) {
+                  await msg.edit({
+                    embeds: [
+                      buildPanelEmbed(
+                        `❌ Fonds insuffisants dans ${bankKindLabel(
+                          transferSource
+                        )}.\nSolde actuel : ${fmt(srcBalance)}.`
+                      ),
+                    ],
+                    components: [mainButtonsRow()],
+                  });
+                  setTimeout(() => mm.delete().catch(() => {}), 2000);
+                  setTimeout(() => m.delete().catch(() => {}), 2000);
+                  currentFlow = null;
+                  transferSource = null;
+                  transferTarget = null;
+                  return;
+                }
+
+                setBalanceRef(senderAcc, srcField, srcBalance - amount);
+                setBalanceRef(recvAcc, dstField, dstBalance + amount);
+
+                updateAccount(user.id, senderAcc);
+                updateAccount(target.id, recvAcc);
+
+                const newFile = await renderBankImage(
+                  senderAcc,
+                  interaction.member?.displayName || user.username
+                );
+
+                await msg.edit({
+                  embeds: [
+                    buildPanelEmbed(
+                      `✅ Virement effectué : **${fmt(
+                        amount
+                      )}** transférés de ${bankKindLabel(
+                        transferSource
+                      )} vers ${bankKindLabel(
+                        transferTarget
+                      )} du joueur ${target}.`
+                    ),
+                  ],
+                  files: [newFile],
+                  components: [mainButtonsRow()],
+                });
+
+                setTimeout(() => mm.delete().catch(() => {}), 2000);
+                setTimeout(() => m.delete().catch(() => {}), 2000);
+
+                currentFlow = null;
+                transferSource = null;
+                transferTarget = null;
+              });
+
+              targetCollector.on("end", async (collected2) => {
+                if (collected2.size === 0) {
+                  await msg.edit({
+                    embeds: [
+                      buildPanelEmbed(
+                        "⌛ Temps écoulé sans mention de joueur.\nInterface remise à zéro."
+                      ),
+                    ],
+                    components: [mainButtonsRow()],
+                  });
+                  currentFlow = null;
+                  transferSource = null;
+                  transferTarget = null;
+                }
+              });
+            });
+
+            amountCollector.on("end", async (collected) => {
+              if (collected.size === 0) {
+                await msg.edit({
+                  embeds: [
+                    buildPanelEmbed(
+                      "⌛ Temps écoulé sans montant.\nInterface remise à zéro."
+                    ),
+                  ],
+                  components: [mainButtonsRow()],
+                });
+                currentFlow = null;
+                transferSource = null;
+                transferTarget = null;
+              }
+            });
+
+            return;
+          }
+
+          // 4) Dépôt / Retrait : déclenchement de la saisie du montant
+          if (
+            currentFlow &&
+            currentFlow !== "transfer" &&
+            currentAccount &&
+            btn.customId.startsWith("eco_")
+          ) {
             const actionLabel =
               currentFlow === "dep" ? "à **déposer**" : "à **retirer**";
             const compteLabel =
@@ -501,6 +790,7 @@ module.exports = {
                   ],
                   components: [mainButtonsRow()],
                 });
+                setTimeout(() => m.delete().catch(() => {}), 2000);
                 return;
               }
 
@@ -521,11 +811,11 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   acc.courant.liquide = liq - amount;
-                  acc.courant.banque =
-                    (acc.courant.banque || 0) + amount;
+                  acc.courant.banque = (acc.courant.banque || 0) + amount;
                 } else {
                   const liq = acc.entreprise.liquide || 0;
                   if (liq < amount) {
@@ -539,6 +829,7 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   acc.entreprise.liquide = liq - amount;
@@ -561,6 +852,7 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   const newLiq = liq + amount;
@@ -575,6 +867,7 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   acc.courant.banque = ban - amount;
@@ -593,6 +886,7 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   const newLiq = liq + amount;
@@ -607,6 +901,7 @@ module.exports = {
                       ],
                       components: [mainButtonsRow()],
                     });
+                    setTimeout(() => m.delete().catch(() => {}), 2000);
                     return;
                   }
                   acc.entreprise.banque = ban - amount;
@@ -674,7 +969,7 @@ module.exports = {
       });
 
       collector.on("end", async () => {
-        // tu peux décider de désactiver les boutons ici si tu veux
+        // tu peux éventuellement désactiver les boutons ici si tu veux
       });
 
       return;
@@ -828,58 +1123,6 @@ module.exports = {
           .catch(() => {});
       }
       return;
-    }
-
-    // ─────────────────────────────────────
-    // /economy paye
-    if (sub === "paye") {
-      const target = interaction.options.getUser("target");
-      const src = interaction.options.getString("source");
-      const dst = interaction.options.getString("destination");
-      const amount = interaction.options.getNumber("montant");
-
-      const sender = getOrCreateAccount(interaction.user.id);
-      const recv = getOrCreateAccount(target.id);
-
-      const sVal = getBalanceRef(sender, src);
-      const rVal = getBalanceRef(recv, dst);
-      if (sVal === null || rVal === null)
-        return interaction.reply({
-          content: "Champ source/destination invalide.",
-          ephemeral: true,
-        });
-      if (sVal < amount)
-        return interaction.reply({
-          content: `Fonds insuffisants dans \`${src}\`.`,
-          ephemeral: true,
-        });
-
-      if (isLiquidField(dst)) {
-        const newDst = (rVal || 0) + amount;
-        if (newDst > MAX_LIQUID) {
-          return interaction.reply({
-            content: `❌ Le destinataire ne peut pas recevoir plus de ${MAX_LIQUID}$ en liquide sur ce compte.`,
-            ephemeral: true,
-          });
-        }
-      }
-
-      setBalanceRef(sender, src, sVal - amount);
-      setBalanceRef(recv, dst, rVal + amount);
-      updateAccount(interaction.user.id, sender);
-      updateAccount(target.id, recv);
-
-      const emb = new EmbedBuilder()
-        .setColor(0x8e44ad)
-        .setTitle("🤝 Paiement effectué")
-        .setDescription(
-          `👤 **De :** ${interaction.user} \`(${src})\`\n` +
-            `👤 **À :** ${target} \`(${dst})\`\n` +
-            `💵 **Montant :** ${fmt(amount)}`
-        )
-        .setFooter(footer);
-
-      return interaction.reply({ embeds: [emb] });
     }
   },
 };
