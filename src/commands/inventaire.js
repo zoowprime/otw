@@ -22,7 +22,9 @@ const {
   consumeItem,
 } = require('../data/inventoryStore');
 const catalog = require('../data/itemCatalog');
-const { getOrCreateAccount } = require('../economyData'); // ← pour récupérer le liquide courant
+const { getOrCreateAccount, updateAccount } = require('../economyData'); // ← récup & maj comptes
+
+const MAX_LIQUID = 5000; // plafond liquide courant (même logique que dans economy)
 
 // ─────────────────────────────────────────────────────────────
 // Canvas 1024×1024
@@ -232,12 +234,34 @@ function buildActionMenu() {
       .setCustomId('inv_action')
       .setPlaceholder('Choisir une action…')
       .addOptions([
-        { label: 'Donner',   value: 'give', emoji: '🟩', description: 'Donner un objet à un joueur (mention)' },
-        { label: 'Utiliser', value: 'use',  emoji: '🟦', description: 'Utiliser / consommer un objet' },
-        { label: 'Jeter',    value: 'drop', emoji: '🟥', description: 'Jeter un objet au sol' }
+        {
+          label: 'Donner un objet',
+          value: 'give_item',
+          emoji: '🟩',
+          description: 'Donner un objet à un joueur (mention)'
+        },
+        {
+          label: 'Donner de l’argent liquide',
+          value: 'give_cash',
+          emoji: '💵',
+          description: 'Donner de l’argent (liquide courant) à un joueur'
+        },
+        {
+          label: 'Utiliser',
+          value: 'use',
+          emoji: '🟦',
+          description: 'Utiliser / consommer un objet'
+        },
+        {
+          label: 'Jeter',
+          value: 'drop',
+          emoji: '🟥',
+          description: 'Jeter un objet au sol'
+        }
       ])
   );
 }
+
 function toOptionsFromItems(items) {
   return items.slice(0, 25).map(it => {
     const idGuess = resolveIconId(it.name || it.id) || (it.name || it.id);
@@ -272,7 +296,7 @@ async function buildEmbedWithImage(userId, displayName) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventaire')
-    .setDescription('Affiche ta sacoche et propose des actions (donner / utiliser / jeter).'),
+    .setDescription('Affiche ta sacoche et propose des actions (donner / utiliser / jeter / donner de l’argent).'),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -294,6 +318,7 @@ module.exports = {
     });
 
     let pendingGiveItemId = null;
+    let pendingGiveCash   = false;
 
     collector.on('collect', async (i) => {
       if (i.user.id !== userId) {
@@ -305,13 +330,24 @@ module.exports = {
         const st = getUser(userId);
         const items = Array.isArray(st.items) ? st.items : [];
 
-        if (!items.length) {
+        if (!items.length && action === 'give_item') {
           const { emb } = await buildEmbedWithImage(userId, displayName);
           emb.addFields({ name: 'Info', value: '📦 Inventaire vide.' });
           return i.update({ embeds: [emb], components: [buildActionMenu()] });
         }
 
+        // RESET des états
+        pendingGiveItemId = null;
+        pendingGiveCash   = false;
+
+        // Utiliser
         if (action === 'use') {
+          if (!items.length) {
+            const { emb } = await buildEmbedWithImage(userId, displayName);
+            emb.addFields({ name: 'Info', value: '📦 Inventaire vide.' });
+            return i.update({ embeds: [emb], components: [buildActionMenu()] });
+          }
+
           const consumables = items.filter(it => {
             const idGuess = resolveIconId(it.name || it.id) || (it.name || it.id);
             return catalog[idGuess]?.consumable === true;
@@ -333,7 +369,14 @@ module.exports = {
           });
         }
 
+        // Jeter
         if (action === 'drop') {
+          if (!items.length) {
+            const { emb } = await buildEmbedWithImage(userId, displayName);
+            emb.addFields({ name: 'Info', value: '📦 Inventaire vide.' });
+            return i.update({ embeds: [emb], components: [buildActionMenu()] });
+          }
+
           const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
               .setCustomId('inv_drop_item')
@@ -346,16 +389,39 @@ module.exports = {
           });
         }
 
-        const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('inv_give_item')
-            .setPlaceholder('Sélectionner l’objet à donner…')
-            .addOptions(toOptionsFromItems(items))
-        );
-        return i.update({
-          embeds: [ new EmbedBuilder().setColor(0x2ecc71).setTitle('Donner — Choix de l’objet') ],
-          components: [row]
-        });
+        // Donner un OBJET
+        if (action === 'give_item') {
+          const row = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId('inv_give_item')
+              .setPlaceholder('Sélectionner l’objet à donner…')
+              .addOptions(toOptionsFromItems(items))
+          );
+          return i.update({
+            embeds: [ new EmbedBuilder().setColor(0x2ecc71).setTitle('Donner — Choix de l’objet') ],
+            components: [row]
+          });
+        }
+
+        // Donner de l’ARGENT LIQUIDE
+        if (action === 'give_cash') {
+          pendingGiveItemId = null;
+          pendingGiveCash   = true;
+
+          const { emb } = await buildEmbedWithImage(userId, displayName);
+          emb.addFields({
+            name: 'Donner de l’argent',
+            value:
+              `Tu vas donner de l’**argent liquide** depuis ton **compte courant (liquide)**.\n` +
+              `👉 Envoie maintenant un message avec **le montant et la mention** du joueur.\n` +
+              `Exemple : \`250 @NomDuJoueur\``
+          });
+
+          return i.update({
+            embeds: [emb],
+            components: [buildActionMenu()]
+          });
+        }
       }
 
       // Utiliser = consommation réelle
@@ -425,9 +491,10 @@ module.exports = {
         });
       }
 
-      // Donner
+      // Donner OBJET — choix de l’objet
       if (i.customId === 'inv_give_item') {
         pendingGiveItemId = i.values[0];
+        pendingGiveCash   = false;
 
         const { emb } = await buildEmbedWithImage(userId, displayName);
         emb.addFields({
@@ -440,46 +507,145 @@ module.exports = {
       }
     });
 
+    // Messages texte pour donner OBJET ou ARGENT
     const msgCollector = msg.channel.createMessageCollector({
       time: 180_000,
       filter: m => m.author.id === userId
     });
 
     msgCollector.on('collect', async (m) => {
-      if (!pendingGiveItemId) return;
-      const target = m.mentions.users.first();
-      if (!target || target.bot) {
-        return m.reply({ content: '❌ Mention invalide. Réessaie en mentionnant la personne (@Nom).', allowedMentions: { users: [] } })
+      // 1) Donner un OBJET
+      if (pendingGiveItemId) {
+        const target = m.mentions.users.first();
+        if (!target || target.bot) {
+          return m.reply({
+            content: '❌ Mention invalide. Réessaie en mentionnant la personne (@Nom).',
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
+
+        try {
+          removeItem(userId, pendingGiveItemId, 1);
+          addItem(target.id, pendingGiveItemId, 1);
+        } catch {
+          await m.reply({ content: '❌ Transfert impossible.', allowedMentions: { users: [] } }).catch(()=>{});
+          pendingGiveItemId = null;
+          return;
+        }
+
+        const { emb, file } = await buildEmbedWithImage(userId, displayName);
+        emb.addFields({ name: 'Donner', value: `🤝 Tu as donné **${niceName(pendingGiveItemId)}** à <@${target.id}>.` });
+
+        try {
+          await msg.edit({
+            embeds: [emb],
+            files: file ? [file] : [],
+            components: [buildActionMenu()]
+          });
+        } catch {}
+
+        await m.reply({ content: `✅ Transfert effectué à <@${target.id}>.`, allowedMentions: { users: [] } })
           .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
           .catch(()=>{});
-      }
+        setTimeout(() => m.delete().catch(()=>{}), 2000);
 
-      try {
-        removeItem(userId, pendingGiveItemId, 1);
-        addItem(target.id, pendingGiveItemId, 1);
-      } catch {
-        await m.reply({ content: '❌ Transfert impossible.', allowedMentions: { users: [] } }).catch(()=>{});
         pendingGiveItemId = null;
         return;
       }
 
-      const { emb, file } = await buildEmbedWithImage(userId, displayName);
-      emb.addFields({ name: 'Donner', value: `🤝 Tu as donné **${niceName(pendingGiveItemId)}** à <@${target.id}>.` });
+      // 2) Donner de l’ARGENT LIQUIDE
+      if (pendingGiveCash) {
+        const target = m.mentions.users.first();
+        if (!target || target.bot) {
+          return m.reply({
+            content: '❌ Mention invalide. Réessaie en mettant **montant + @mention** (ex: `250 @Nom`).',
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
 
-      try {
-        await msg.edit({
-          embeds: [emb],
-          files: file ? [file] : [],
-          components: [buildActionMenu()]
+        const text = m.content.replace(',', '.');
+        const match = text.match(/(\d+(\.\d+)?)/);
+        if (!match) {
+          return m.reply({
+            content: '❌ Montant introuvable dans ton message. Exemple correct : `250 @Nom`.',
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
+
+        const amount = Number(match[1]);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          return m.reply({
+            content: '❌ Montant invalide. Utilise un nombre positif (ex: `250 @Nom`).',
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
+
+        // Récup comptes
+        const senderAcc = getOrCreateAccount(userId);
+        const recvAcc   = getOrCreateAccount(target.id);
+
+        const senderCash = Number(senderAcc?.courant?.liquide || 0);
+        const recvCash   = Number(recvAcc?.courant?.liquide || 0);
+
+        if (senderCash < amount) {
+          return m.reply({
+            content: `❌ Fonds insuffisants. Tu n’as que **${senderCash.toFixed(2)}$** en liquide courant.`,
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
+
+        const newRecvCash = recvCash + amount;
+        if (newRecvCash > MAX_LIQUID) {
+          return m.reply({
+            content: `❌ Le destinataire dépasserait le plafond de liquide (${MAX_LIQUID}$). Transfert refusé.`,
+            allowedMentions: { users: [] }
+          })
+            .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+            .catch(()=>{});
+        }
+
+        // Maj comptes
+        senderAcc.courant.liquide = senderCash - amount;
+        recvAcc.courant.liquide   = newRecvCash;
+
+        updateAccount(userId, senderAcc);
+        updateAccount(target.id, recvAcc);
+
+        const { emb, file } = await buildEmbedWithImage(userId, displayName);
+        emb.addFields({
+          name: 'Donner de l’argent',
+          value: `💵 Tu as donné **${amount.toFixed(2)}$** en liquide à <@${target.id}>.\n` +
+                 `Nouveau liquide courant : **${senderAcc.courant.liquide.toFixed(2)}$**`
         });
-      } catch {}
 
-      await m.reply({ content: `✅ Transfert effectué à <@${target.id}>.`, allowedMentions: { users: [] } })
-        .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
-        .catch(()=>{});
-      setTimeout(() => m.delete().catch(()=>{}), 2000);
+        try {
+          await msg.edit({
+            embeds: [emb],
+            files: file ? [file] : [],
+            components: [buildActionMenu()]
+          });
+        } catch {}
 
-      pendingGiveItemId = null;
+        await m.reply({
+          content: `✅ Transfert de **${amount.toFixed(2)}$** effectué à <@${target.id}>.`,
+          allowedMentions: { users: [] }
+        })
+          .then(mm => setTimeout(() => mm.delete().catch(()=>{}), 5000))
+          .catch(()=>{});
+        setTimeout(() => m.delete().catch(()=>{}), 2000);
+
+        pendingGiveCash = false;
+      }
     });
 
     collector.on('end', async () => {
