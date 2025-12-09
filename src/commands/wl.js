@@ -6,7 +6,7 @@ const {
 } = require("discord.js");
 
 const CITIZEN_ROLE_ID = process.env.CITIZEN_ROLE_ID; // rôle citoyen / WL
-const ORAL_A_FAIRE_ROLE_ID = process.env.ORAL_A_FAIRE_ROLE_ID; // rôle à ping / retirer
+const ORAL_A_FAIRE = process.env.ORAL_A_FAIRE; // rôle à ping / retirer
 const VALID_WL_CHANNEL_ID = process.env.VALID_WL_CHANNEL_ID;
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 
@@ -108,18 +108,18 @@ module.exports = {
       const debut = interaction.options.getString("debut");
       const fin = interaction.options.getString("fin");
 
-      if (!ORAL_A_FAIRE_ROLE_ID) {
+      if (!ORAL_A_FAIRE) {
         const emb = new EmbedBuilder()
           .setColor(0xe74c3c)
           .setTitle("⚙️ Configuration manquante")
           .setDescription(
-            "La variable `ORAL_A_FAIRE_ROLE_ID` est manquante dans ton id.env."
+            "La variable `ORAL_A_FAIRE` est manquante dans ton id.env."
           )
           .setFooter(FOOTER);
         return interaction.reply({ embeds: [emb], ephemeral: true });
       }
 
-      const roleMention = `<@&${ORAL_A_FAIRE_ROLE_ID}>`;
+      const roleMention = `<@&${ORAL_A_FAIRE}>`;
 
       const emb = new EmbedBuilder()
         .setColor(0xf1c40f)
@@ -150,10 +150,10 @@ module.exports = {
       const parrain =
         interaction.options.getString("parrain") || "aucun parrain";
 
-      if (!CITIZEN_ROLE_ID || !ORAL_A_FAIRE_ROLE_ID || !VALID_WL_CHANNEL_ID) {
+      if (!CITIZEN_ROLE_ID || !ORAL_A_FAIRE || !VALID_WL_CHANNEL_ID) {
         const missing = [];
         if (!CITIZEN_ROLE_ID) missing.push("CITIZEN_ROLE_ID");
-        if (!ORAL_A_FAIRE_ROLE_ID) missing.push("ORAL_A_FAIRE_ROLE_ID");
+        if (!ORAL_A_FAIRE) missing.push("ORAL_A_FAIRE");
         if (!VALID_WL_CHANNEL_ID) missing.push("VALID_WL_CHANNEL_ID");
 
         const emb = new EmbedBuilder()
@@ -193,7 +193,7 @@ module.exports = {
           .setFooter(FOOTER);
         return interaction.reply({ embeds: [emb], ephemeral: true });
       }
-      if (!canManageRole(guild, ORAL_A_FAIRE_ROLE_ID)) {
+      if (!canManageRole(guild, ORAL_A_FAIRE)) {
         const emb = new EmbedBuilder()
           .setColor(0xe74c3c)
           .setTitle("❌ Rôle ORAL_A_FAIRE inatteignable")
@@ -261,13 +261,13 @@ module.exports = {
       // Mise à jour des rôles
       let rolesOk = true;
       try {
-        if (targetMember.roles.cache.has(ORAL_A_FAIRE_ROLE_ID)) {
+        if (targetMember.roles.cache.has(ORAL_A_FAIRE)) {
           await targetMember.roles.remove(
-            ORAL_A_FAIRE_ROLE_ID,
+            ORAL_A_FAIRE,
             "[WL] Retrait rôle ORAL_A_FAIRE"
           );
         }
-        if (!targetMember.roles.cache.has(WL_ROLE_ID)) {
+        if (!targetMember.roles.cache.has(CITIZEN_ROLE_ID)) {
           await targetMember.roles.add(
             CITIZEN_ROLE_ID,
             "[WL] Attribution rôle citoyen / whitelist"
@@ -318,18 +318,18 @@ module.exports = {
     // ─────────────────────────────
     // /wl fermer
     if (sub === "fermer") {
-      if (!ORAL_A_FAIRE_ROLE_ID) {
+      if (!ORAL_A_FAIRE) {
         const emb = new EmbedBuilder()
           .setColor(0xe74c3c)
           .setTitle("⚙️ Configuration manquante")
           .setDescription(
-            "La variable `ORAL_A_FAIRE_ROLE_ID` est manquante dans ton id.env."
+            "La variable `ORAL_A_FAIRE` est manquante dans ton id.env."
           )
           .setFooter(FOOTER);
         return interaction.reply({ embeds: [emb], ephemeral: true });
       }
 
-      const roleMention = `<@&${ORAL_A_FAIRE_ROLE_ID}>`;
+      const roleMention = `<@&${ORAL_A_FAIRE}>`;
 
       const emb = new EmbedBuilder()
         .setColor(0x95a5a6)
