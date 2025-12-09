@@ -10,11 +10,26 @@ const {
 } = require("discord.js");
 
 const path = require("path");
-const { createCanvas, loadImage } = require("canvas");
+const { createCanvas, loadImage, registerFont } = require("canvas");
 const { getOrCreateAccount, updateAccount } = require("../economyData");
 
 const BANKER_ROLE = process.env.BANQUIER_ROLE_ID;
 const BANK_LOG_CHANNEL = process.env.BANK_LOG_CHANNEL || null;
+
+// ────────────────────────────────────────────────
+// Fonts
+const FONT_PATH = path.join(
+  __dirname,
+  "..",
+  "assets",
+  "fonts",
+  "WesternBangBang-Regular.ttf"
+);
+try {
+  registerFont(FONT_PATH, { family: "WesternBangBang" });
+} catch {
+  // si la font ne charge pas, on tombera sur la font par défaut
+}
 
 // ────────────────────────────────────────────────
 // Utils formatage
@@ -126,58 +141,65 @@ function requireBanker(interaction) {
 // ────────────────────────────────────────────────
 // Rendu image de compte bancaire
 
-const BANK_TEMPLATE = path.join(
-  __dirname,
-  "..",
-  "assets",
-  "bank",
-  "compte_banque.png"
-);
-
-let BANK_BASE_IMAGE = null;
-
-async function getBankBaseImage() {
-  if (!BANK_BASE_IMAGE) {
-    BANK_BASE_IMAGE = await loadImage(BANK_TEMPLATE);
-  }
-  return BANK_BASE_IMAGE;
-}
-
-// Coordonnées des textes sur ton template 1024x1024
-const COORDS = {
-  courantBanque: { x: 260, y: 325 },
-  courantLiquide: { x: 260, y: 395 },
-  entrepriseBanque: { x: 755, y: 325 },
-  entrepriseLiquide: { x: 755, y: 395 },
-  owner: { x: 200, y: 590 },
+// Templates séparés pour courant / entreprise
+const BANK_TEMPLATES = {
+  courant: path.join(__dirname, "..", "assets", "bank", "user_bank.png"),
+  entreprise: path.join(
+    __dirname,
+    "..",
+    "assets",
+    "bank",
+    "entreprise_bank.png"
+  ),
 };
 
-async function renderBankImage(acc, ownerName) {
-  const base = await getBankBaseImage();
-  const canvas = createCanvas(1024, 1024);
+const BANK_BASE_IMAGES = {
+  courant: null,
+  entreprise: null,
+};
+
+async function getBankBaseImage(accountType) {
+  const key = accountType === "entreprise" ? "entreprise" : "courant";
+  if (!BANK_BASE_IMAGES[key]) {
+    BANK_BASE_IMAGES[key] = await loadImage(BANK_TEMPLATES[key]);
+  }
+  return BANK_BASE_IMAGES[key];
+}
+
+/**
+ * Rend l'image du compte bancaire pour un type donné.
+ * - accountType: 'courant' | 'entreprise'
+ * - le solde affiché est le solde BANQUE de ce compte, en vert.
+ */
+async function renderBankImage(acc, ownerName, accountType = "courant") {
+  const type = accountType === "entreprise" ? "entreprise" : "courant";
+  const base = await getBankBaseImage(type);
+
+  const canvas = createCanvas(base.width, base.height);
   const ctx = canvas.getContext("2d");
 
-  ctx.drawImage(base, 0, 0, 1024, 1024);
+  ctx.drawImage(base, 0, 0, base.width, base.height);
 
-  ctx.fillStyle = "#E8F8FF";
-  ctx.font = '30px "Times New Roman"';
+  // Solde banque du compte sélectionné
+  const bankBalance =
+    type === "courant"
+      ? acc.courant?.banque || 0
+      : acc.entreprise?.banque || 0;
+
+  const balanceText = fmt(bankBalance);
+
+  // Texte vert, police WesternBangBang
+  ctx.font = '40px "WesternBangBang"';
+  ctx.fillStyle = "#3CCF4E"; // vert bien visible
   ctx.textAlign = "left";
 
-  const cb = fmt(acc.courant.banque || 0);
-  const cl = fmt(acc.courant.liquide || 0);
-  const eb = fmt(acc.entreprise.banque || 0);
-  const el = fmt(acc.entreprise.liquide || 0);
-
-  ctx.fillText(cb, COORDS.courantBanque.x, COORDS.courantBanque.y);
-  ctx.fillText(cl, COORDS.courantLiquide.x, COORDS.courantLiquide.y);
-  ctx.fillText(eb, COORDS.entrepriseBanque.x, COORDS.entrepriseBanque.y);
-  ctx.fillText(el, COORDS.entrepriseLiquide.x, COORDS.entrepriseLiquide.y);
-
-  ctx.font = '32px "Times New Roman"';
-  ctx.fillText(ownerName, COORDS.owner.x, COORDS.owner.y);
+  // Coordonnées pour écrire à côté du "$" dans la zone "Mon solde"
+  // (à ajuster si besoin, mais ça tombe dans la case à gauche)
+  const BALANCE_POS = { x: 150, y: 270 };
+  ctx.fillText(balanceText, BALANCE_POS.x, BALANCE_POS.y);
 
   const buffer = canvas.toBuffer("image/png");
-  return new AttachmentBuilder(buffer, { name: "compte_banque.png" });
+  return new AttachmentBuilder(buffer, { name: "bank_panel.png" });
 }
 
 // Embed panel principal
@@ -186,7 +208,7 @@ function buildPanelEmbed(description) {
     .setColor(0x1abc9c)
     .setTitle("💳 Compte bancaire")
     .setDescription(description)
-    .setImage("attachment://compte_banque.png")
+    .setImage("attachment://bank_panel.png")
     .setFooter(footer);
 }
 
@@ -198,18 +220,28 @@ function mainButtonsRow() {
     new ButtonBuilder()
       .setCustomId("eco_dep")
       .setEmoji("🏦")
-      .setLabel("Déposer des sous")
+      .setLabel("Dépôt")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("eco_with")
       .setEmoji("💰")
-      .setLabel("Retirer des sous")
+      .setLabel("Retrait")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("eco_transfer")
       .setEmoji("💸")
-      .setLabel("Faire un virement")
-      .setStyle(ButtonStyle.Primary)
+      .setLabel("Virement")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("eco_close_panel")
+      .setEmoji("📑")
+      .setLabel("Clôturer")
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("eco_close_archive")
+      .setEmoji("📕")
+      .setLabel("Fermer l’archive")
+      .setStyle(ButtonStyle.Secondary)
   );
 }
 
@@ -267,6 +299,16 @@ module.exports = {
         .setName("compte")
         .setDescription(
           "Affiche ton compte bancaire avec l’interface graphique."
+        )
+        .addStringOption((o) =>
+          o
+            .setName("type")
+            .setDescription("Type de compte à afficher")
+            .setRequired(true)
+            .addChoices(
+              { name: "Compte courant", value: "courant" },
+              { name: "Compte entreprise", value: "entreprise" }
+            )
         )
     )
 
@@ -352,15 +394,21 @@ module.exports = {
     // PANEL GRAPHIQUE /economy compte
     if (sub === "compte") {
       const user = interaction.user;
+      const panelType =
+        interaction.options.getString("type") === "entreprise"
+          ? "entreprise"
+          : "courant";
+
       let acc = getOrCreateAccount(user.id);
 
       const file = await renderBankImage(
         acc,
-        interaction.member?.displayName || user.username
+        interaction.member?.displayName || user.username,
+        panelType
       );
 
       const panelEmbed = buildPanelEmbed(
-        "💳 **Interface de compte bancaire.**\nUtilise les boutons ci-dessous pour **déposer**, **retirer** ou **faire un virement**.\n*(Seul le propriétaire du message peut interagir.)*"
+        "💳 **Interface de compte bancaire.**\nUtilise les boutons pour **dépôt**, **retrait**, **virement**, ou pour **clôturer / fermer l’archive**.\n*(Seul le propriétaire du message peut interagir.)*"
       );
 
       const msg = await interaction.reply({
@@ -383,6 +431,34 @@ module.exports = {
 
       collector.on("collect", async (btn) => {
         try {
+          // Fermer l’archive (supprime le message)
+          if (btn.customId === "eco_close_archive") {
+            await btn.reply({
+              content: "📕 Archive fermée.",
+              ephemeral: true,
+            });
+            collector.stop("archive_closed");
+            await msg.delete().catch(() => {});
+            return;
+          }
+
+          // Clôturer le panel (désactive les actions)
+          if (btn.customId === "eco_close_panel") {
+            currentFlow = null;
+            currentAccount = null;
+            transferSource = null;
+            transferTarget = null;
+            collector.stop("panel_closed");
+            return btn.update({
+              embeds: [
+                buildPanelEmbed(
+                  "📑 **Archive clôturée.**\nCette interface est maintenant en lecture seule."
+                ),
+              ],
+              components: [],
+            });
+          }
+
           // RESET flow (annuler)
           if (
             btn.customId === "eco_cancel_flow" ||
@@ -395,7 +471,7 @@ module.exports = {
             return btn.update({
               embeds: [
                 buildPanelEmbed(
-                  "💳 Interface de compte bancaire remise à zéro.\nUtilise les boutons pour **déposer**, **retirer** ou **faire un virement**."
+                  "💳 Interface de compte bancaire remise à zéro.\nUtilise les boutons pour **dépôt**, **retrait**, **virement**."
                 ),
               ],
               components: [mainButtonsRow()],
@@ -451,9 +527,11 @@ module.exports = {
 
           // 2) Choix de compte pour dépôt / retrait
           if (btn.customId === "eco_dep_courant") currentAccount = "courant";
-          if (btn.customId === "eco_dep_entreprise") currentAccount = "entreprise";
+          if (btn.customId === "eco_dep_entreprise")
+            currentAccount = "entreprise";
           if (btn.customId === "eco_with_courant") currentAccount = "courant";
-          if (btn.customId === "eco_with_entreprise") currentAccount = "entreprise";
+          if (btn.customId === "eco_with_entreprise")
+            currentAccount = "entreprise";
 
           // 3) Choix SOURCE / DEST pour virement
           if (btn.customId === "eco_trsrc_courant") {
@@ -623,7 +701,8 @@ module.exports = {
 
                   const newFile = await renderBankImage(
                     accSelf,
-                    interaction.member?.displayName || user.username
+                    interaction.member?.displayName || user.username,
+                    panelType
                   );
 
                   await msg.edit({
@@ -686,7 +765,8 @@ module.exports = {
 
                 const newFile = await renderBankImage(
                   senderAcc,
-                  interaction.member?.displayName || user.username
+                  interaction.member?.displayName || user.username,
+                  panelType
                 );
 
                 await msg.edit({
@@ -912,7 +992,8 @@ module.exports = {
               updateAccount(user.id, acc);
               const newFile = await renderBankImage(
                 acc,
-                interaction.member?.displayName || user.username
+                interaction.member?.displayName || user.username,
+                panelType
               );
 
               const actionDone =
@@ -969,7 +1050,7 @@ module.exports = {
       });
 
       collector.on("end", async () => {
-        // tu peux éventuellement désactiver les boutons ici si tu veux
+        // rien de spécial, on laisse le message tel quel
       });
 
       return;
@@ -981,14 +1062,16 @@ module.exports = {
       const user = interaction.options.getUser("target");
       const acc = getOrCreateAccount(user.id);
 
+      // Par défaut on affiche le compte courant
       const file = await renderBankImage(
         acc,
         interaction.guild?.members.cache.get(user.id)?.displayName ||
-          user.username
+          user.username,
+        "courant"
       );
 
       return interaction.reply({
-        content: `💳 **Compte de ${user}**`,
+        content: `💳 **Compte courant de ${user}**`,
         files: [file],
       });
     }
