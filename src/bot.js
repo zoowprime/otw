@@ -68,6 +68,7 @@ require('./events/candidature')(client);
 require('./events/starterPack')(client);
 require('./events/passiveRevenue')(client);
 require('./events/trainMerch')(client);
+require('./events/guildMemberUpdate.js')(client);
 
 // ─────────────────────────────────────────────────────────────
 // Chargement des commandes slash
@@ -232,3 +233,4 @@ process.on('uncaughtException', (err) => {
 
 // ─────────────────────────────────────────────────────────────
 client.login(process.env.BOT_TOKEN);
+
